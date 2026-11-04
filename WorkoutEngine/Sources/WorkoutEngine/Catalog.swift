@@ -3,7 +3,7 @@ import Foundation
 /// Hand-tagged starter catalog. Dumbbell and kettlebell loads are per hand.
 public enum Catalog {
     /// Exercises shipped with the app.
-    public static let builtIn: [Exercise] = chest + shoulders + arms + back + legs + core + mobility
+    public static let builtIn: [Exercise] = chest + shoulders + arms + back + legs + core + mobility + homeGym
 
     /// Built-in plus the user's custom exercises.
     public static var all: [Exercise] { state.read().all }
@@ -240,6 +240,21 @@ public enum Catalog {
         ex("russian-twist", "Russian Twist", [.abs], [], [], .core, compound: false, oneRM: 8, joints: [.lowerBack]),
         ex("mountain-climber", "Mountain Climber", [.abs], [.shoulders, .quads], [], .core, compound: false, oneRM: 0, joints: [.wrist]),
         ex("bear-crawl", "Bear Crawl", [.abs, .shoulders], [.quads], [], .core, compound: false, oneRM: 0, joints: [.wrist]),
+    ]
+
+    /// Variations used by the built-in programs, all doable with a barbell, dumbbells, bench, rack,
+    /// dip station and a lat pulldown / low row station.
+    static let homeGym: [Exercise] = [
+        ex("cable-overhead-tricep-ext", "Overhead Cable Tricep Extension", [.triceps], [], [.cable], .isolation, compound: false, oneRM: 35, joints: [.elbow, .shoulder]),
+        ex("cable-rope-hammer-curl", "Cable Rope Hammer Curl", [.biceps, .forearms], [], [.cable], .isolation, compound: false, oneRM: 35, joints: [.elbow]),
+        ex("weighted-dip", "Weighted Dip", [.chest, .triceps], [.shoulders], [.dipStation, .dumbbell], .verticalPush, compound: true, level: .intermediate, oneRM: 20, joints: [.shoulder, .elbow]),
+        ex("single-arm-lat-pulldown", "Half-Kneeling Single Arm Lat Pulldown", [.lats], [.biceps, .upperBack], [.latPulldown], .verticalPull, compound: true, oneRM: 35, joints: [.shoulder]),
+        ex("wide-grip-cable-row", "Wide Grip Seated Cable Row", [.upperBack, .lats], [.biceps, .shoulders], [.cable], .horizontalPull, compound: true, oneRM: 60),
+        ex("ez-preacher-curl", "EZ Bar Preacher Curl", [.biceps], [], [.ezBar, .bench], .isolation, compound: false, oneRM: 32, joints: [.elbow]),
+        ex("single-leg-db-calf-raise", "Single Leg Dumbbell Calf Raise", [.calves], [], [.dumbbell], .isolation, compound: false, oneRM: 30, joints: [.ankle]),
+        ex("prone-db-leg-curl", "Prone Dumbbell Leg Curl", [.hamstrings], [], [.dumbbell, .bench], .isolation, compound: false, level: .intermediate, oneRM: 16, joints: [.knee]),
+        ex("sissy-squat", "Sissy Squat", [.quads], [], [.squatRack], .isolation, compound: false, level: .intermediate, oneRM: 20, joints: [.knee]),
+        ex("seated-db-calf-raise", "Seated Dumbbell Calf Raise", [.calves], [], [.dumbbell, .bench], .isolation, compound: false, oneRM: 40, joints: [.ankle]),
     ]
 
     /// Stretches and warm-up drills. Logged like any exercise, but never planned and never counted as fatigue.

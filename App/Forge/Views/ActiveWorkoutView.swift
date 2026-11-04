@@ -53,7 +53,7 @@ struct ActiveWorkoutView: View {
                 }
             }
             .background(Theme.background)
-            .navigationTitle(session.state?.focus.map { "\($0.title) Day" } ?? "Workout")
+            .navigationTitle(session.state?.title ?? session.state?.focus.map { "\($0.title) Day" } ?? "Workout")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -87,7 +87,10 @@ struct ActiveWorkoutView: View {
             .sheet(isPresented: $reviewing) {
                 FinishReview(profile: profile) {
                     reviewing = false
+                    let ref = session.state?.program
+                    let loggedAny = session.state?.exercises.contains { $0.sets.contains { $0.done && !$0.isWarmup } } ?? false
                     session.finish(context: context, bestOneRM: history.bestOneRM)
+                    if let ref, loggedAny { profile.completeProgramDay(ref) }
                 }
             }
             .sheet(isPresented: $showingOverview) {
@@ -201,7 +204,11 @@ private struct ExerciseFocusPage: View {
                 if let id = activeID, let index = exercise.sets.firstIndex(where: { $0.id == id }) {
                     SetEditor(set: $exercise.sets[index],
                               number: workingNumber(of: id),
-                              total: working.count,
+                              total: roundCount,
+                              target: exercise.program.map { info in
+                                  info.isEccentric ? "\(info.range.text) lowering reps" : "\(info.range.text) reps · \(info.effortText)"
+                              },
+                              lastSetNote: isLastRound(id) ? exercise.program?.lastSetNote : nil,
                               last: lastSet(for: id),
                               exercise: exercise.exercise,
                               units: units,
@@ -219,7 +226,13 @@ private struct ExerciseFocusPage: View {
 
                 Button {
                     let last = working.last
-                    exercise.sets.append(SessionSet(weight: last?.weight, reps: last?.reps ?? 10, isWarmup: false, isAMRAP: false))
+                    if isPerSide {
+                        for side in [Side.left, .right] {
+                            exercise.sets.append(SessionSet(weight: last?.weight, reps: last?.reps ?? 10, isWarmup: false, isAMRAP: false, side: side))
+                        }
+                    } else {
+                        exercise.sets.append(SessionSet(weight: last?.weight, reps: last?.reps ?? 10, isWarmup: false, isAMRAP: false))
+                    }
                 } label: {
                     Label("Add Set", systemImage: "plus").font(.subheadline.weight(.semibold))
                 }
@@ -242,6 +255,14 @@ private struct ExerciseFocusPage: View {
                     .accessibilityAddTraits(.isHeader)
                 Text(exercise.exercise.primary.map(\.displayName).joined(separator: " · "))
                     .font(.subheadline).foregroundStyle(Theme.muted)
+                if let info = exercise.program {
+                    Text([info.label, info.setsText, info.effortText].compactMap { $0 }.joined(separator: " · "))
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accent)
+                    Text("Rest \(info.restText)\(info.isOptional ? " · optional" : "")").font(.caption).foregroundStyle(Theme.muted)
+                    ForEach(info.notes, id: \.self) { note in
+                        Label(note, systemImage: "info.circle").font(.caption).foregroundStyle(Theme.muted)
+                    }
+                }
                 if let reason = exercise.reasons.dropFirst().first ?? exercise.reasons.first {
                     Text(reason).font(.caption).foregroundStyle(Theme.muted)
                 }
@@ -281,7 +302,10 @@ private struct ExerciseFocusPage: View {
         VStack(alignment: .leading, spacing: 16) {
             Label("All sets logged", systemImage: "checkmark.circle.fill")
                 .font(.headline).foregroundStyle(Theme.fresh)
-            if !exercise.exercise.isTimed {
+            if exercise.program?.isEccentric == true {
+                Text("Lowering reps only, so there's no RIR to rate. Progress comes from more controlled reps.")
+                    .font(.subheadline).foregroundStyle(Theme.muted)
+            } else if !exercise.exercise.isTimed {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("How many more reps could you have done?").font(.subheadline.weight(.semibold))
                     HStack(spacing: 8) {
@@ -321,7 +345,7 @@ private struct ExerciseFocusPage: View {
     private var setList: some View {
         VStack(spacing: 6) {
             ForEach(working) { set in
-                SetSummaryRow(set: set, label: "\(workingNumber(of: set.id))", last: lastSet(for: set.id),
+                SetSummaryRow(set: set, label: "\(set.side?.letter ?? "")\(workingNumber(of: set.id))", last: lastSet(for: set.id),
                               exercise: exercise.exercise, units: units, isActive: set.id == activeID) {
                     withAnimation(Motion.snappy) { editingID = set.id == activeID ? nil : set.id }
                 }
@@ -340,9 +364,17 @@ private struct ExerciseFocusPage: View {
         }
     }
 
+    private var isPerSide: Bool { exercise.program?.laterality.isPerSide == true }
+
+    /// Set number; for per-side work both sides of a round share it.
     private func workingNumber(of id: UUID) -> Int {
-        (working.firstIndex { $0.id == id } ?? 0) + 1
+        let i = working.firstIndex { $0.id == id } ?? 0
+        return isPerSide ? i / 2 + 1 : i + 1
     }
+
+    private var roundCount: Int { isPerSide ? (working.count + 1) / 2 : working.count }
+
+    private func isLastRound(_ id: UUID) -> Bool { workingNumber(of: id) == roundCount }
 
     private func lastSet(for id: UUID) -> LoggedSet? {
         guard let i = working.firstIndex(where: { $0.id == id }) else { return nil }
@@ -366,6 +398,10 @@ private struct SetEditor: View {
     @Binding var set: SessionSet
     let number: Int
     let total: Int
+    /// Program target, e.g. "8–12 reps · RIR 1".
+    var target: String? = nil
+    /// Shown on the last set only, e.g. "Lengthened partials on the last set".
+    var lastSetNote: String? = nil
     let last: LoggedSet?
     let exercise: Exercise
     let units: WeightUnits
@@ -374,16 +410,34 @@ private struct SetEditor: View {
     let onLog: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
+    private var heading: String {
+        if set.isAMRAP { return "SET \(number) · MAX EFFORT" }
+        let side = set.side.map { $0 == .left ? " · LEFT" : " · RIGHT" } ?? ""
+        return "SET \(number) OF \(total)\(side)"
+    }
+
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                Text(set.isAMRAP ? "SET \(number) · MAX EFFORT" : "SET \(number) OF \(total)")
+                Text(heading)
                     .font(.caption.weight(.heavy))
                     .foregroundStyle(set.isAMRAP ? Theme.accent : Theme.muted)
                 Spacer()
                 if let last {
                     Text("Last: \(lastText(last))").font(.caption.monospacedDigit()).foregroundStyle(Theme.muted)
                 }
+            }
+            if let target {
+                Text(target).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let lastSetNote {
+                Label(lastSetNote, systemImage: "flame.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.recovering)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Theme.recovering.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             if set.isAMRAP {
                 Text("As many good reps as you can on this set.").font(.caption).foregroundStyle(Theme.muted)

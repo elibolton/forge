@@ -15,6 +15,10 @@ struct TodayView: View {
     @State private var replacing: PlannedExercise?
     @State private var adding = false
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// The day the user chose a generated workout over their program.
+    @AppStorage("generatorDay") private var generatorDay = ""
+
+    private var todayKey: String { Date.now.formatted(.iso8601.year().month().day()) }
 
     private var planner: Planner { profile.planner(history: history.records, minutes: today?.minutes) }
     private var chosenMinutes: Int { today?.minutes ?? profile.plan.sessionMinutes }
@@ -23,12 +27,21 @@ struct TodayView: View {
     }
 
     var body: some View {
+        if profile.activeProgram != nil && generatorDay != todayKey {
+            ProgramTodayView(profile: profile) { generatorDay = todayKey }
+        } else {
+            generatorBody
+        }
+    }
+
+    private var generatorBody: some View {
         NavigationStack {
             ScrollView {
                 if let today {
                     let workout = today.workout
                     VStack(alignment: .leading, spacing: 20) {
                         if let done = trainedToday, !session.isActive { trainedCard(done) }
+                        programBanner
                         header(workout)
                         if today.basis != profile.planBasis { settingsChangedBanner }
                         shortSessionHint(workout)
@@ -77,6 +90,35 @@ struct TodayView: View {
     }
 
     // MARK: Sections
+
+    /// Back to the program after a generator day, or a finished program to restart.
+    @ViewBuilder private var programBanner: some View {
+        if profile.activeProgram != nil {
+            HStack {
+                Label("Using the generator today", systemImage: "wand.and.stars").font(.subheadline.weight(.semibold))
+                Spacer()
+                Button("Back to Program") { generatorDay = "" }
+                    .font(.subheadline.weight(.semibold))
+            }
+            .card(padding: 14)
+        } else if let progress = profile.programProgress, progress.isFinished, let program = progress.program {
+            NavigationLink {
+                ProgramDetailView(profile: profile, program: program)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.fresh).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(program.name) complete").font(.subheadline.bold())
+                        Text("Start it again or pick another program.").font(.caption).foregroundStyle(Theme.muted)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(Theme.muted)
+                }
+                .card(padding: 14)
+            }
+            .buttonStyle(.plain)
+        }
+    }
 
     private func trainedCard(_ log: WorkoutLog) -> some View {
         let sets = log.exercises.flatMap(\.workingSets).count

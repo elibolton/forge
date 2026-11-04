@@ -186,6 +186,9 @@ public struct Gym: Codable, Hashable, Identifiable, Sendable {
     }
 
     public static let commercial = Gym(name: "Commercial Gym", equipment: Set(Equipment.allCases))
+    /// Barbell, EZ bar, dumbbells, bench, rack, dip station and a lat pulldown / low row cable station.
+    public static let homeBarbell = Gym(name: "Home Gym", equipment: [.barbell, .ezBar, .dumbbell, .bench, .squatRack,
+                                                                       .dipStation, .cable, .latPulldown])
     public static let home = Gym(name: "Home", equipment: [.dumbbell, .bench, .pullUpBar, .resistanceBand, .kettlebell])
     public static let bodyweight = Gym(name: "Bodyweight", equipment: [])
 }
@@ -216,9 +219,11 @@ public struct LoggedSet: Codable, Hashable, Sendable {
     public var reps: Int
     public var rir: Int?
     public var isWarmup: Bool
+    /// Which side, for per-arm or per-leg work.
+    public var side: Side?
 
-    public init(weight: Double, reps: Int, rir: Int? = nil, isWarmup: Bool = false) {
-        self.weight = weight; self.reps = reps; self.rir = rir; self.isWarmup = isWarmup
+    public init(weight: Double, reps: Int, rir: Int? = nil, isWarmup: Bool = false, side: Side? = nil) {
+        self.weight = weight; self.reps = reps; self.rir = rir; self.isWarmup = isWarmup; self.side = side
     }
 }
 
@@ -227,9 +232,15 @@ public struct LoggedExercise: Codable, Hashable, Sendable {
     public var sets: [LoggedSet]
     /// What was prescribed, so progression can tell a hit from a miss.
     public var targetReps: Int?
+    /// Program slot this was logged against, with the range and RIR it prescribed.
+    public var slotID: String?
+    public var repRange: RepRange?
+    public var targetRIR: Int?
 
-    public init(exerciseID: String, sets: [LoggedSet], targetReps: Int? = nil) {
+    public init(exerciseID: String, sets: [LoggedSet], targetReps: Int? = nil,
+                slotID: String? = nil, repRange: RepRange? = nil, targetRIR: Int? = nil) {
         self.exerciseID = exerciseID; self.sets = sets; self.targetReps = targetReps
+        self.slotID = slotID; self.repRange = repRange; self.targetRIR = targetRIR
     }
 
     public var workingSets: [LoggedSet] { sets.filter { !$0.isWarmup && $0.reps > 0 } }
@@ -239,9 +250,11 @@ public struct WorkoutRecord: Codable, Sendable {
     public var date: Date
     public var focus: DayFocus?
     public var exercises: [LoggedExercise]
+    /// Set when the workout was a program day.
+    public var program: ProgramRef?
 
-    public init(date: Date, focus: DayFocus? = nil, exercises: [LoggedExercise]) {
-        self.date = date; self.focus = focus; self.exercises = exercises
+    public init(date: Date, focus: DayFocus? = nil, exercises: [LoggedExercise], program: ProgramRef? = nil) {
+        self.date = date; self.focus = focus; self.exercises = exercises; self.program = program
     }
 }
 
@@ -310,7 +323,7 @@ extension Gym {
 }
 
 extension LoggedSet {
-    private enum CodingKeys: String, CodingKey { case weight, reps, rir, isWarmup }
+    private enum CodingKeys: String, CodingKey { case weight, reps, rir, isWarmup, side }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -318,28 +331,33 @@ extension LoggedSet {
         reps = c.value(.reps, or: 0)
         rir = c.value(.rir, or: nil)
         isWarmup = c.value(.isWarmup, or: false)
+        side = c.value(.side, or: nil)
     }
 }
 
 extension LoggedExercise {
-    private enum CodingKeys: String, CodingKey { case exerciseID, sets, targetReps }
+    private enum CodingKeys: String, CodingKey { case exerciseID, sets, targetReps, slotID, repRange, targetRIR }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         exerciseID = try c.decode(String.self, forKey: .exerciseID) // meaningless without it
         sets = c.lossyArray(.sets)
         targetReps = c.value(.targetReps, or: nil)
+        slotID = c.value(.slotID, or: nil)
+        repRange = c.value(.repRange, or: nil)
+        targetRIR = c.value(.targetRIR, or: nil)
     }
 }
 
 extension WorkoutRecord {
-    private enum CodingKeys: String, CodingKey { case date, focus, exercises }
+    private enum CodingKeys: String, CodingKey { case date, focus, exercises, program }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         date = try c.decode(Date.self, forKey: .date)
         focus = c.value(.focus, or: nil)
         exercises = c.lossyArray(.exercises)
+        program = c.value(.program, or: nil)
     }
 }
 

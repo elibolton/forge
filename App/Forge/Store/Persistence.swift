@@ -16,6 +16,8 @@ final class Profile {
     var createdAt: Date
     /// User-made exercises. Has a default so existing stores migrate automatically.
     var customExercisesData: Data = Data()
+    /// The active program and where you are in it; empty when none. Defaulted so stores migrate.
+    var programData: Data = Data()
 
     init(plan: UserPlan, gyms: [Gym], usesPounds: Bool) {
         planData = JSON.encode(plan)
@@ -59,6 +61,24 @@ final class Profile {
         customExercises = list
     }
 
+    var programProgress: ProgramProgress? {
+        get { programData.isEmpty ? nil : JSON.decode(programData, label: "program") }
+        set { programData = newValue.map { JSON.encode($0) } ?? Data() }
+    }
+
+    /// The active program, unless it's finished.
+    var activeProgram: (program: WorkoutProgram, progress: ProgramProgress)? {
+        guard let progress = programProgress, !progress.isFinished, let program = progress.program else { return nil }
+        return (program, progress)
+    }
+
+    /// Marks a logged program day done and moves the program on.
+    func completeProgramDay(_ ref: ProgramRef) {
+        guard var progress = programProgress, progress.programID == ref.programID, let program = progress.program else { return }
+        progress.complete(ref.dayID, week: ref.week, in: program)
+        programProgress = progress
+    }
+
     var activeGym: Gym {
         gyms.first { $0.id == activeGymID } ?? gyms.first ?? .commercial
     }
@@ -79,12 +99,19 @@ final class WorkoutLog {
     var focusRaw: String?
     var durationSeconds: Int
     var exercisesData: Data
+    /// The program day this was, if any. Defaulted so stores migrate.
+    var programData: Data = Data()
 
-    init(date: Date, focus: DayFocus?, durationSeconds: Int, exercises: [LoggedExercise]) {
+    init(date: Date, focus: DayFocus?, durationSeconds: Int, exercises: [LoggedExercise], program: ProgramRef? = nil) {
         self.date = date
         focusRaw = focus?.rawValue
         self.durationSeconds = durationSeconds
         exercisesData = JSON.encode(exercises)
+        programData = program.map { JSON.encode($0) } ?? Data()
+    }
+
+    var program: ProgramRef? {
+        programData.isEmpty ? nil : JSON.decode(programData, label: "workout-program-\(Int(date.timeIntervalSince1970))")
     }
 
     var exercises: [LoggedExercise] {
@@ -94,7 +121,7 @@ final class WorkoutLog {
 
     var focus: DayFocus? { focusRaw.flatMap(DayFocus.init) }
 
-    var record: WorkoutRecord { WorkoutRecord(date: date, focus: focus, exercises: exercises) }
+    var record: WorkoutRecord { WorkoutRecord(date: date, focus: focus, exercises: exercises, program: program) }
 
     /// Total weight moved in working sets (kg).
     var volume: Double {

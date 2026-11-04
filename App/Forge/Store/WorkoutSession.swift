@@ -12,12 +12,15 @@ struct SessionSet: Codable, Identifiable, Hashable {
     var isWarmup: Bool
     var isAMRAP: Bool
     var done = false
+    /// For per-arm and per-leg work.
+    var side: Side?
 
-    init(weight: Double?, reps: Int, isWarmup: Bool, isAMRAP: Bool, done: Bool = false) {
+    init(weight: Double?, reps: Int, isWarmup: Bool, isAMRAP: Bool, done: Bool = false, side: Side? = nil) {
         self.weight = weight; self.reps = reps; self.isWarmup = isWarmup; self.isAMRAP = isAMRAP; self.done = done
+        self.side = side
     }
 
-    private enum CodingKeys: String, CodingKey { case id, weight, reps, isWarmup, isAMRAP, done }
+    private enum CodingKeys: String, CodingKey { case id, weight, reps, isWarmup, isAMRAP, done, side }
 
     // Defaults for every field so an in-progress workout survives app updates.
     init(from decoder: Decoder) throws {
@@ -28,7 +31,30 @@ struct SessionSet: Codable, Identifiable, Hashable {
         isWarmup = c.value(.isWarmup, or: false)
         isAMRAP = c.value(.isAMRAP, or: false)
         done = c.value(.done, or: false)
+        side = c.value(.side, or: nil)
     }
+}
+
+/// The program prescription behind a session exercise.
+struct ProgramSlotInfo: Codable, Hashable {
+    var slotID: String
+    var label: String?
+    var range: RepRange
+    var effort: Effort
+    var setsText: String
+    var effortText: String
+    var restText: String
+    var notes: [String]
+    var lastSetNote: String?
+    var laterality: Laterality
+    var sideRest: Int?
+    var supersetGroup: String?
+    /// Set on the first exercise of a superset pair.
+    var supersetRestBetween: Int?
+    var isOptional: Bool
+    var suggestionReason: String?
+
+    var isEccentric: Bool { effort == .eccentricOnly }
 }
 
 struct SessionExercise: Codable, Identifiable, Hashable {
@@ -40,6 +66,7 @@ struct SessionExercise: Codable, Identifiable, Hashable {
     var targetReps: Int?
     var rir: Int?
     var reasons: [String]
+    var program: ProgramSlotInfo?
 
     var exercise: Exercise { Catalog.exercise(exerciseID) }
     /// All working sets done; skipped warm-ups don't count against it.
@@ -57,7 +84,13 @@ struct SessionExercise: Codable, Identifiable, Hashable {
         reasons = planned.reasons
     }
 
-    private enum CodingKeys: String, CodingKey { case id, exerciseID, sets, restSeconds, targetRIR, targetReps, rir, reasons }
+    init(exerciseID: String, sets: [SessionSet], restSeconds: Int, targetRIR: Int, targetReps: Int?,
+         reasons: [String], program: ProgramSlotInfo?) {
+        self.exerciseID = exerciseID; self.sets = sets; self.restSeconds = restSeconds; self.targetRIR = targetRIR
+        self.targetReps = targetReps; self.reasons = reasons; self.program = program
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, exerciseID, sets, restSeconds, targetRIR, targetReps, rir, reasons, program }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -69,6 +102,7 @@ struct SessionExercise: Codable, Identifiable, Hashable {
         targetReps = c.value(.targetReps, or: nil)
         rir = c.value(.rir, or: nil)
         reasons = c.value(.reasons, or: [])
+        program = c.value(.program, or: nil)
     }
 }
 
@@ -78,12 +112,16 @@ struct SessionState: Codable {
     var exercises: [SessionExercise]
     /// The exercise shown in the logger.
     var currentIndex = 0
+    /// Set when this workout is a program day.
+    var program: ProgramRef?
+    /// Shown as the logger's title for program days, e.g. "Week 2 · Pull".
+    var title: String?
 
-    init(startedAt: Date, focus: DayFocus?, exercises: [SessionExercise]) {
-        self.startedAt = startedAt; self.focus = focus; self.exercises = exercises
+    init(startedAt: Date, focus: DayFocus?, exercises: [SessionExercise], program: ProgramRef? = nil, title: String? = nil) {
+        self.startedAt = startedAt; self.focus = focus; self.exercises = exercises; self.program = program; self.title = title
     }
 
-    private enum CodingKeys: String, CodingKey { case startedAt, focus, exercises, currentIndex }
+    private enum CodingKeys: String, CodingKey { case startedAt, focus, exercises, currentIndex, program, title }
 
     // Fields added later decode with defaults so an in-progress workout survives app updates.
     init(from decoder: Decoder) throws {
@@ -92,6 +130,8 @@ struct SessionState: Codable {
         focus = c.value(.focus, or: nil)
         exercises = c.lossyArray(.exercises)
         currentIndex = c.value(.currentIndex, or: 0)
+        program = c.value(.program, or: nil)
+        title = c.value(.title, or: nil)
     }
 
     /// Working sets not yet logged.
@@ -140,6 +180,13 @@ final class WorkoutSession {
         isExpanded = true
     }
 
+    /// Starts a prepared session (a program day).
+    func start(_ prepared: SessionState) {
+        requestNotificationPermission()
+        state = prepared
+        isExpanded = true
+    }
+
     /// Brings back a discarded session (Undo).
     func restore(_ snapshot: SessionState) {
         state = snapshot
@@ -159,7 +206,25 @@ final class WorkoutSession {
             }
         }
         state?.exercises[e] = exercise
-        if !wasDone && !exercise.sets[s].isWarmup { startRest(exercise.restSeconds) }
+        guard !wasDone && !exercise.sets[s].isWarmup else { return }
+        guard let info = exercise.program else { return startRest(exercise.restSeconds) }
+
+        // First side of a per-side set: short (or no) rest, then the other side.
+        if info.laterality.isPerSide, exercise.sets[s].side == .left,
+           exercise.sets.contains(where: { $0.side == .right && !$0.done && !$0.isWarmup }) {
+            if let side = info.sideRest, side > 0 { startRest(side) }
+            return
+        }
+        // Supersets: alternate between the pair, short rest in between, full rest after the pair.
+        if let group = info.supersetGroup, let exercises = state?.exercises,
+           let partner = exercises.indices.first(where: { $0 != e && exercises[$0].program?.supersetGroup == group }) {
+            let isFirst = info.supersetRestBetween != nil
+            startRest(isFirst ? (info.supersetRestBetween ?? exercise.restSeconds) : exercise.restSeconds)
+            let partnerPending = exercises[partner].sets.contains { !$0.isWarmup && !$0.done }
+            if partnerPending { state?.currentIndex = partner }
+            return
+        }
+        startRest(exercise.restSeconds)
     }
 
     /// Logs every remaining working set as planned (from the finish review).
@@ -232,9 +297,12 @@ final class WorkoutSession {
         guard let state else { return [] }
         let logged: [LoggedExercise] = state.exercises.compactMap { ex in
             let sets = ex.sets.filter(\.done).map { set in
-                LoggedSet(weight: set.weight ?? 0, reps: set.reps, rir: set.isWarmup ? nil : ex.rir, isWarmup: set.isWarmup)
+                LoggedSet(weight: set.weight ?? 0, reps: set.reps, rir: set.isWarmup || ex.program?.isEccentric == true ? nil : ex.rir,
+                          isWarmup: set.isWarmup, side: set.side)
             }
-            return sets.isEmpty ? nil : LoggedExercise(exerciseID: ex.exerciseID, sets: sets, targetReps: ex.targetReps)
+            return sets.isEmpty ? nil : LoggedExercise(exerciseID: ex.exerciseID, sets: sets, targetReps: ex.targetReps,
+                                                       slotID: ex.program?.slotID, repRange: ex.program?.range,
+                                                       targetRIR: ex.program?.effort.rir?.low)
         }
 
         var records: [PersonalRecord] = []
@@ -248,7 +316,8 @@ final class WorkoutSession {
 
         if !logged.isEmpty {
             let duration = Int(Date.now.timeIntervalSince(state.startedAt))
-            context.insert(WorkoutLog(date: state.startedAt, focus: state.focus, durationSeconds: duration, exercises: logged))
+            context.insert(WorkoutLog(date: state.startedAt, focus: state.focus, durationSeconds: duration, exercises: logged,
+                                      program: state.program))
             try? context.save()
         }
         discard()

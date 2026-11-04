@@ -187,6 +187,8 @@ struct DraftExercise: Identifiable, Hashable {
     let exerciseID: String
     let targetReps: Int?
     var sets: [DraftSet]
+    /// Everything else the log carried (program slot, range, RIR target), kept through edits.
+    private var template: LoggedExercise?
 
     var exercise: Exercise { Catalog.exercise(exerciseID) }
 
@@ -196,11 +198,15 @@ struct DraftExercise: Identifiable, Hashable {
 
     init(_ logged: LoggedExercise) {
         self.init(id: UUID(), exerciseID: logged.exerciseID, targetReps: logged.targetReps, sets: logged.sets.map(DraftSet.init))
+        template = logged
     }
 
     /// Nil once every set is gone, so an emptied exercise isn't saved.
     var logged: LoggedExercise? {
-        sets.isEmpty ? nil : LoggedExercise(exerciseID: exerciseID, sets: sets.map(\.set), targetReps: targetReps)
+        guard !sets.isEmpty else { return nil }
+        var out = template ?? LoggedExercise(exerciseID: exerciseID, sets: [], targetReps: targetReps)
+        out.sets = sets.map(\.set)
+        return out
     }
 }
 

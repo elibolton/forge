@@ -170,11 +170,11 @@ enum WorkoutSummary {
     /// Deletes with an Undo banner that restores an identical workout.
     @MainActor
     static func delete(_ log: WorkoutLog, context: ModelContext, toasts: ToastCenter) {
-        let date = log.date, focus = log.focus, duration = log.durationSeconds, exercises = log.exercises
+        let date = log.date, focus = log.focus, duration = log.durationSeconds, exercises = log.exercises, program = log.program
         context.delete(log)
         try? context.save()
         toasts.show("Workout deleted") {
-            context.insert(WorkoutLog(date: date, focus: focus, durationSeconds: duration, exercises: exercises))
+            context.insert(WorkoutLog(date: date, focus: focus, durationSeconds: duration, exercises: exercises, program: program))
             try? context.save()
         }
     }

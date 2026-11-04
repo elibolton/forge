@@ -31,6 +31,14 @@ struct PlanView: View {
                 Stepper("Session: \(profile.plan.sessionMinutes) min", value: $profile.plan.sessionMinutes, in: 15...90, step: 5)
             }
 
+            Section("Program") {
+                NavigationLink {
+                    ProgramListView(profile: profile)
+                } label: {
+                    LabeledContent("Program", value: programStatus)
+                }
+            }
+
             Section("Gyms") {
                 Picker("Training At", selection: $profile.activeGymID) {
                     ForEach(profile.gyms) { Text($0.name).tag($0.id) }
@@ -45,6 +53,7 @@ struct PlanView: View {
                 .onDelete(perform: deleteGyms)
                 Menu("Add Gym") {
                     Button("Full Gym") { addGym(.commercial, name: "New Gym") }
+                    Button("Home Gym (Barbell + Cables)") { addGym(.homeBarbell, name: "Home Gym") }
                     Button("Home Gym") { addGym(.home, name: "Home") }
                     Button("No Equipment") { addGym(.bodyweight, name: "Travel") }
                 }
@@ -91,6 +100,11 @@ struct PlanView: View {
         }
         .navigationTitle("You")
         .sheet(isPresented: $importing) { ImportHistoryView(profile: profile) }
+    }
+
+    private var programStatus: String {
+        guard let progress = profile.programProgress, let program = progress.program else { return "None" }
+        return progress.isFinished ? "Finished" : "Week \(progress.week) of \(program.weeks)"
     }
 
     private func deleteGyms(_ offsets: IndexSet) {
