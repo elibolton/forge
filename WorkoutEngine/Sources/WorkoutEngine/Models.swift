@@ -64,6 +64,8 @@ public enum MovementPattern: String, Codable, Sendable {
     case squat, hinge, lunge
     case horizontalPush, verticalPush, horizontalPull, verticalPull
     case isolation, core, carry
+    /// Stretches and warm-up drills: never auto-planned and not counted toward fatigue.
+    case mobility
 }
 
 public enum Level: Int, Codable, Comparable, Sendable {

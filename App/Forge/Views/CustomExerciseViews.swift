@@ -118,6 +118,7 @@ struct CustomExerciseEditor: View {
         (.lunge, "Lunge / single leg"),
         (.core, "Core"),
         (.carry, "Carry"),
+        (.mobility, "Stretch / warm-up"),
     ]
 
     private func summary(_ muscles: Set<Muscle>, empty: String) -> String {
@@ -126,7 +127,7 @@ struct CustomExerciseEditor: View {
 
     private func save() {
         let orderedPrimary = Muscle.allCases.filter(primary.contains)
-        let isCompound = ![.isolation, .core].contains(movement)
+        let isCompound = ![.isolation, .core, .mobility].contains(movement)
         let starter = tracking == .weight
             ? (existing.flatMap { $0.isBodyweight ? nil : $0.starterOneRM }
                ?? Catalog.suggestedStarterOneRM(primary: orderedPrimary, equipment: equipment, isCompound: isCompound))

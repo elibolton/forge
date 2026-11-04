@@ -114,6 +114,35 @@ struct NameMatcher {
         "face pull": "face-pull", "skullcrusher": "skull-crusher", "pushup": "push-up", "push up": "push-up",
     ]
 
+    /// Fitbod's names, matched exactly before any fuzzy matching. Fitbod reuses a lot of words across
+    /// different moves ("Calf Raise" is bodyweight, "Split Squat" is barbell), so guessing gets these wrong.
+    static let fitbod: [String: String] = [
+        "air squats": "air-squat", "alternating dumbbell bench press": "db-bench", "arnold dumbbell press": "arnold-press",
+        "back squat": "bb-squat", "barbell bicep drag curl": "bb-drag-curl", "barbell shoulder press": "bb-ohp",
+        "bent over barbell row": "bb-row", "bulgarian split squat": "bulgarian-split-squat", "butt kick": "butt-kick",
+        "cable row": "cable-row", "cable rope tricep extension": "rope-tricep-ext", "calf raise": "bw-calf-raise",
+        "chest dip": "dip", "chest doorway stretch": "doorway-chest-stretch", "clam": "clamshell",
+        "concentration curl": "concentration-curl", "cross body hammer curls": "cross-body-hammer-curl",
+        "dumbbell back fly": "db-rear-delt-fly", "dumbbell bent over reverse fly": "db-rear-delt-fly",
+        "dumbbell rear delt raise": "db-rear-delt-fly", "dumbbell bicep curl": "db-curl", "dumbbell kickbacks": "db-kickback",
+        "dumbbell row": "db-row", "dumbbell skullcrusher": "db-skull-crusher", "dumbbell squat": "db-squat",
+        "dumbbell stiff legged deadlift": "db-stiff-leg-deadlift", "dumbbell tricep extension": "overhead-tricep-ext",
+        "front plate raise": "plate-front-raise", "handle band bent over row": "band-row", "handle band bicep curl": "band-curl",
+        "handle band pec fly": "band-chest-fly", "handle band squat": "band-squat", "handle band tricep extension": "band-tricep-ext",
+        "high knee": "high-knee", "hip hinge": "hip-hinge-drill", "hip thrust": "bw-hip-thrust",
+        "incline dumbbell curl": "incline-db-curl", "incline dumbbell row": "incline-db-row",
+        "leaning dumbbelllateral raise": "leaning-db-lateral-raise", "leg raise": "leg-raise", "lunge": "bw-lunge",
+        "prone hip circles forward": "prone-hip-circle", "rack pulls": "rack-pull",
+        "reverse grip barbell bent over row": "bb-reverse-row", "reverse grip pull down": "reverse-grip-pulldown",
+        "seated dumbbell curl": "seated-db-curl", "shin box hip flexor": "shin-box",
+        "side laterals to front raise": "lateral-to-front-raise", "side leg raises": "side-leg-raise",
+        "single leg standing calf raise": "single-leg-calf-raise", "split squat": "split-squat",
+        "standing barbell calf raise": "bb-calf-raise", "standing dumbbell calf raise": "db-calf-raise",
+        "walking lunge": "walking-lunge", "wide grip lat pulldown": "lat-pulldown",
+        // Cardio isn't logged as sets; empty keeps these from fuzzy-matching "Walking Lunge".
+        "walking": "", "hiking": "",
+    ]
+
     static let synonyms: [String: String] = [
         "db": "dumbbell", "dumbbells": "dumbbell", "bb": "barbell", "kb": "kettlebell", "ez": "ez",
         "triceps": "tricep", "rows": "row", "presses": "press", "curls": "curl", "raises": "raise",
@@ -132,6 +161,7 @@ struct NameMatcher {
     func match(_ name: String) -> Exercise? {
         let words = Self.tokens(name)
         let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        if let id = Self.fitbod[name.lowercased().trimmingCharacters(in: .whitespaces)] { return byID[id] }
         // "Bench Press (Barbell)" → "bench press" alias when the equipment agrees.
         let bare = words.subtracting(Self.equipmentWords).sorted().joined(separator: " ")
         for (alias, id) in Self.aliases where Self.tokens(alias).sorted().joined(separator: " ") == bare {

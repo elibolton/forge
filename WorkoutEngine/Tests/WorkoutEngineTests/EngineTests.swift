@@ -198,7 +198,7 @@ extension EngineTests {
         2026-10-01 18:09:00 +0000,Barbell Bench Press,8,70,0,0,0,0,false,,1
         2026-10-01 18:20:00 +0000,Dumbbell Fly,12,14,0,0,0,0,false,,2
         2026-10-03 18:00:00 +0000,Plank,0,0,60,0,0,0,false,,1
-        2026-10-03 18:10:00 +0000,Zercher Good Morning,5,60,0,0,0,0,false,,1
+        2026-10-03 18:10:00 +0000,Zercher Carry,5,60,0,0,0,0,false,,1
         """
         let result = try HistoryImport.parse(csv, defaultPounds: true)
         #expect(result.workouts.count == 2)
@@ -208,7 +208,7 @@ extension EngineTests {
         #expect(bench.workingSets.first?.weight == 70)
         #expect(result.workouts[0].exercises.contains { $0.exerciseID == "db-fly" })
         #expect(result.workouts[1].exercises.first?.sets.first?.reps == 60)
-        #expect(result.unmatched["Zercher Good Morning"] == 1)
+        #expect(result.unmatched["Zercher Carry"] == 1)
     }
 
     @Test func readsStrongStyleExportInPounds() throws {
@@ -240,6 +240,27 @@ extension EngineTests {
         #expect(m.match("Bench Press (Dumbbell)")?.id == "db-bench")
         #expect(m.match("Bicep Curl (Cable)")?.id == "cable-curl")
         #expect(m.match("Hammer Curl (Dumbbell)")?.id == "db-hammer-curl")
+    }
+
+    @Test func fitbodNamesMatchExactly() {
+        let m = NameMatcher(catalog: Catalog.all)
+        #expect(m.match("Air Squats")?.id == "air-squat")
+        #expect(m.match("Concentration Curl")?.id == "concentration-curl")
+        #expect(m.match("Split Squat")?.id == "split-squat")
+        #expect(m.match("Calf Raise")?.id == "bw-calf-raise")
+        #expect(m.match("Prone Hip Circles Forward")?.id == "prone-hip-circle")
+        #expect(m.match("Walking") == nil)
+    }
+
+    @Test func mobilityIsNeverPlannedOrCountedAsFatigue() {
+        let now = Date()
+        let stretch = LoggedExercise(exerciseID: "tricep-stretch", sets: [LoggedSet(weight: 0, reps: 30, rir: nil, isWarmup: false)])
+        let recovery = Recovery.compute(history: [WorkoutRecord(date: now, focus: nil, exercises: [stretch])], now: now)
+        #expect(recovery[.triceps] == 1)
+        for focus in [DayFocus.push, .pull, .legs, .fullBody] {
+            let w = Planner(plan: UserPlan(), gym: .commercial, history: []).generate(now: now, seed: 1, focus: focus)
+            #expect(!w.exercises.contains { $0.exercise.pattern == .mobility })
+        }
     }
 }
 }
@@ -349,12 +370,12 @@ extension EngineTests {
         let csv = """
         Date,Exercise,Reps,Weight(kg),isWarmup
         2026-10-01 18:00:00 +0000,Landmine Press,8,30,false
-        2026-10-01 18:05:00 +0000,Zercher Good Morning,5,60,false
+        2026-10-01 18:05:00 +0000,Zercher Carry,5,60,false
         """
         let auto = try HistoryImport.parse(csv, defaultPounds: false)
         #expect(auto.workouts[0].exercises.map(\.exerciseID) == ["custom-landmine-press"])
-        #expect(auto.unmatched["Zercher Good Morning"] == 1)
-        let manual = try HistoryImport.parse(csv, defaultPounds: false, manualMatches: ["Zercher Good Morning": "bb-rdl"])
+        #expect(auto.unmatched["Zercher Carry"] == 1)
+        let manual = try HistoryImport.parse(csv, defaultPounds: false, manualMatches: ["Zercher Carry": "bb-rdl"])
         #expect(manual.unmatched.isEmpty)
         #expect(manual.workouts[0].exercises.map(\.exerciseID).contains("bb-rdl"))
     }

@@ -65,7 +65,7 @@ public struct Planner {
         }
 
         var rng = SeededRandom(seed: seed ?? UInt64(Calendar.current.ordinality(of: .day, in: .era, for: now) ?? 0))
-        let eligible = catalog.filter(isEligible)
+        let eligible = catalog.filter { isEligible($0) && $0.pattern != .mobility }
         var chosen: [PlannedExercise] = []
         var plannedSets: [Muscle: Double] = [:]
         var usedPatterns: Set<MovementPattern> = []
@@ -126,6 +126,8 @@ public struct Planner {
     public func alternatives(to e: Exercise, excluding: Set<String> = []) -> [Exercise] {
         catalog
             .filter { $0.id != e.id && !excluding.contains($0.id) && isEligible($0) && !Set($0.primary).isDisjoint(with: e.primary) }
+            // Don't offer a stretch as a swap for a lift, or the other way round.
+            .filter { ($0.pattern == .mobility) == (e.pattern == .mobility) }
             .sorted { lhs, rhs in
                 func match(_ x: Exercise) -> Int {
                     (x.pattern == e.pattern ? 2 : 0) + (x.isCompound == e.isCompound ? 1 : 0)
@@ -192,7 +194,7 @@ public struct Planner {
         var sets: [Muscle: Double] = [:]
         for record in history where now.timeIntervalSince(record.date) < 7 * 86_400 {
             for logged in record.exercises {
-                guard let e = byID[logged.exerciseID] else { continue }
+                guard let e = byID[logged.exerciseID], e.pattern != .mobility else { continue }
                 let n = Double(logged.workingSets.count)
                 for m in e.primary { sets[m, default: 0] += n }
                 for m in e.secondary { sets[m, default: 0] += n * 0.5 }

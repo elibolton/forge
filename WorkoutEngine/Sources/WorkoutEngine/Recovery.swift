@@ -28,7 +28,7 @@ public enum Recovery {
         for record in history {
             var doses: [Muscle: Double] = [:]
             for logged in record.exercises {
-                guard let exercise = catalog[logged.exerciseID] else { continue }
+                guard let exercise = catalog[logged.exerciseID], exercise.pattern != .mobility else { continue }
                 for set in logged.workingSets {
                     let dose = setDose * effortFactor(rir: set.rir)
                     for m in exercise.primary { doses[m, default: 0] += dose }

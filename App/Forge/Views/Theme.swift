@@ -126,6 +126,7 @@ struct ExerciseThumb: View {
         case .isolation: exercise.equipment.contains(.cable) ? "cable.connector" : "dumbbell.fill"
         case .core: "figure.core.training"
         case .carry: "figure.walk"
+        case .mobility: "figure.flexibility"
         }
     }
 
