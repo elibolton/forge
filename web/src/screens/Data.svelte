@@ -6,7 +6,7 @@
   import CustomExerciseEditor from '../components/CustomExerciseEditor.svelte';
   import ExercisePicker from '../components/ExercisePicker.svelte';
   import { fmtDate } from '../lib/logs';
-  import { app } from '../lib/store.svelte';
+  import { type Backup, app, readBackup } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { dayKey } from '../lib/units';
   import { exportBackup, lastBackupText } from '../lib/backup';
@@ -59,13 +59,36 @@
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    if (!confirm('Replace everything on this device with this backup? Your current workouts and settings will be overwritten.')) return;
+    let backup: Backup;
     try {
-      app.restore(await file.text());
-      toasts.show(`Restored ${app.logs.length} workouts`);
+      backup = readBackup(await file.text());
     } catch (err) {
       toasts.show((err as Error).message || "Couldn't read that backup");
+      return;
     }
+    if (!confirm(restoreQuestion(backup))) return;
+    app.restore(backup);
+    toasts.show(`Restored ${app.logs.length} workouts`);
+  }
+
+  /** What restoring would replace: the backup's counts against this device's, with a warning for anything it empties. */
+  function restoreQuestion(b: Backup): string {
+    const rows: [string, number, number][] = [
+      ['Workouts', b.logs.length, app.logs.length],
+      ['Activities', b.collections.activities.length, app.activities.length],
+      ['Weigh-ins', b.collections.bodyweights.length, app.bodyweights.length],
+      ['Saved workouts', b.collections.templates.length, app.templates.length],
+    ];
+    const lines = rows.map(([name, backup, device]) => `${name}: ${backup} in backup, ${device} on this device`);
+    const emptied = rows.filter(([, backup, device]) => backup === 0 && device > 0).map(([name, , device]) => `${device} ${name.toLowerCase()}`);
+    return [
+      'Replace everything on this device with this backup?',
+      '',
+      ...lines,
+      ...(emptied.length ? ['', `The backup has none of these, so restoring deletes: ${emptied.join(', ')}.`] : []),
+      '',
+      'Your current workouts and settings will be overwritten.',
+    ].join('\n');
   }
 
   function erase() {
