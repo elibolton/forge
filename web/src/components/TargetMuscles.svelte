@@ -56,5 +56,5 @@
   .meter { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
   .meter b { display: block; height: 100%; border-radius: 2px; }
   .pct-v { color: var(--text-2); }
-  .more { margin-top: 14px; color: var(--text-2); font-weight: 600; }
+  .more { margin-top: 2px; min-height: 44px; color: var(--text-2); font-weight: 600; }
 </style>

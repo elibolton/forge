@@ -66,8 +66,8 @@
   .stat + .stat { padding-left: 14px; border-left: 1px solid var(--hairline); }
   .value { font-size: 1.6rem; line-height: 1; }
   .stat .eyebrow { font-stretch: 100%; letter-spacing: 0.08em; font-size: 0.62rem; }
-  .controls { display: flex; gap: 8px; overflow-x: auto; margin: 0 -20px; padding: 0 20px; scrollbar-width: none; }
-  .controls::-webkit-scrollbar { display: none; }
+  /* Wraps rather than scrolls sideways: at phone width a scrolling row cut the gym chip off mid-word. */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; }
   .start { margin-top: 2px; }
   .play { width: 28px; height: 28px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); display: grid; place-items: center; }
 </style>

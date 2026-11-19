@@ -20,8 +20,9 @@
       <div class="card stack prs" style="width:100%;text-align:left;--gap:10px">
         <div class="row bold" style="--gap:8px;color:var(--recovering)"><Trophy size={18} /> New personal records</div>
         {#each records as r, i (i)}
-          <div class="row between sub"><span>{r.exercise.name}</span><span class="muted">{app.units.format(r.oneRM)} est. 1RM</span></div>
+          <div class="row between sub"><span>{r.exercise.name}</span><span class="muted">{app.units.estimate(r.oneRM)} est. 1RM</span></div>
         {/each}
+        <p class="caption muted">Est. 1RM is the most you could lift for one rep, worked out from your weight and reps.</p>
       </div>
     {/if}
     <button class="btn primary block big" onclick={close}>Done</button>

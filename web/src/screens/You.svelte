@@ -108,6 +108,7 @@
         </div>
       </div>
     </div>
+    <div class="foot">Generated workouts run in blocks: a few weeks that slowly get harder, then a lighter deload week so you recover and come back stronger. Today shows which week you're in.</div>
   </div>
 
   <div class="section">
@@ -125,10 +126,13 @@
       </label>
       {#each p.gyms as g (g.id)}
         <div class="item" style="padding-right:4px">
-          <button class="row grow" onclick={() => nav.push({ name: 'gym', id: g.id })}>
-            <span class="grow" style="text-align:left">{g.name}</span><span class="muted">{g.equipment.length} items</span><ChevronRight size={16} color="var(--muted)" />
+          <button class="row grow gym-open" onclick={() => nav.push({ name: 'gym', id: g.id })}>
+            <span class="grow" style="text-align:left">{g.name}</span><span class="muted">{count(g.equipment.length, 'item')}</span><ChevronRight size={16} color="var(--muted)" />
           </button>
-          <button class="icon-btn" style="color:var(--fatigued)" aria-label="Delete {g.name}" onclick={() => deleteGym(g.id)}><Trash2 size={18} /></button>
+          <!-- You always keep one gym, so the last one has nothing to delete. -->
+          {#if p.gyms.length > 1}
+            <button class="icon-btn" style="color:var(--fatigued)" aria-label="Delete {g.name}" onclick={() => deleteGym(g.id)}><Trash2 size={18} /></button>
+          {/if}
         </div>
       {/each}
       <ActionMenu label="Add Gym" class="item link" items={[
@@ -177,7 +181,10 @@
   .facts div + div { padding-left: 12px; border-left: 1px solid var(--hairline); }
   .facts .num { font-size: 1.2rem; }
   .facts .eyebrow { font-stretch: 100%; letter-spacing: 0.08em; font-size: 0.6rem; }
-  .item select { width: auto; margin-left: auto; min-height: 0; padding: 4px 8px; background: transparent; border: 0; color: var(--text-2); text-align: right; }
+  .item select { width: auto; margin: -11px 0 -11px auto; align-self: stretch; min-height: 0; padding: 4px 24px 4px 8px; background-color: transparent; background-position: right 2px center;
+    border: 0; color: var(--text-2); text-align: right; }
+  /* The whole row opens the gym, not just its text line. */
+  .gym-open { align-self: stretch; margin: -11px 0; }
 </style>
 
 {#if pickingTemplate}<TemplatePicker onclose={() => (pickingTemplate = false)} />{/if}

@@ -10,6 +10,7 @@
   import { deleteLog, fmtDate, logTitle } from '../lib/logs';
   import { nav } from '../lib/nav.svelte';
   import { app, logVolume } from '../lib/store.svelte';
+  import { durationText } from '../lib/units';
 
   /** A saved workout. Edit opens a draft editor. */
   let { id }: { id: string } = $props();
@@ -34,7 +35,7 @@
   {#if log}
     <div class="list" style="margin-top:12px">
       <div class="item">Date <span class="value">{fmtDate(log.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}, {new Date(log.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span></div>
-      {#if log.durationSeconds > 0}<div class="item">Duration <span class="value">{Math.max(1, Math.floor(log.durationSeconds / 60))} min</span></div>{/if}
+      {#if log.durationSeconds > 0}<div class="item">Duration <span class="value">{durationText(log.durationSeconds)}</span></div>{/if}
       {#if logVolume(log) > 0}<div class="item">Volume <span class="value">{app.units.format(logVolume(log))}</span></div>{/if}
     </div>
     {#each log.exercises as logged, i (i)}

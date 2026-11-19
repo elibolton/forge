@@ -161,7 +161,7 @@
 
   {#if warmups.length}
     <div class="warm">
-      <button class="row" style="--gap:10px;width:100%" aria-expanded={showWarmups} onclick={() => (showWarmups = !showWarmups)}>
+      <button class="row warm-toggle" style="--gap:10px;width:100%" aria-expanded={showWarmups} onclick={() => (showWarmups = !showWarmups)}>
         <span class="flame"><Flame size={15} /></span>
         <span class="sub semibold">Warm-up</span>
         <span class="caption faint grow one-line" style="text-align:left">{warmups.map((w) => units.format(w.weight)).join(' → ')}</span>
@@ -330,6 +330,7 @@
     background: var(--ember-soft); border: 1px solid rgba(255, 106, 46, 0.3); }
   .pair b { color: var(--text); font-weight: 650; }
   .small-chip { padding: 5px 10px; font-size: 0.76rem; }
+  .warm-toggle { min-height: 44px; margin: -8px 0; }
   .warm { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--hairline); }
   .flame { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: rgba(255, 187, 69, 0.14); color: var(--recovering); }
   .focus { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: var(--r-xl); overflow: hidden;

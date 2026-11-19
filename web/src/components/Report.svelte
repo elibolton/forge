@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ArrowDownRight, ArrowUpRight } from '@lucide/svelte';
-  import { type Period, periodReport } from '../lib/report';
+  import { type Period, change, periodReport } from '../lib/report';
   import { app } from '../lib/store.svelte';
   import { fmtNum } from '../lib/units';
 
@@ -30,14 +30,15 @@
   </div>
   <div class="grid">
     {#each metrics as m (m.label)}
-      {@const diff = m.now - m.before}
+      {@const c = change(m.now, m.before)}
       <div class="metric">
         <span class="eyebrow">{m.label}</span>
         <span class="num value">{m.now ? m.show(m.now) : '–'}</span>
-        <span class="caption delta" class:up={diff > 0} class:down={diff < 0}>
-          {#if m.before === 0 && m.now === 0}No data yet
-          {:else if diff > 0}<ArrowUpRight size={13} /> {m.show(diff)} vs {last}
-          {:else if diff < 0}<ArrowDownRight size={13} /> {m.show(-diff)} vs {last}
+        <span class="caption delta" class:up={c.kind === 'up'} class:down={c.kind === 'down'}>
+          {#if c.kind === 'empty'}No data yet
+          {:else if c.kind === 'new'}None {last}
+          {:else if c.kind === 'up'}<ArrowUpRight size={13} /> {m.show(c.by)} vs {last}
+          {:else if c.kind === 'down'}<ArrowDownRight size={13} /> {m.show(c.by)} vs {last}
           {:else}Same as {last}{/if}
         </span>
       </div>

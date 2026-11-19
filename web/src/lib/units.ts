@@ -23,6 +23,12 @@ export class WeightUnits {
     // Loads to the hundredth (61.25 kg); totals in the thousands (volume) to the whole unit.
     return `${fmtNum(v, v >= 1000 ? 0 : 2)} ${this.symbol}`;
   }
+
+  /** An estimate (e1RM), to one decimal: "164.67 lb" claims a precision a formula doesn't have. */
+  estimate(kg: number | null | undefined): string {
+    if (!kg || kg <= 0) return '–';
+    return `${fmtNum(this.display(kg), 1)} ${this.symbol}`;
+  }
 }
 
 /** Up to one decimal, no trailing zero. */
@@ -30,6 +36,12 @@ export function fmtNum(v: number, decimals = 1): string {
   const f = 10 ** decimals;
   const r = Math.round(v * f) / f;
   return Number.isInteger(r) ? r.toLocaleString() : r.toLocaleString(undefined, { maximumFractionDigits: decimals });
+}
+
+/** A workout's length in whole minutes, or "<1 min" for one under a minute (never "0 min"). */
+export function durationText(seconds: number): string {
+  const s = Math.max(0, seconds);
+  return s < 60 ? '<1 min' : `${Math.floor(s / 60)} min`;
 }
 
 /** m:ss, or h:mm:ss from an hour up. */

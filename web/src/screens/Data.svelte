@@ -6,6 +6,7 @@
   import CustomExerciseEditor from '../components/CustomExerciseEditor.svelte';
   import ExercisePicker from '../components/ExercisePicker.svelte';
   import { fmtDate } from '../lib/logs';
+  import { count } from '../lib/labels';
   import { type Backup, app, readBackup } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { exportBackup, lastBackupText } from '../lib/backup';
@@ -66,7 +67,7 @@
     }
     if (!confirm(restoreQuestion(backup))) return;
     app.restore(backup);
-    toasts.show(`Restored ${app.logs.length} workouts`);
+    toasts.show(`Restored ${count(app.logs.length, 'workout')}`);
   }
 
   /** What restoring would replace: the backup's counts against this device's, with a warning for anything it empties. */
@@ -140,13 +141,13 @@
           <div class="item">Dates<span class="value">{fmtDate(result.workouts[0].date, { dateStyle: 'medium' })} – {fmtDate(result.workouts[result.workouts.length - 1].date, { dateStyle: 'medium' })}</span></div>
         {/if}
         {#if imported === null && newSets < importSetCount(result)}
-          <div class="item">Already logged<span class="value">{importSetCount(result) - newSets} sets skipped</span></div>
+          <div class="item">Already logged<span class="value">{count(importSetCount(result) - newSets, 'set')} skipped</span></div>
         {/if}
         {#if result.badDates}
-          <div class="item" style="color:var(--recovering)">Unreadable or future dates<span class="value">{result.badDates} rows skipped</span></div>
+          <div class="item" style="color:var(--recovering)">Unreadable or future dates<span class="value">{count(result.badDates, 'row')} skipped</span></div>
         {/if}
         {#if result.badWeights}
-          <div class="item" style="color:var(--recovering)">Unreadable weights<span class="value">{result.badWeights} sets with no weight</span></div>
+          <div class="item" style="color:var(--recovering)">Unreadable weights<span class="value">{count(result.badWeights, 'set')} with no weight</span></div>
         {/if}
       </div>
     </div>
@@ -156,9 +157,9 @@
       <div class="section">
         <div class="head">Not recognized ({unmatched.length})</div>
         <div class="list">
-          {#each unmatched as [name, count] (name)}
+          {#each unmatched as [name, sets] (name)}
             <div class="item">
-              <span class="grow">{name}<br /><span class="caption muted">{count} sets skipped</span></span>
+              <span class="grow">{name}<br /><span class="caption muted">{count(sets, 'set')} skipped</span></span>
               <ActionMenu label="Fix {name}" class="link sub bold" items={[
                 { label: 'Match to an Exercise…', action: () => (matching = name) },
                 { label: 'Create as Custom Exercise', action: () => (creatingFrom = name) },
@@ -173,9 +174,11 @@
     <div class="section">
       <div class="list">
         {#if imported !== null}
-          <div class="item" style="color:var(--fresh)"><CircleCheck size={18} /> Imported {imported} workouts</div>
+          <div class="item" style="color:var(--fresh)"><CircleCheck size={18} /> Imported {count(imported, 'workout')}</div>
+        {:else if !newWorkouts.length}
+          <div class="item muted">Nothing new to import: every workout in this file is already logged.</div>
         {:else}
-          <button class="item link bold" disabled={!newWorkouts.length} onclick={importNow}>Import {newWorkouts.length} Workouts</button>
+          <button class="item link bold" onclick={importNow}>Import {count(newWorkouts.length, 'Workout')}</button>
         {/if}
       </div>
     </div>

@@ -31,3 +31,16 @@ export function periodReport(logs: Log[], period: Period, now = Date.now()) {
   }
   return { current: statsBetween(logs, start, Infinity), previous: statsBetween(logs, prevStart, start) };
 }
+
+/**
+ * How a total compares with the period before. A first week (nothing before) is "new" rather than an
+ * increase, so a new user isn't told they're up "1 vs last week" against a week they never trained.
+ */
+export type Change = { kind: 'empty' | 'new' | 'same' } | { kind: 'up' | 'down'; by: number };
+
+export function change(now: number, before: number): Change {
+  if (now === 0 && before === 0) return { kind: 'empty' };
+  if (before === 0) return { kind: 'new' };
+  if (now === before) return { kind: 'same' };
+  return now > before ? { kind: 'up', by: now - before } : { kind: 'down', by: before - now };
+}
