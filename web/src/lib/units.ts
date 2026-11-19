@@ -26,10 +26,12 @@ export function fmtNum(v: number, decimals = 1): string {
   return Number.isInteger(r) ? r.toLocaleString() : r.toLocaleString(undefined, { maximumFractionDigits: decimals });
 }
 
-/** m:ss */
+/** m:ss, or h:mm:ss from an hour up. */
 export function minSec(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const ss = String(s % 60).padStart(2, '0');
+  if (s < 3600) return `${Math.floor(s / 60)}:${ss}`;
+  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${ss}`;
 }
 
 export function isSameDay(a: number, b: number): boolean {

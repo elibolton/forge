@@ -67,7 +67,12 @@ export interface SessionState {
   program?: ProgramRef | null;
   /** Shown as the logger's title for program days, e.g. "Week 2 · Pull". */
   title?: string;
+  /** The last time anything in the workout changed. */
+  updatedAt?: number;
 }
+
+/** A workout untouched this long was most likely finished without tapping Finish. */
+export const STALE_AFTER = 3 * 3_600_000;
 
 export interface PersonalRecord { exercise: Exercise; oneRM: number; previous: number }
 
@@ -107,6 +112,23 @@ class WorkoutSession {
 
   get isActive() { return this.state !== null; }
 
+  /** Set when a workout in progress has sat untouched for hours; the app asks if you're still training. */
+  staleSince = $state<number | null>(null);
+
+  /** When the workout last changed. */
+  get lastActiveAt(): number { return this.state ? (this.state.updatedAt ?? this.state.startedAt) : Date.now(); }
+
+  /** Flags a forgotten workout, so it isn't saved as a 14-hour session. */
+  checkStale(now = Date.now()) {
+    this.staleSince = this.state && now - this.lastActiveAt > STALE_AFTER ? this.lastActiveAt : null;
+  }
+
+  /** "Still training": carry on, and don't ask again until it goes quiet for hours once more. */
+  keepGoing() {
+    this.staleSince = null;
+    this.update(() => {});
+  }
+
   /** True while a finish is saving, so a second tap can't log the workout twice. */
   saving = $state(false);
 
@@ -128,6 +150,7 @@ class WorkoutSession {
         this.scheduleRestAlert();
       }
       this.keepAwake();
+      this.checkStale();
     }
   }
 
@@ -143,6 +166,7 @@ class WorkoutSession {
     if (!this.state) return;
     const next = structuredClone(this.state);
     change(next);
+    next.updatedAt = Date.now();
     this.state = next;
     this.persist();
   }
@@ -153,6 +177,7 @@ class WorkoutSession {
 
   private begin(state: SessionState) {
     this.unlockAudio();
+    this.staleSince = null;
     this.state = state;
     this.isExpanded = true;
     this.persist();
@@ -245,6 +270,7 @@ class WorkoutSession {
 
   discard() {
     this.state = null;
+    this.staleSince = null;
     this.restEndsAt = null;
     clearTimeout(this.restTimer);
     this.persist();
@@ -253,9 +279,10 @@ class WorkoutSession {
 
   /**
    * Saves completed sets and returns any new personal records. The workout stays open until the save
-   * has reached the device; if it doesn't, this returns null and nothing is lost.
+   * has reached the device; if it doesn't, this returns null and nothing is lost. `endedAt` sets when it
+   * ended, for a workout finished hours after the last set.
    */
-  async finish(): Promise<PersonalRecord[] | null> {
+  async finish(endedAt = Date.now()): Promise<PersonalRecord[] | null> {
     const state = this.state;
     if (!state || this.saving) return null;
     const logged: LoggedExercise[] = [];
@@ -285,7 +312,7 @@ class WorkoutSession {
       const id = uuid();
       this.saving = true;
       const saved = await app.addLog({
-        id, date: state.startedAt, focus: state.focus, durationSeconds: Math.round((Date.now() - state.startedAt) / 1000),
+        id, date: state.startedAt, focus: state.focus, durationSeconds: Math.round((Math.max(endedAt, state.startedAt) - state.startedAt) / 1000),
         exercises: logged, program: state.program ?? null,
       }).finally(() => { this.saving = false; });
       if (!saved) {
@@ -346,5 +373,9 @@ export const session = new WorkoutSession();
 
 if (typeof document !== 'undefined') {
   // The lock drops whenever the app goes to the background; take it again on return.
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') session.keepAwake(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    session.keepAwake();
+    session.checkStale();
+  });
 }

@@ -184,9 +184,6 @@
       {#if bar !== undefined && (s.weight ?? 0) > 0}
         <PlateBar total={units.display(s.weight ?? 0)} {bar} pounds={units.pounds} />
       {/if}
-      <button class="btn primary block big log" onclick={() => log(s.id)}>
-        <span class="check"><Check size={18} strokeWidth={3.2} /></span> {s.done ? 'Update set' : `Log set ${number(s.id)}`}
-      </button>
     </section>
   {:else if working.length}
     <section class="focus complete stack" style="--gap:18px">
@@ -209,9 +206,6 @@
           <span class="caption faint">This tunes how quickly Forge adds weight next time.</span>
         </div>
       {/if}
-      <button class="btn primary block big" onclick={nextName ? onNext : onFinish}>
-        {#if nextName}<span class="one-line">Next · {nextName}</span> <ArrowRight size={18} />{:else}<Flag size={18} /> Finish workout{/if}
-      </button>
     </section>
   {/if}
 
@@ -226,7 +220,7 @@
           aria-pressed={isActive} onclick={() => (editingID = isActive ? null : s.id)}>
           <span class="badge num">{s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}</span>
           <span class="semibold mono">{setText(s)}</span>
-          {#if last && !s.done}<span class="caption faint mono">last {lastShort(last)}</span>{/if}
+          {#if last && !s.done}<span class="caption muted mono">last {lastShort(last)}</span>{/if}
           <span class="grow"></span>
           {#if s.done}<CircleCheck size={22} color="var(--fresh)" />{:else if isActive}<Pencil size={18} color="var(--ember-2)" />{:else}<Circle size={22} color="var(--text-3)" />{/if}
         </button>
@@ -238,6 +232,22 @@
     {/each}
     <button class="add-set" onclick={addSet}><Plus size={16} /> Add set</button>
   </div>
+
+  <!-- The one action that matters between sets, pinned where the thumb rests. -->
+  {#if active || working.length}
+    <div class="dock">
+      {#if active}
+        {@const s = active}
+        <button class="btn primary block big log" onclick={() => log(s.id)}>
+          <span class="check"><Check size={18} strokeWidth={3.2} /></span> {s.done ? 'Update set' : `Log set ${number(s.id)}`}
+        </button>
+      {:else}
+        <button class="btn primary block big log" onclick={nextName ? onNext : onFinish}>
+          {#if nextName}<span class="one-line">Next · {nextName}</span> <ArrowRight size={18} />{:else}<Flag size={18} /> Finish workout{/if}
+        </button>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 {#if checking}
@@ -274,6 +284,9 @@
   .last { text-align: right; align-items: flex-end; }
   .target { color: var(--ember-2); }
   .note { color: var(--recovering); background: rgba(255, 187, 69, 0.1); border: 1px solid rgba(255, 187, 69, 0.2); padding: 10px 12px; border-radius: 14px; --gap: 8px; }
+  /* Sticks to the bottom of the logger's scroll area; its natural place is after the set list. */
+  .dock { position: sticky; bottom: 0; z-index: 2; margin: 0 -18px; padding: 10px 18px 12px;
+    background: linear-gradient(to top, var(--bg) 70%, rgba(7, 7, 8, 0)); }
   .log { min-height: 62px; font-size: 1.08rem; }
   .check { width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); display: grid; place-items: center; }
   .done-badge { width: 40px; height: 40px; border-radius: 50%; background: var(--fresh); color: #062b1e; display: grid; place-items: center; box-shadow: 0 0 24px rgba(60, 239, 176, 0.45); }

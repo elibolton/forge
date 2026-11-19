@@ -33,6 +33,26 @@
   });
   $effect(() => { const t = setInterval(() => (tick = Date.now()), 1000); return () => clearInterval(t); });
 
+  // iOS keeps the layout viewport full height when the keyboard opens, so a full-screen logger would
+  // sit under it. Fit the logger to the visible area instead, which keeps the Log button just above
+  // the keyboard. The rest timer steps aside while typing to leave room.
+  let viewport = $state<{ height: number; top: number } | null>(null);
+  const keyboardOpen = $derived(viewport !== null && viewport.height < innerHeight - 120);
+  $effect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const sync = () => {
+      viewport = { height: vv.height, top: vv.offsetTop };
+      // Keep the field being typed in on screen once the logger has shrunk.
+      const field = document.activeElement;
+      if (field instanceof HTMLInputElement && scroller?.contains(field)) requestAnimationFrame(() => field.scrollIntoView({ block: 'nearest' }));
+    };
+    sync();
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    return () => { vv.removeEventListener('resize', sync); vv.removeEventListener('scroll', sync); };
+  });
+
   const ws = $derived(session.state!);
   const index = $derived(Math.min(ws.currentIndex, Math.max(0, ws.exercises.length - 1)));
   const current = $derived(ws.exercises[index]);
@@ -103,7 +123,8 @@
   function askDiscard() { if (loggedCount) confirmingDiscard = true; else discard(); }
 </script>
 
-<div class="logger" role="dialog" aria-modal="true" aria-label={title}>
+<div class="logger" class:typing={keyboardOpen} role="dialog" aria-modal="true" aria-label={title}
+  style={keyboardOpen && viewport ? `bottom:auto;height:${viewport.height}px;top:${viewport.top}px` : ''}>
   <header class="head">
     <button class="icon-btn" aria-label="Minimize workout" onclick={() => (session.isExpanded = false)}><ChevronDown size={20} /></button>
     <div class="center">
@@ -180,9 +201,10 @@
         <div class="card stack">
           <div class="row bold" style="--gap:8px;color:var(--recovering)"><CircleAlert size={20} /> {pending} planned {pending === 1 ? "set wasn't" : "sets weren't"} logged</div>
           <p class="sub muted">Did you do them? Logging them keeps your recovery and progression accurate.</p>
-          <button class="btn primary block big" disabled={session.saving} onclick={() => { session.logRemainingAsPlanned(); save(); }}>I did them, log as planned</button>
+          <!-- Equal weight: logging sets you didn't do would skew progression as much as missing ones. -->
+          <button class="btn block big" disabled={session.saving} onclick={() => { session.logRemainingAsPlanned(); save(); }}>I did them, log as planned</button>
           <!-- A workout with no working sets would only add noise to history and recovery. -->
-          <button class="btn block" disabled={!done.length || session.saving} onclick={save}>{done.length ? 'Save without them' : 'Nothing logged to save'}</button>
+          <button class="btn block big" disabled={!done.length || session.saving} onclick={save}>{done.length ? 'Save without them' : 'Nothing logged to save'}</button>
         </div>
       {:else}
         <button class="btn primary block big" disabled={!done.length || session.saving} onclick={save}>{saveFailed ? 'Try Again' : 'Save Workout'}</button>
@@ -246,10 +268,11 @@
   .title { font-weight: 650; font-size: 0.95rem; }
   .elapsed { font-size: 0.78rem; color: var(--text-3); }
   .finish { min-height: 40px; padding: 8px 16px; }
-  .pos { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px; }
-  .step { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--surface-2); }
-  .strip { display: flex; gap: 5px; padding: 8px 18px 6px; }
-  .strip button { flex: 1; padding: 8px 0; }
+  .pos { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 2px; }
+  .step { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--surface-2); }
+  .strip { display: flex; gap: 5px; padding: 0 18px; }
+  /* Thin bars, tall enough to tap. */
+  .strip button { flex: 1; padding: 14px 0; }
   .seg { display: block; height: 4px; border-radius: 3px; background: var(--surface-3); transition: background 0.3s, box-shadow 0.3s; }
   .seg.now { background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
   .seg.complete { background: var(--fresh); }
@@ -257,10 +280,10 @@
   .strip button:has(.pair-start) { padding-right: 0; margin-right: -5px; }
   .seg.pair-start { border-radius: 3px 0 0 3px; }
   .seg.pair-end { border-radius: 0 3px 3px 0; }
-  .scroll { flex: 1; overflow-y: auto; padding: 10px 18px 40px; -webkit-overflow-scrolling: touch; }
+  .scroll { flex: 1; overflow-y: auto; padding: 10px 18px 0; -webkit-overflow-scrolling: touch; }
   .scroll > :global(*) { max-width: 620px; margin: 0 auto; }
   .rest { padding-bottom: var(--safe-bottom); }
-  .rest:empty { display: none; }
+  .rest:empty, .typing .rest { display: none; }
   .save-failed { border-color: rgba(255, 77, 109, 0.4); }
   .empty { align-items: center; text-align: center; padding-top: 22vh; }
   .stats > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }

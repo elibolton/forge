@@ -3,6 +3,7 @@
   import FinishSummary from './components/FinishSummary.svelte';
   import ProblemScreen from './components/ProblemScreen.svelte';
   import SaveErrorBanner from './components/SaveErrorBanner.svelte';
+  import StaleWorkoutSheet from './components/StaleWorkoutSheet.svelte';
   import { saving } from './lib/saving.svelte';
   import MiniBar from './components/MiniBar.svelte';
   import ToastHost from './components/ToastHost.svelte';
@@ -140,6 +141,7 @@
 
   {#if loggerOpen}<ActiveWorkout />{/if}
   {#if session.finished}<FinishSummary />{/if}
+  {#if session.isActive && session.staleSince !== null}<StaleWorkoutSheet />{/if}
 {/if}
 
 {#snippet failed(error)}

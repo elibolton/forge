@@ -177,6 +177,27 @@ describe('Finishing', async () => {
   });
 });
 
+describe('Forgotten workouts', () => {
+  test('a workout untouched for hours is flagged; a recent change is not', () => {
+    start([exercise('a', [newSet(80, 8)])]);
+    // update() stamps the change itself, so set the old time on the state directly.
+    session.state = { ...session.state!, updatedAt: Date.now() - 4 * 3_600_000 };
+    session.checkStale();
+    expect(session.staleSince).not.toBeNull();
+    session.keepGoing();
+    expect(session.staleSince).toBeNull();
+    session.checkStale();
+    expect(session.staleSince).toBeNull();
+  });
+
+  test('saving a forgotten workout ends it at the last change', async () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const startedAt = session.state!.startedAt;
+    await session.finish(startedAt + 50 * 60_000);
+    expect(app.logs[0].durationSeconds).toBe(50 * 60);
+  });
+});
+
 describe('Loading', () => {
   test('an unreadable workout in progress blocks the app instead of being overwritten', async () => {
     vi.mocked(db.get).mockRejectedValueOnce(new Error('Connection to Indexed Database server lost'));
