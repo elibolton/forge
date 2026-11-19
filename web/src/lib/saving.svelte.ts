@@ -8,6 +8,10 @@ export function saveErrorMessage(e: unknown): string {
   return 'Forge couldn\'t save to this device.';
 }
 
+let onSaved: (() => void) | undefined;
+/** Called after every write that reaches the device (other tabs are told about it). */
+export function onEverySave(f: () => void) { onSaved = f; }
+
 class Saving {
   /** Set while any write is still failing. */
   error = $state<string | null>(null);
@@ -21,16 +25,26 @@ class Saving {
    * Writes to IndexedDB run in the order they're made, so the newest write for a key lands last.
    */
   run(key: string, write: () => Promise<unknown>): Promise<boolean> {
+    return this.runBatch([key], write, () => write);
+  }
+
+  /**
+   * One write that saves several records at once. If it fails, each record is remembered under its own
+   * key with `retryOne(i)` as its retry, so a later write to one of them (a delete, an edit) replaces
+   * just that record's retry instead of leaving the old batch to bring it back.
+   */
+  runBatch(keys: string[], write: () => Promise<unknown>, retryOne: (i: number) => () => Promise<unknown>): Promise<boolean> {
     // A write that throws before returning a promise counts as a failed save too.
     return new Promise<unknown>((resolve) => resolve(write())).then(
       () => {
-        this.failed.delete(key);
+        for (const key of keys) this.failed.delete(key);
         if (!this.failed.size) this.error = null;
+        onSaved?.();
         return true;
       },
       (e) => {
-        console.error(`Could not save ${key}`, e);
-        this.failed.set(key, write);
+        console.error(`Could not save ${keys.join(', ')}`, e);
+        keys.forEach((key, i) => this.failed.set(key, retryOne(i)));
         this.error = this.lastFailure = saveErrorMessage(e);
         return false;
       },

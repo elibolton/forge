@@ -6,6 +6,7 @@ import {
 } from '../engine';
 import { db, requestPersistence } from './db';
 import { saving } from './saving.svelte';
+import { sync } from './sync.svelte';
 import { WeightUnits } from './units';
 import { type Activity, readActivity, toExternal } from './activities';
 import { prTimeline } from './records';
@@ -108,6 +109,52 @@ function readProfile(v: unknown): Profile | null {
   };
 }
 
+/**
+ * Raw stored records that can go in a store keyed by id: anything that isn't an object is dropped, and
+ * one with no id gets a new one. Nothing else is checked, so a record this version can't read is kept
+ * for a later version (or a raw export) rather than lost; readers filter it when loading.
+ */
+function keyable(v: unknown): { id: string }[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter(isObj).map((x) => (typeof x.id === 'string' ? (x as { id: string }) : { ...x, id: uuid() }));
+}
+
+/** The newest backup layout this version writes; a newer one may hold data this version would drop. */
+export const BACKUP_VERSION = 2;
+
+/** A backup file, read and checked, ready to restore. */
+export interface Backup {
+  profile: Profile;
+  logs: WorkoutLog[];
+  collections: Collections;
+}
+
+/**
+ * Reads a backup file. Throws, with a message for the person, if it isn't one, comes from a newer
+ * version, or its workouts can't be read: restoring replaces everything, so a backup whose workouts
+ * are missing would otherwise wipe them. Reads both layouts: collections beside the profile
+ * (version 2) or inside it (version 1).
+ */
+export function readBackup(text: string): Backup {
+  let data: unknown;
+  try { data = JSON.parse(text); } catch { throw new Error("That file isn't a Forge backup."); }
+  if (!isObj(data) || data.app !== 'forge') throw new Error("That file isn't a Forge backup.");
+  const version = data.version === undefined ? 1 : data.version;
+  if (typeof version !== 'number' || !(version >= 1)) throw new Error("That backup's format isn't one Forge knows.");
+  if (version > BACKUP_VERSION) throw new Error('That backup is from a newer version of Forge. Update Forge (reopen it from the Home Screen), then restore again.');
+  if (!isObj(data.profile)) throw new Error('The backup has no profile.');
+  const profile = readProfile(data.profile);
+  if (!profile) throw new Error('The backup has no profile.');
+  const inProfile = data.profile;
+  const rawLogs = Array.isArray(data.logs) ? data.logs : Array.isArray(inProfile.logs) ? inProfile.logs : undefined;
+  if (!rawLogs) throw new Error("The backup's workouts are missing, so restoring it would delete yours. Nothing was changed.");
+  const logs = lossy(rawLogs, readLog);
+  if (rawLogs.length && !logs.length) throw new Error("The backup's workouts couldn't be read. Nothing was changed.");
+  const pick = (c: CollectionName) => (Array.isArray(data[c]) ? data[c] : inProfile[c]);
+  const collections = readCollections({ activities: pick('activities'), bodyweights: pick('bodyweights'), templates: pick('templates') });
+  return { profile, logs, collections };
+}
+
 function readLog(v: unknown): WorkoutLog | undefined {
   if (!isObj(v) || typeof v.date !== 'number') return undefined;
   return {
@@ -193,11 +240,13 @@ class AppStore {
       // Before version 3, cardio, weigh-ins and saved workouts lived inside the profile; move them out once.
       if (isObj(profile) && COLLECTION_NAMES.some((c) => c in profile)) collections = await this.moveOutOfProfile(profile, collections);
       let logs: unknown[] = stored;
-      // Before version 2 every workout lived in one list under 'logs'; move them to their own store once.
-      if (Array.isArray(legacy) && legacy.length) {
-        const moved = lossy(legacy, readLog);
-        await db.putLogs($state.snapshot(moved));
-        await db.del('logs');
+      // Before version 2 every workout lived in one list under 'logs'; move them to their own store once,
+      // in one transaction so an interrupted move can't leave them in both places. A workout already in
+      // the store (an earlier move that half happened) keeps the store's copy.
+      if (Array.isArray(legacy)) {
+        const ids = new Set(keyable(stored).map((x) => x.id));
+        const moved = keyable(legacy).filter((x) => !ids.has(x.id));
+        await db.moveLegacyLogs(moved);
         logs = [...stored, ...moved];
       }
       const p = readProfile(profile);
@@ -243,9 +292,11 @@ class AppStore {
    * the slimmed profile, and returns them merged with anything already in the stores.
    */
   private async moveOutOfProfile(raw: Raw, stored: Collections): Promise<Collections> {
-    const fromProfile = readCollections(raw);
+    // The raw entries move, not just the ones this version can read, so none are lost on the way.
+    const rawMoved = Object.fromEntries(COLLECTION_NAMES.map((c) => [c, keyable(raw[c])]));
+    const fromProfile = readCollections(rawMoved);
     const slim = Object.fromEntries(Object.entries(raw).filter(([k]) => !COLLECTION_NAMES.includes(k as CollectionName)));
-    await db.moveIntoCollections(slim, $state.snapshot(fromProfile));
+    await db.moveIntoCollections(slim, rawMoved);
     return {
       activities: newestFirst(mergeByID(stored.activities, fromProfile.activities)),
       bodyweights: newestFirst(mergeByID(stored.bodyweights, fromProfile.bodyweights)),
@@ -275,12 +326,24 @@ class AppStore {
     return saving.run('profile', () => db.set('profile', snap));
   }
 
-  /** Clone, change, save. */
+  /**
+   * Clone, change, save. If another copy of Forge saved since this one loaded, the change is applied
+   * to the stored profile instead of writing this copy's older one over it.
+   */
   updateProfile(change: (p: Profile) => void) {
     if (!this.profile) return;
     const next = structuredClone(this.profile);
     change(next);
-    this.setProfile(next);
+    if (!sync.stale) return this.setProfile(next);
+    this.profile = next;
+    Catalog.setCustom(next.customExercises);
+    const fallback = $state.snapshot(next);
+    return saving.run('profile', () => db.update('profile', (stored) => {
+      const base = readProfile(stored);
+      if (!base) return fallback;
+      change(base);
+      return $state.snapshot(base);
+    }));
   }
 
   updatePlan(change: (plan: UserPlan) => void) { this.updateProfile((p) => change(p.plan)); }
@@ -381,7 +444,9 @@ class AppStore {
     const ids = new Set(logs.map((l) => l.id));
     this.setLogs([...logs, ...this.logs.filter((l) => !ids.has(l.id))]);
     const snap = $state.snapshot(logs);
-    return saving.run(`log:${logs.map((l) => l.id).join(',')}`, () => db.putLogs(snap));
+    // One write for all of them, but a failure is retried per workout, so deleting or editing one of
+    // them afterwards replaces its retry rather than the old batch bringing it back.
+    return saving.runBatch(logs.map((l) => `log:${l.id}`), () => db.putLogs(snap), (i) => () => db.putLogs([snap[i]]));
   }
   updateLog(log: WorkoutLog) {
     this.setLogs(this.logs.map((l) => (l.id === log.id ? log : l)));
@@ -413,8 +478,14 @@ class AppStore {
     const next = { ...this.kv };
     if (value === undefined) delete next[key]; else next[key] = value;
     this.kv = next;
-    const snap = $state.snapshot(next);
-    saving.run('kv', () => db.set('kv', snap));
+    // Writes just this key into what's stored, so another copy of Forge's other values aren't
+    // overwritten with this copy's older ones, and each key's failed save is retried on its own.
+    const snap = $state.snapshot(value);
+    saving.run(`kv:${key}`, () => db.update('kv', (stored) => {
+      const kv = isObj(stored) ? { ...stored } : {};
+      if (snap === undefined) delete kv[key]; else kv[key] = snap;
+      return kv;
+    }));
   }
 
   // MARK: Backup
@@ -427,20 +498,11 @@ class AppStore {
     }, null, 1);
   }
 
-  /**
-   * Replaces everything with a backup. Throws if the file isn't one. Reads both layouts: collections
-   * beside the profile (version 2) or inside it (version 1).
-   */
-  restore(text: string) {
-    const data = JSON.parse(text);
-    if (!isObj(data) || data.app !== 'forge') throw new Error("That file isn't a Forge backup.");
-    const profile = readProfile(data.profile);
-    if (!profile) throw new Error('The backup has no profile.');
-    const inProfile = data.profile as Raw;
-    const pick = (c: CollectionName) => (Array.isArray(data[c]) ? data[c] : inProfile[c]);
-    const collections = readCollections({ activities: pick('activities'), bodyweights: pick('bodyweights'), templates: pick('templates') });
+  /** Replaces everything with a backup (a file's text, or one already read with `readBackup`). Throws if it can't be read. */
+  restore(backup: string | Backup) {
+    const { profile, logs, collections } = typeof backup === 'string' ? readBackup(backup) : backup;
     this.setProfile(profile);
-    this.restoreLogs(lossy(data.logs, readLog));
+    this.restoreLogs(logs);
     this.setCollections(collections);
     for (const c of COLLECTION_NAMES) {
       saving.forget(`${c}:`);

@@ -15,8 +15,11 @@
   let kind = $state<ActivityKind>('run');
   let minutes = $state(30);
   let daysAgo = $state(0);
+  // Saved activities are read back only with a duration above 0; a 0-minute one would vanish on relaunch.
+  const valid = $derived(minutes > 0);
 
   function save() {
+    if (!valid) return;
     // Ended about now, or at the same time of day on an earlier day.
     const date = Date.now() - daysAgo * DAY - minutes * 60_000;
     const a = { id: uuid(), kind, date, minutes };
@@ -27,7 +30,7 @@
 </script>
 
 <Sheet title="Log Activity" {onclose}>
-  {#snippet trailing()}<button class="link bold" onclick={save}>Save</button>{/snippet}
+  {#snippet trailing()}<button class="link bold" disabled={!valid} onclick={save}>Save</button>{/snippet}
   <div class="stack" style="--gap:20px">
     <div class="kinds" role="radiogroup" aria-label="Activity">
       {#each ACTIVITY_KINDS as k (k)}
@@ -39,7 +42,8 @@
       {/each}
     </div>
 
-    <ValueStepper title="Duration" value={minutes} step={5} unit="minutes" decimals={false} onchange={(v) => (minutes = Math.max(5, v))} />
+    <ValueStepper title="Duration" value={minutes} step={5} unit="minutes" decimals={false} onchange={(v) => (minutes = v)} />
+    {#if !valid}<p class="caption warn" role="alert">Enter a duration of at least 1 minute.</p>{/if}
 
     <div class="stack" style="--gap:8px">
       <span class="eyebrow">When</span>
@@ -57,7 +61,7 @@
         Kept in your calendar; it doesn't change muscle recovery.
       {/if}
     </p>
-    <button class="btn primary block big" onclick={save}>Log {minutes} min {activityTitle[kind].toLowerCase()}</button>
+    <button class="btn primary block big" disabled={!valid} onclick={save}>Log {minutes} min {activityTitle[kind].toLowerCase()}</button>
   </div>
 </Sheet>
 
@@ -67,5 +71,6 @@
     background: var(--surface); border: 1px solid var(--hairline); color: var(--text-2); }
   .kind.on { background: var(--ember-soft); border-color: rgba(255, 106, 46, 0.5); color: var(--text); }
   .ico { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--ember-2); }
+  .warn { color: var(--fatigued); text-align: center; margin-top: -12px; }
   .kind.on .ico { background: var(--ember-gradient); color: #fff; }
 </style>

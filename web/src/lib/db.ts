@@ -13,6 +13,9 @@ export const COLLECTIONS: Collection[] = ['logs', 'activities', 'bodyweights', '
 
 let dbPromise: Promise<IDBDatabase> | undefined;
 
+/** Shown when an older Forge in another tab or window holds the database open, so this one can't upgrade it. */
+export const BLOCKED_MESSAGE = 'Forge is open in another tab or window. Close the other Forge tabs or windows, then reload.';
+
 function open(): Promise<IDBDatabase> {
   dbPromise ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, VERSION);
@@ -21,7 +24,13 @@ function open(): Promise<IDBDatabase> {
       if (!d.objectStoreNames.contains(KV)) d.createObjectStore(KV);
       for (const c of COLLECTIONS) if (!d.objectStoreNames.contains(c)) d.createObjectStore(c, { keyPath: 'id' });
     };
+    // An older version open elsewhere (one with no versionchange handler) keeps the upgrade waiting
+    // forever. Say so instead of sitting on the loading screen.
+    let blocked = false;
+    req.onblocked = () => { blocked = true; dbPromise = undefined; reject(new Error(BLOCKED_MESSAGE)); };
     req.onsuccess = () => {
+      // Already reported as blocked: don't hold a connection the next attempt would have to wait on.
+      if (blocked) { req.result.close(); return; }
       // Another tab upgrading the database: step aside so it can, and open afresh next time.
       req.result.onversionchange = () => { req.result.close(); dbPromise = undefined; };
       resolve(req.result);
@@ -47,6 +56,18 @@ export const db = {
   get: <T = unknown>(key: string) => tx<T>(KV, 'readonly', (t) => t.objectStore(KV).get(key) as IDBRequest<T>),
   set: (key: string, value: unknown) => tx(KV, 'readwrite', (t) => { t.objectStore(KV).put(value, key); }),
   del: (key: string) => tx(KV, 'readwrite', (t) => { t.objectStore(KV).delete(key); }),
+  /**
+   * Reads a value and writes back `change(value)` in one transaction, so a change made from an older
+   * copy in memory (another tab wrote since) lands on top of what's stored rather than over it.
+   * `change` must be synchronous.
+   */
+  update: (key: string, change: (stored: unknown) => unknown) => tx(KV, 'readwrite', (t) => {
+    const s = t.objectStore(KV);
+    const req = s.get(key);
+    req.onsuccess = () => {
+      try { s.put(change(req.result), key); } catch (e) { console.error(`Could not update ${key}`, e); t.abort(); }
+    };
+  }),
 
   /** Every record in a collection, in no particular order. */
   all: (c: Collection) => tx<unknown[]>(c, 'readonly', (t) => t.objectStore(c).getAll() as IDBRequest<unknown[]>).then((v) => v ?? []),
@@ -62,9 +83,23 @@ export const db = {
    */
   moveIntoCollections: (profile: unknown, moved: Partial<{ [K in Collection]: Record[] }>) =>
     tx([KV, ...Object.keys(moved)], 'readwrite', (t) => {
-      for (const [c, items] of Object.entries(moved)) { const s = t.objectStore(c); for (const x of items ?? []) s.put(x); }
+      for (const [c, items] of Object.entries(moved)) {
+        const s = t.objectStore(c);
+        // A record already in the store wins over the profile's copy.
+        for (const x of items ?? []) s.add(x).onerror = (e) => { e.preventDefault(); e.stopPropagation(); };
+      }
       t.objectStore(KV).put(profile, 'profile');
     }),
+
+  /**
+   * Moves the workouts that versions before 2 kept in one list under kv 'logs' into the logs store and
+   * removes the list, in one transaction. Records already in the store win over the list's copies.
+   */
+  moveLegacyLogs: (logs: Record[]) => tx([KV, 'logs'], 'readwrite', (t) => {
+    const s = t.objectStore('logs');
+    for (const x of logs) s.add(x).onerror = (e) => { e.preventDefault(); e.stopPropagation(); };
+    t.objectStore(KV).delete('logs');
+  }),
 
   // Workouts, by their older names.
   allLogs: () => db.all('logs'),

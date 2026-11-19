@@ -23,7 +23,15 @@
     logging = true;
   }
 
+  // The same limits the saved weigh-ins are read back with; anything outside them would vanish on relaunch.
+  const MIN_KG = 20, MAX_KG = 400;
+  const valid = $derived(u.kg(value) > MIN_KG && u.kg(value) < MAX_KG);
+  // The nearest tenths inside the limits, in the units shown (unrounded: display() rounds to halves).
+  const perKg = $derived(1 / u.kg(1));
+  const range = $derived(`${fmtNum(Math.floor(MIN_KG * perKg * 10) / 10 + 0.1)} and ${fmtNum(Math.ceil(MAX_KG * perKg * 10) / 10 - 0.1)} ${u.symbol}`);
+
   function save() {
+    if (!valid) return;
     const entry = { id: uuid(), date: Date.now(), kg: u.kg(value) };
     app.addBodyweight(entry);
     toasts.show(`Logged ${fmtNum(value)} ${u.symbol}`, () => app.removeBodyweight(entry.id));
@@ -78,10 +86,11 @@
 
 {#if logging}
   <Sheet title="Weigh In" onclose={() => (logging = false)}>
-    {#snippet trailing()}<button class="link bold" onclick={save}>Save</button>{/snippet}
+    {#snippet trailing()}<button class="link bold" disabled={!valid} onclick={save}>Save</button>{/snippet}
     <div class="stack" style="--gap:16px">
       <ValueStepper title="Bodyweight" value={value} step={u.pounds ? 0.5 : 0.1} unit={u.symbol} decimals onchange={(v) => (value = v)} />
-      <button class="btn primary block big" onclick={save}>Save {fmtNum(value)} {u.symbol}</button>
+      {#if !valid}<p class="caption warn" role="alert">Enter a weight between {range}.</p>{/if}
+      <button class="btn primary block big" disabled={!valid} onclick={save}>Save {fmtNum(value)} {u.symbol}</button>
     </div>
   </Sheet>
 {/if}
@@ -93,4 +102,5 @@
   .delta { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
   .ico { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--ember-2); flex: none; }
   .recent { background: transparent; }
+  .warn { color: var(--fatigued); text-align: center; }
 </style>

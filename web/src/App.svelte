@@ -7,7 +7,9 @@
   import { saving } from './lib/saving.svelte';
   import MiniBar from './components/MiniBar.svelte';
   import ToastHost from './components/ToastHost.svelte';
+  import StaleBanner from './components/StaleBanner.svelte';
   import UpdateBanner from './components/UpdateBanner.svelte';
+  import { sync } from './lib/sync.svelte';
   import { updates } from './lib/pwa.svelte';
   import { type Tab, nav } from './lib/nav.svelte';
   import { session } from './lib/session.svelte';
@@ -153,7 +155,8 @@
 <ToastHost />
 {#if saving.error}<SaveErrorBanner />{/if}
 <!-- Never interrupt a set: the banner waits until the logger is closed. -->
-{#if updates.ready && !(session.isActive && session.isExpanded)}<UpdateBanner />{/if}
+{#if sync.stale && app.ready && !(session.isActive && session.isExpanded)}<StaleBanner />
+{:else if updates.ready && !(session.isActive && session.isExpanded)}<UpdateBanner />{/if}
 
 <style>
   .nav-screen { will-change: transform; }
