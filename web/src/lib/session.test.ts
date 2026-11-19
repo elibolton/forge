@@ -8,7 +8,8 @@ vi.mock('./db', () => ({
 
 const { Gyms, Programs, defaultPlan, newProgress } = await import('../engine');
 const { app } = await import('./store.svelte');
-const { session, newSet, supersetOf } = await import('./session.svelte');
+const { session, newSet, supersetOf, numberedSets } = await import('./session.svelte');
+const { setLabels } = await import('./labels');
 const { groupLabel } = await import('./groups');
 const { templateFromSession, readTemplate } = await import('./templates');
 const { sessionFromTemplate } = await import('./templateStart');
@@ -370,6 +371,68 @@ describe('Supersets, tri-sets and circuits', () => {
 
   test('names by size', () => {
     expect([2, 3, 4, 6].map(groupLabel)).toEqual(['Superset', 'Tri-set', 'Circuit', 'Circuit']);
+  });
+});
+
+describe('Drop and failure sets', () => {
+  const sets = () => session.state!.exercises[0].sets;
+
+  test('a drop set comes straight after its set: no rest, no carried weight, and the rating waits', () => {
+    const [s1, s2] = [newSet(100, 8), newSet(100, 8)];
+    start([exercise('a', [s1, s2])]);
+    session.addDropSet('a', s1.id, 80);
+    session.addDropSet('a', s1.id, 60);
+    expect(sets().map((x) => [x.weight, x.type ?? 'straight'])).toEqual([[100, 'straight'], [80, 'drop'], [60, 'drop'], [100, 'straight']]);
+    session.editSet('a', s1.id, { weight: 105 });
+    session.logSet(s1.id, 'a');
+    expect(session.restEndsAt).toBeNull();
+    expect(session.pendingRating).toBeNull();
+    expect(sets().map((x) => x.weight)).toEqual([105, 80, 60, 105]); // drops keep their weight, the next set gets 105
+    session.logSet(sets()[1].id, 'a');
+    expect(session.restEndsAt).toBeNull(); // another drop still to go
+    session.logSet(sets()[2].id, 'a');
+    expect(session.restTotal).toBe(120);
+    expect(session.pendingRating?.setID).toBe(s1.id); // rate the set the drops came from
+  });
+
+  test('a failure set is logged with 0 reps left and no prompt', () => {
+    const s1 = newSet(100, 8);
+    start([exercise('a', [s1])]);
+    session.setType('a', s1.id, 'failure');
+    session.logSet(s1.id, 'a');
+    expect(sets()[0].rir).toBe(0);
+    expect(session.pendingRating).toBeNull();
+    session.setType('a', s1.id, null);
+    expect(sets()[0].type).toBeUndefined();
+  });
+
+  test('drop sets are not numbered and new sets copy the last straight set', () => {
+    const s1 = newSet(100, 8);
+    start([exercise('a', [newSet(40, 8, { isWarmup: true }), s1])]);
+    session.addDropSet('a', s1.id, 70);
+    session.addSet('a');
+    expect(numberedSets(sets()).map((x) => x.weight)).toEqual([100, 100]);
+    expect(sets().slice(-1)[0].type).toBeUndefined();
+  });
+
+  test('in a superset, the drop comes before moving on', () => {
+    const [a1, b1] = [newSet(30, 10), newSet(25, 10)];
+    start([exercise('a', [a1, newSet(30, 10)], { supersetGroup: 'A' }), exercise('b', [b1, newSet(25, 10)], { exerciseID: 'skull-crusher', supersetGroup: 'A' })]);
+    session.addDropSet('a', a1.id, 20);
+    session.logSet(a1.id, 'a');
+    expect(session.state!.currentIndex).toBe(0);
+    session.logSet(session.state!.exercises[0].sets[1].id, 'a');
+    expect(session.state!.currentIndex).toBe(1);
+  });
+
+  test('set types are saved with the workout', async () => {
+    start([exercise('a', [newSet(100, 8, { done: true, type: 'failure', rir: 0 }), newSet(70, 6, { done: true, type: 'drop' }), newSet(40, 8, { isWarmup: true, done: true, type: 'drop' })])]);
+    await session.finish();
+    expect(app.logs[0].exercises[0].sets.map((x) => x.type ?? null)).toEqual(['failure', 'drop', null]);
+  });
+
+  test('history labels: W, numbers, and D for drops', () => {
+    expect(setLabels([{ isWarmup: true }, { isWarmup: false }, { isWarmup: false, type: 'drop' }, { isWarmup: false, type: 'failure' }])).toEqual(['W', '1', 'D', '2']);
   });
 });
 

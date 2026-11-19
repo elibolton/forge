@@ -1,6 +1,6 @@
 <script lang="ts">
   import { X } from '@lucide/svelte';
-  import { exerciseOf, session } from '../lib/session.svelte';
+  import { exerciseOf, numberedSets, session } from '../lib/session.svelte';
   import { isPerSide } from '../engine';
   import RIRChips from './RIRChips.svelte';
 
@@ -13,8 +13,7 @@
     const ex = p && session.state?.exercises.find((x) => x.id === p.exerciseID);
     const set = ex?.sets.find((x) => x.id === p!.setID);
     if (!ex || !set?.done) return null;
-    const working = ex.sets.filter((x) => !x.isWarmup);
-    const i = working.findIndex((x) => x.id === set.id);
+    const i = numberedSets(ex.sets).findIndex((x) => x.id === set.id);
     const number = ex.program && isPerSide(ex.program.laterality) ? Math.floor(i / 2) + 1 : i + 1;
     return { ex, set, number };
   });

@@ -3,7 +3,7 @@ import {
   DAY_MS, Gyms, type LoggedExercise, POUNDS_PER_KG, Programs, type WorkoutRecord, completeDay, checkInDue, deloadNow,
   dayOrder, newProgress, nextDayID, nextSession, programDay, readProgress, readRecord, repRange, repsDropped,
   repsDroppedFlag, resolveSession, restText, rirTarget, scheduledOn, setsText, suggest, suggestsDeload, skipDay,
-  Catalog, isPerSide, effortRIR, type ProgramProgress,
+  Catalog, isPerSide, effortRIR, type ProgramProgress, straightSets, workingSets, readSet,
 } from './index';
 
 const now = 1_800_000_000_000;
@@ -175,6 +175,18 @@ describe('Progression', () => {
     const lb = { ...gym, usesPounds: true };
     const s = suggest(rx('legs.1', 2), { history: [logged('legs.1', 1, 225 / POUNDS_PER_KG, [8, 8, 8, 8], daysAgo(7))], gym: lb, now });
     expect(Math.abs(s.weight! * POUNDS_PER_KG - 235)).toBeLessThan(0.01);
+  });
+  test('a lighter drop set after the top sets does not hold progression back', () => {
+    const r = logged('push.1', 1, 80, [8, 8, 8], daysAgo(7));
+    r.exercises[0].sets.push({ weight: 60, reps: 5, rir: 0, isWarmup: false, type: 'drop' });
+    expect(suggest(rx('push.1', 2), { history: [r], gym, now })).toMatchObject({ weight: 82.5, reps: 5 });
+    expect(straightSets(r.exercises[0]).length).toBe(3);
+    expect(workingSets(r.exercises[0]).length).toBe(4); // volume and recovery still count it
+  });
+  test('set types survive saving and loading; unknown ones are dropped', () => {
+    expect(readSet({ weight: 60, reps: 5, isWarmup: false, type: 'drop' })?.type).toBe('drop');
+    expect(readSet({ weight: 60, reps: 5, isWarmup: false, type: 'failure' })?.type).toBe('failure');
+    expect(readSet({ weight: 60, reps: 5, isWarmup: false, type: 'giant' })?.type).toBeUndefined();
   });
   test('one short set means no load yet', () => {
     expect(suggest(rx('push.1', 2), { history: [logged('push.1', 1, 80, [8, 8, 7], daysAgo(7))], gym, now }).weight).toBe(80);

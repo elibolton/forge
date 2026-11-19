@@ -1,7 +1,7 @@
 import {
   type Exercise, type Gym, type LoggedExercise, type RepRange, type UserPlan, type WorkoutRecord,
   POUNDS_PER_KG, defaultPlan, gymIncrementKg, gymRound, isBodyweight, loadEquipment, repRange, repRangeText, roundLoad,
-  workingSets,
+  straightSets, workingSets,
 } from './models';
 import { Planner } from './planner';
 import {
@@ -74,10 +74,10 @@ function pastSessions(p: ResolvedPrescription, history: WorkoutRecord[]): Past[]
 export function isStalled(sessions: LoggedExercise[]): boolean {
   if (sessions.length < 3) return false;
   const progressed = (newer: LoggedExercise, older: LoggedExercise) => {
-    const a = maxOf(workingSets(newer).map((s) => s.weight)), b = maxOf(workingSets(older).map((s) => s.weight));
+    const a = maxOf(straightSets(newer).map((s) => s.weight)), b = maxOf(straightSets(older).map((s) => s.weight));
     if (a > b + 0.01) return true;
     if (a < b - 0.01) return false;
-    return sum(workingSets(newer).map((s) => s.reps)) > sum(workingSets(older).map((s) => s.reps));
+    return sum(straightSets(newer).map((s) => s.reps)) > sum(straightSets(older).map((s) => s.reps));
   };
   return !progressed(sessions[0], sessions[1]) && !progressed(sessions[1], sessions[2]);
 }
@@ -116,7 +116,7 @@ export function suggest(p: ResolvedPrescription, args: {
     };
   }
 
-  const working = workingSets(last);
+  const working = straightSets(last);
   const lastLoad = maxOf(working.map((s) => s.weight));
   const repsList = working.map((s) => `${s.reps}`).join(', ');
 
@@ -187,9 +187,9 @@ export function repsDropped(history: WorkoutRecord[], programID: string, week: n
   for (const [key, cur] of now) {
     const prev = before.get(key);
     if (!prev) continue;
-    const a = maxOf(workingSets(cur).map((s) => s.weight)), b = maxOf(workingSets(prev).map((s) => s.weight));
+    const a = maxOf(straightSets(cur).map((s) => s.weight)), b = maxOf(straightSets(prev).map((s) => s.weight));
     if (Math.abs(a - b) >= 0.01) continue;
-    const rn = workingSets(cur).map((s) => s.reps), rp = workingSets(prev).map((s) => s.reps);
+    const rn = straightSets(cur).map((s) => s.reps), rp = straightSets(prev).map((s) => s.reps);
     // Compare like for like when a set was cut.
     const n = Math.min(rn.length, rp.length);
     if (sum(rn.slice(0, n)) < sum(rp.slice(0, n))) keys.push(key);

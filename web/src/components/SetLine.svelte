@@ -11,11 +11,14 @@
 <span class="row" style="width:100%">
   <span class="badge" class:on={selected}>{label}</span>
   <span class="semibold mono grow">{set.weight > 0 ? app.units.format(set.weight) : 'BW'} × {reps}</span>
-  {#if set.rir != null && !set.isWarmup}<span class="caption muted mono">RIR {set.rir}</span>{/if}
+  {#if set.type === 'failure'}<span class="caption failure">failure</span>
+  {:else if set.type === 'drop'}<span class="caption muted">drop</span>
+  {:else if set.rir != null && !set.isWarmup}<span class="caption muted mono">RIR {set.rir}</span>{/if}
   {#if selected}<ChevronUp size={16} color="var(--accent)" />{/if}
 </span>
 
 <style>
   .badge { min-width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 0.75rem; font-weight: 700; background: var(--raised); }
   .badge.on { background: var(--accent); }
+  .failure { color: var(--fatigued); font-weight: 600; }
 </style>

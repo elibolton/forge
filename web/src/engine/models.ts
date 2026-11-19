@@ -209,6 +209,12 @@ export function defaultPlan(over: Partial<UserPlan> = {}): UserPlan {
 
 export type Side = 'left' | 'right';
 
+/**
+ * A working set that isn't a plain straight set. `drop`: straight on from the set before at a lighter
+ * weight, no rest. `failure`: taken to failure, so no reps in reserve. Absent for a straight set.
+ */
+export type SetType = 'drop' | 'failure';
+
 export interface LoggedSet {
   weight: number;
   reps: number;
@@ -216,6 +222,7 @@ export interface LoggedSet {
   isWarmup: boolean;
   /** Which side, for per-arm or per-leg work. */
   side?: Side | null;
+  type?: SetType | null;
 }
 
 export interface RepRange { lower: number; upper: number }
@@ -234,6 +241,13 @@ export interface LoggedExercise {
 }
 
 export const workingSets = (l: LoggedExercise): LoggedSet[] => l.sets.filter((s) => !s.isWarmup && s.reps > 0);
+
+/**
+ * Working sets without drop sets: what progression judges. A drop set is extra work at a lighter
+ * weight, so it shouldn't count as a missed rep target or a lighter top weight. Volume, recovery and
+ * weekly set counts use `workingSets`.
+ */
+export const straightSets = (l: LoggedExercise): LoggedSet[] => workingSets(l).filter((s) => s.type !== 'drop');
 
 /** Which program day a logged workout was. */
 export interface ProgramRef {

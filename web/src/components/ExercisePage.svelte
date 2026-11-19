@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type LoggedSet, isBodyweight, isPerSide, muscleName, repRangeText } from '../engine';
-  import { ArrowLeftRight, ArrowRight, Check, ChevronDown, Circle, CircleCheck, Flag, Flame, Info, Pencil, Plus, Trophy } from '@lucide/svelte';
-  import { type SessionExercise, type SessionSet, exerciseOf, isRated, session } from '../lib/session.svelte';
+  import { ArrowDownRight, ArrowLeftRight, ArrowRight, Check, ChevronDown, Circle, CircleCheck, Flag, Flame, Info, Pencil, Plus, Trophy } from '@lucide/svelte';
+  import { type SessionExercise, type SessionSet, exerciseOf, isRated, numberedSets, parentOf, session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { fmtNum } from '../lib/units';
   import ActionMenu from './ActionMenu.svelte';
@@ -38,7 +38,9 @@
   const activeID = $derived(editingID ?? working.find((s) => !s.done)?.id ?? null);
   const active = $derived(ex.sets.find((s) => s.id === activeID));
   const perSide = $derived(ex.program ? isPerSide(ex.program.laterality) : false);
-  const roundCount = $derived(perSide ? Math.ceil(working.length / 2) : working.length);
+  /** Sets with a number; drop sets belong to the set before them. */
+  const numbered = $derived(numberedSets(ex.sets));
+  const roundCount = $derived(perSide ? Math.ceil(numbered.length / 2) : numbered.length);
   const weightStep = $derived(app.weightStep(e));
   const bar = $derived(barFor(e, units.pounds));
   const eccentric = $derived(ex.program?.effort.type === 'eccentricOnly');
@@ -50,15 +52,41 @@
   const rirText = (v: number | null | undefined) => (v == null ? '–' : v >= 4 ? '4+' : String(v));
 
   /** Set number; for per-side work both sides of a round share it. */
+  /** Set number; for per-side work both sides of a round share it, and a drop set shares its set's. */
   function number(id: string) {
-    const i = Math.max(0, working.findIndex((s) => s.id === id));
+    const at = ex.sets.findIndex((s) => s.id === id);
+    const own = ex.sets[at]?.type === 'drop' ? parentOf(ex.sets, at) : ex.sets[at];
+    const i = Math.max(0, numbered.findIndex((s) => s.id === own?.id));
     return perSide ? Math.floor(i / 2) + 1 : i + 1;
   }
 
+  /** Last time's matching set, compared like for like: straight sets with straight sets. */
+  const lastStraight = $derived(lastSets.filter((s) => s.type !== 'drop'));
   function lastFor(id: string): LoggedSet | undefined {
-    const i = working.findIndex((s) => s.id === id);
+    const i = numbered.findIndex((s) => s.id === id);
     if (i < 0) return undefined;
-    return lastSets[i] ?? lastSets[lastSets.length - 1];
+    return lastStraight[i] ?? lastStraight[lastStraight.length - 1];
+  }
+
+  /** A lighter weight for a new drop set: about 80%, on a loadable step. */
+  function dropWeight(s: SessionSet): number | null {
+    if (s.weight === null || isBodyweight(e)) return s.weight;
+    const shown = units.display(s.weight) * 0.8;
+    return units.kg(Math.max(0, Math.round(shown / weightStep) * weightStep));
+  }
+
+  const typeName = { drop: 'Drop set', failure: 'To failure' } as const;
+  function setMenu(s: SessionSet) {
+    return [
+      ...(s.done ? [{ label: 'Mark not done', action: () => toggle(s) }] : []),
+      ...(s.type !== 'drop' ? [{ label: 'Add a drop set after it', action: () => session.addDropSet(ex.id, s.id, dropWeight(s)) }] : []),
+      ...(s.type === 'failure'
+        ? [{ label: 'Make it a straight set', action: () => session.setType(ex.id, s.id, null) }]
+        : s.type === 'drop'
+          ? [{ label: 'Make it a straight set', action: () => session.setType(ex.id, s.id, null) }]
+          : [{ label: 'Mark as taken to failure', action: () => session.setType(ex.id, s.id, 'failure') }]),
+      { label: 'Delete set', danger: true, action: () => remove(s.id) },
+    ];
   }
 
   /** Heaviest working set ever logged for this exercise (kg). */
@@ -90,10 +118,6 @@
   const lastText = (s: LoggedSet) => (isBodyweight(e) || s.weight <= 0 ? `${repsLabel(s.reps)} reps` : `${units.format(s.weight)} × ${repsLabel(s.reps)}`);
   const lastShort = (s: LoggedSet) => (isBodyweight(e) || s.weight <= 0 ? `${s.reps}` : `${fmtNum(units.display(s.weight))}×${s.reps}`);
 
-  function heading(s: SessionSet) {
-    if (s.isAMRAP) return `SET ${number(s.id)} · MAX EFFORT`;
-    return `SET ${number(s.id)} OF ${roundCount}${s.side ? (s.side === 'left' ? ' · LEFT' : ' · RIGHT') : ''}`;
-  }
 </script>
 
 <div class="stack" style="--gap:16px">
@@ -160,8 +184,8 @@
     <section class="focus" class:amrap={s.isAMRAP}>
       <div class="row between" style="align-items:flex-end">
         <div class="stack" style="--gap:4px">
-          <span class="eyebrow" style="color:{s.isAMRAP ? 'var(--ember-2)' : 'var(--text-3)'}">{s.isAMRAP ? 'Max effort' : s.side ? (s.side === 'left' ? 'Left side' : 'Right side') : s.done ? 'Editing' : 'Now'}</span>
-          <span class="setno num">Set {number(s.id)}<span class="of"> / {roundCount}</span></span>
+          <span class="eyebrow" style="color:{s.isAMRAP ? 'var(--ember-2)' : 'var(--text-3)'}">{s.type ? typeName[s.type] : s.isAMRAP ? 'Max effort' : s.side ? (s.side === 'left' ? 'Left side' : 'Right side') : s.done ? 'Editing' : 'Now'}</span>
+          <span class="setno num">Set {number(s.id)}{#if s.type === 'drop'}<span class="of">{' · drop'}</span>{:else}<span class="of">{` / ${roundCount}`}</span>{/if}</span>
         </div>
         {#if last}
           <div class="last stack" style="--gap:3px">
@@ -188,7 +212,9 @@
       {#if bar !== undefined && (s.weight ?? 0) > 0}
         <PlateBar total={units.display(s.weight ?? 0)} {bar} pounds={units.pounds} />
       {/if}
-      {#if s.done && rated && !s.isWarmup}
+      {#if s.type === 'drop'}<span class="caption muted">Straight on from the set before at a lighter weight. No rest until the drops are done.</span>{/if}
+      {#if s.type === 'failure'}<span class="caption muted">Go until you can't do another clean rep. It's logged with 0 reps left.</span>{/if}
+      {#if s.done && rated && !s.isWarmup && !s.type}
         <div class="stack" style="--gap:8px">
           <span class="eyebrow">Reps left</span>
           <RIRChips compact value={s.rir} label="Reps left on set {number(s.id)}" onpick={(v) => session.rateSet(ex.id, s.id, v)} />
@@ -199,12 +225,12 @@
     <section class="focus complete stack" style="--gap:18px">
       <div class="row" style="--gap:12px">
         <span class="done-badge"><Check size={20} strokeWidth={3} /></span>
-        <div><div class="bold">All sets logged</div><div class="caption muted">{working.length} sets of {e.name}</div></div>
+        <div><div class="bold">All sets logged</div><div class="caption muted">{numbered.length} sets of {e.name}{working.length > numbered.length ? ` + ${working.length - numbered.length} drop` : ''}</div></div>
       </div>
       {#if eccentric}
         <p class="sub muted">Lowering reps only, so there's no RIR to rate. Progress comes from more controlled reps.</p>
       {:else if rated}
-        {@const doneSets = working.filter((x) => x.done)}
+        {@const doneSets = numbered.filter((x) => x.done)}
         {@const last = doneSets[doneSets.length - 1]}
         {#if last && rirOf(last) == null && session.pendingRating?.setID !== last.id}
           <div class="stack" style="--gap:10px">
@@ -227,22 +253,20 @@
     {#each working as s (s.id)}
       {@const isActive = s.id === activeID}
       {@const last = lastFor(s.id)}
-      <div class="row" style="--gap:4px">
+      <div class="row" class:drop-row={s.type === 'drop'} style="--gap:4px">
         <button class="set-row grow" class:active={isActive} class:done={s.done && !isActive}
-          aria-label="Set {s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}, {setText(s)}{s.done ? ', done' : ''}{s.done && rated && rirOf(s) != null ? `, ${rirText(rirOf(s))} reps left` : ''}{prs.has(s.id) ? ', personal record' : ''}"
+          aria-label="{s.type === 'drop' ? `Drop set after set ${number(s.id)}` : `Set ${s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}${number(s.id)}`}{s.type === 'failure' ? ', to failure' : ''}, {setText(s)}{s.done ? ', done' : ''}{s.done && rated && rirOf(s) != null ? `, ${rirText(rirOf(s))} reps left` : ''}{prs.has(s.id) ? ', personal record' : ''}"
           aria-pressed={isActive} onclick={() => (editingID = isActive ? null : s.id)}>
-          <span class="badge num">{s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}</span>
+          <span class="badge num" class:drop={s.type === 'drop'} class:failure={s.type === 'failure'}>{#if s.type === 'drop'}<ArrowDownRight size={15} strokeWidth={2.6} />{:else}{s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}{/if}</span>
           <span class="semibold mono">{setText(s)}</span>
           {#if last && !s.done}<span class="caption muted mono">last {lastShort(last)}</span>{/if}
           {#if prs.has(s.id)}<span class="pr" role="img" aria-label="Personal record"><Trophy size={13} /></span>{/if}
-          {#if s.done && rated && rirOf(s) != null}<span class="caption muted nowrap">{rirOf(s) === 0 ? 'to failure' : `${rirText(rirOf(s))} left`}</span>{/if}
+          {#if s.type === 'failure'}<span class="caption nowrap failure-tag">failure</span>
+          {:else if s.done && rated && s.type !== 'drop' && rirOf(s) != null}<span class="caption muted nowrap">{rirOf(s) === 0 ? 'to failure' : `${rirText(rirOf(s))} left`}</span>{/if}
           <span class="grow"></span>
           {#if s.done}<CircleCheck size={22} color="var(--fresh)" />{:else if isActive}<Pencil size={18} color="var(--ember-2)" />{:else}<Circle size={22} color="var(--text-3)" />{/if}
         </button>
-        <ActionMenu label="Set {number(s.id)} options" items={[
-          ...(s.done ? [{ label: 'Mark not done', action: () => toggle(s) }] : []),
-          { label: 'Delete set', danger: true, action: () => remove(s.id) },
-        ]}><span class="dots">⋯</span></ActionMenu>
+        <ActionMenu label="{s.type === 'drop' ? 'Drop set' : `Set ${number(s.id)}`} options" items={setMenu(s)}><span class="dots">⋯</span></ActionMenu>
       </div>
     {/each}
     <button class="add-set" onclick={() => session.addSet(ex.id)}><Plus size={16} /> Add set</button>
@@ -254,7 +278,7 @@
       {#if active}
         {@const s = active}
         <button class="btn primary block big log" onclick={() => log(s.id)}>
-          <span class="check"><Check size={18} strokeWidth={3.2} /></span> {s.done ? 'Update set' : `Log set ${number(s.id)}`}
+          <span class="check"><Check size={18} strokeWidth={3.2} /></span> {s.done ? 'Update set' : s.type === 'drop' ? 'Log drop set' : `Log set ${number(s.id)}`}
         </button>
       {:else}
         <button class="btn primary block big log" onclick={nextName ? onNext : onFinish}>
@@ -316,6 +340,11 @@
   .badge { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-size: 0.82rem; background: var(--surface-2); flex: none; }
   .set-row.active .badge { background: var(--ember-gradient); color: #fff; }
   .set-row.done .badge { background: rgba(60, 239, 176, 0.16); color: var(--fresh); }
+  /* Drop sets sit indented under their set; failure sets are marked in red. */
+  .drop-row { padding-left: 22px; }
+  .badge.drop { color: var(--ember-2); }
+  .badge.failure { box-shadow: inset 0 0 0 1.5px var(--fatigued); }
+  .failure-tag { color: var(--fatigued); font-weight: 600; }
   .add-set { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; border-radius: 16px; border: 1px dashed var(--hairline-2);
     color: var(--text-2); font-weight: 600; font-size: 0.9rem; }
   .dots { font-size: 1.3rem; line-height: 1; color: var(--text-2); }

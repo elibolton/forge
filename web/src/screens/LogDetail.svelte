@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { setLabels } from '../lib/labels';
   import SaveTemplateSheet from '../components/SaveTemplateSheet.svelte';
   import { templateFromLogged } from '../lib/templates';
   import { Catalog } from '../engine';
@@ -44,7 +45,7 @@
           {e.name} {#if isPR}<span class="kicker prbadge"><Trophy size={11} /> PR</span>{/if} <ChevronRight size={14} /></button>
         <div class="list">
           {#each logged.sets as set, j (j)}
-            <div class="item"><SetLine {set} exercise={e} label={set.isWarmup ? 'W' : `${logged.sets.slice(0, j).filter((s) => !s.isWarmup).length + 1}`} /></div>
+            <div class="item"><SetLine {set} exercise={e} label={setLabels(logged.sets)[j]} /></div>
           {/each}
         </div>
       </div>

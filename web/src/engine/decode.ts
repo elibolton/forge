@@ -71,6 +71,7 @@ export function readSet(v: unknown): LoggedSet | undefined {
   return {
     weight: num(v.weight, 0), reps: Math.trunc(num(v.reps, 0)), rir: optNum(v.rir), isWarmup: bool(v.isWarmup, false),
     side: v.side === 'left' || v.side === 'right' ? v.side : null,
+    ...(v.type === 'drop' || v.type === 'failure' ? { type: v.type } : {}),
   };
 }
 
