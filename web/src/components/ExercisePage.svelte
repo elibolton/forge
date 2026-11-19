@@ -7,7 +7,7 @@
   import ActionMenu from './ActionMenu.svelte';
   import ExerciseNote from './ExerciseNote.svelte';
   import PlateBar from './PlateBar.svelte';
-  import { barFor } from '../lib/plates';
+  import { plateSetup } from '../lib/plates';
   import ExerciseThumb from './ExerciseThumb.svelte';
   import ValueStepper from './ValueStepper.svelte';
   import RIRChips from './RIRChips.svelte';
@@ -42,7 +42,7 @@
   const numbered = $derived(numberedSets(ex.sets));
   const roundCount = $derived(perSide ? Math.ceil(numbered.length / 2) : numbered.length);
   const weightStep = $derived(app.weightStep(e));
-  const bar = $derived(barFor(e, units.pounds));
+  const plateFor = $derived(plateSetup(e, app.activeGym, units.pounds));
   const eccentric = $derived(ex.program?.effort.type === 'eccentricOnly');
   const rated = $derived(isRated(ex));
   /** Sets today that are personal records. */
@@ -213,8 +213,8 @@
         <ValueStepper title={e.isTimed ? 'Time' : 'Reps'} value={s.reps} step={e.isTimed ? 5 : 1} unit={e.isTimed ? 'seconds' : 'reps'} decimals={false}
           max={maxReps(e.isTimed)} onchange={(v) => session.editSet(ex.id, s.id, { reps: v })} />
       </div>
-      {#if bar !== undefined && (s.weight ?? 0) > 0}
-        <PlateBar total={units.display(s.weight ?? 0)} {bar} pounds={units.pounds} />
+      {#if plateFor && (s.weight ?? 0) > 0}
+        <PlateBar total={units.display(s.weight ?? 0)} bar={plateFor.bar} plates={plateFor.plates} pounds={units.pounds} />
       {/if}
       {#if s.type === 'drop'}<span class="caption muted">Straight on from the set before at a lighter weight. No rest until the drops are done.</span>{/if}
       {#if s.type === 'failure'}<span class="caption muted">Go until you can't do another clean rep. It's logged with 0 reps left.</span>{/if}

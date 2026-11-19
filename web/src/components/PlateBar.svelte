@@ -1,11 +1,12 @@
 <script lang="ts">
+  import type { PlateStock } from '../engine';
   import { platesPerSide } from '../lib/plates';
   import { fmtNum } from '../lib/units';
 
-  /** What to put on each side of the bar, drawn as a little loaded sleeve. */
-  let { total, bar, pounds }: { total: number; bar: number; pounds: boolean } = $props();
-  const result = $derived(platesPerSide(total, bar, pounds));
-  const biggest = $derived(pounds ? 45 : 25);
+  /** What to put on each side of the bar, drawn as a little loaded sleeve. `plates`: the gym's own; unset uses the standard set. */
+  let { total, bar, pounds, plates }: { total: number; bar: number; pounds: boolean; plates?: PlateStock[] } = $props();
+  const result = $derived(platesPerSide(total, bar, pounds, plates));
+  const biggest = $derived(Math.max(pounds ? 45 : 25, ...(plates ?? []).map((p) => p.weight)));
   const text = $derived(result.plates.length ? grouped(result.plates) : 'Empty bar');
   /** Drawn plates; past this many the sleeve would crowd out the text. */
   const MAX_DRAWN = 8;
