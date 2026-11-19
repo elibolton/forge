@@ -1,7 +1,11 @@
 <script lang="ts">
   import { Minus, Plus } from '@lucide/svelte';
 
-  /** A big numeral with − and + on either side; tap the number to type it. */
+  /**
+   * A big numeral with − and + on either side; tap the number to type it. Typed numbers count as soon
+   * as they're valid, so tapping Log straight from the keyboard logs what's on screen. Holding − or +
+   * keeps stepping, faster the longer you hold.
+   */
   let { title, value, step, unit, decimals, onchange }: {
     title: string; value: number; step: number; unit: string; decimals: boolean; onchange: (v: number) => void;
   } = $props();
@@ -9,22 +13,56 @@
   const round = (v: number) => (decimals ? Math.round(v * 10) / 10 : Math.round(v));
   const shown = $derived(String(round(value)));
 
+  // While typing, show exactly what was typed ("82." mid-entry) rather than the rounded value.
+  let draft = $state<string | null>(null);
+  const text = $derived(draft ?? shown);
+
   function input(e: Event) {
-    const raw = (e.currentTarget as HTMLInputElement).value.replace(',', '.');
+    const el = e.currentTarget as HTMLInputElement;
+    draft = el.value;
+    const raw = el.value.replace(',', '.');
     const n = Number(raw);
     if (raw !== '' && Number.isFinite(n)) onchange(Math.max(0, round(n)));
   }
+
+  // MARK: Hold to repeat
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bump = (dir: 1 | -1) => onchange(Math.max(0, round(value + dir * step)));
+
+  function hold(e: PointerEvent, dir: 1 | -1) {
+    if (e.button !== 0) return;
+    // Keeps the hold going if the finger drifts off the button.
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+    bump(dir);
+    let n = 0;
+    const repeat = () => {
+      bump(dir);
+      n++;
+      timer = setTimeout(repeat, n < 6 ? 140 : n < 16 ? 80 : 45);
+    };
+    timer = setTimeout(repeat, 420);
+  }
+  function release() { clearTimeout(timer); timer = undefined; }
+  // Keyboard and assistive tech send a click with no pointer press before it.
+  function click(e: MouseEvent, dir: 1 | -1) { if (e.detail === 0) bump(dir); }
+
+  $effect(() => release);
 </script>
 
 <div class="dial">
   <span class="eyebrow" aria-hidden="true">{title}</span>
-  <input class="num value" type="text" inputmode={decimals ? 'decimal' : 'numeric'} value={shown} aria-label="{title} in {unit}"
-    style="font-size:{shown.length > 4 ? 2.3 : shown.length > 3 ? 2.7 : 3.1}rem"
-    onchange={input} onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
-  <span class="caption faint" aria-hidden="true">{unit}</span>
+  <input class="num value" type="text" inputmode={decimals ? 'decimal' : 'numeric'} enterkeyhint="done" value={text} aria-label="{title} in {unit}"
+    style="font-size:{text.length > 4 ? 2.1 : text.length > 3 ? 2.5 : 3.1}rem"
+    oninput={input} onblur={() => (draft = null)}
+    onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+    onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
+  <span class="caption muted" aria-hidden="true">{unit}</span>
   <div class="steps">
-    <button aria-label="Decrease {title}" onclick={() => onchange(Math.max(0, round(value - step)))}><Minus size={20} strokeWidth={2.6} /></button>
-    <button aria-label="Increase {title}" onclick={() => onchange(round(value + step))}><Plus size={20} strokeWidth={2.6} /></button>
+    <button aria-label="Decrease {title}" onpointerdown={(e) => hold(e, -1)} onpointerup={release} onpointercancel={release}
+      onlostpointercapture={release} onclick={(e) => click(e, -1)}><Minus size={20} strokeWidth={2.6} /></button>
+    <button aria-label="Increase {title}" onpointerdown={(e) => hold(e, 1)} onpointerup={release} onpointercancel={release}
+      onlostpointercapture={release} onclick={(e) => click(e, 1)}><Plus size={20} strokeWidth={2.6} /></button>
   </div>
 </div>
 
@@ -34,7 +72,7 @@
   .value { background: transparent !important; border: 0 !important; text-align: center; padding: 0 !important; min-height: 0 !important;
     height: 3.4rem; line-height: 1; font-stretch: 125%; font-weight: 800; letter-spacing: -0.03em; width: 100%; }
   .steps { display: flex; gap: 8px; width: 100%; margin-top: 10px; }
-  .steps button { flex: 1; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-2);
-    border: 1px solid var(--hairline); }
+  .steps button { flex: 1; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-2);
+    border: 1px solid var(--hairline); touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   .steps button:active { background: var(--surface-3); }
 </style>

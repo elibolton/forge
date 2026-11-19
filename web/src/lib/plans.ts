@@ -28,7 +28,7 @@ export const isTodayPlanCurrent = (t: TodayPlan, logCount: number, now = Date.no
   isSameDay(t.generatedAt, now) && t.logCount === logCount;
 
 /** Everything a generated workout depends on, as a stable string. Preferences are applied in place. */
-export function planBasis(p: Profile): string {
+export function planBasis(p: Profile, activities: { id: string }[] = app.activities): string {
   const plan = p.plan;
   const gym = p.gyms.find((g) => g.id === p.activeGymID) ?? p.gyms[0];
   const increments = Object.entries(gym?.increments ?? {}).map(([k, v]) => `${k}=${v}`).sort();
@@ -36,7 +36,7 @@ export function planBasis(p: Profile): string {
   return [
     plan.goal, plan.experience, plan.split, plan.sessionMinutes, plan.variability, plan.warmUpSets, plan.supersets,
     [...plan.injuries].sort().join(','), gym?.id, [...(gym?.equipment ?? [])].sort().join(','), gym?.usesPounds,
-    increments.join(','), overrides.join(','), p.activities.map((a) => a.id).sort().join(','),
+    increments.join(','), overrides.join(','), activities.map((a) => a.id).sort().join(','),
   ].join('|');
 }
 

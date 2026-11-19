@@ -8,13 +8,15 @@
   import ExercisePicker from '../components/ExercisePicker.svelte';
   import ExerciseThumb from '../components/ExerciseThumb.svelte';
   import RestTimerBar from '../components/RestTimerBar.svelte';
+  import RatePrompt from '../components/RatePrompt.svelte';
   import Sheet from '../components/Sheet.svelte';
   import { dayTitle } from '../lib/labels';
-  import { exerciseOf, isComplete, session, sessionExerciseFrom, supersetOf } from '../lib/session.svelte';
+  import { type SessionExercise, exerciseOf, isComplete, session, supersetOf } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { minSec } from '../lib/units';
-  import { swapInSession } from '../lib/swap';
+  import { saving } from '../lib/saving.svelte';
+  import { liveRecords } from '../lib/records';
 
   let adding = $state(false);
   let swapping = $state(false);
@@ -32,44 +34,46 @@
   });
   $effect(() => { const t = setInterval(() => (tick = Date.now()), 1000); return () => clearInterval(t); });
 
+  // iOS keeps the layout viewport full height when the keyboard opens, so a full-screen logger would
+  // sit under it. Fit the logger to the visible area instead, which keeps the Log button just above
+  // the keyboard. The rest timer steps aside while typing to leave room.
+  let viewport = $state<{ height: number; top: number } | null>(null);
+  const keyboardOpen = $derived(viewport !== null && viewport.height < innerHeight - 120);
+  $effect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const sync = () => {
+      viewport = { height: vv.height, top: vv.offsetTop };
+      // Keep the field being typed in on screen once the logger has shrunk.
+      const field = document.activeElement;
+      if (field instanceof HTMLInputElement && scroller?.contains(field)) requestAnimationFrame(() => field.scrollIntoView({ block: 'nearest' }));
+    };
+    sync();
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    return () => { vv.removeEventListener('resize', sync); vv.removeEventListener('scroll', sync); };
+  });
+
   const ws = $derived(session.state!);
   const index = $derived(Math.min(ws.currentIndex, Math.max(0, ws.exercises.length - 1)));
   const current = $derived(ws.exercises[index]);
   const title = $derived(ws.title ?? (ws.focus ? dayTitle(ws.focus) : 'Workout'));
 
   function go(i: number) {
-    session.update((s) => { s.currentIndex = i; });
+    session.goTo(i);
     scroller?.scrollTo({ top: 0 });
   }
 
   function discard() {
-    const snapshot = structuredClone(session.state!);
-    session.discard();
-    toasts.show('Workout discarded', () => session.restore(snapshot));
+    const snapshot = session.discard();
+    if (snapshot) toasts.show('Workout discarded', () => session.restore(snapshot));
   }
 
-  function add(e: ReturnType<typeof Catalog.exercise>) {
-    const planned = app.planner().prescribe(e);
-    session.update((s) => { s.exercises.push(sessionExerciseFrom(planned)); s.currentIndex = s.exercises.length - 1; });
-  }
+  const add = (e: ReturnType<typeof Catalog.exercise>) => session.addExercise(app.planner().prescribe(e));
 
-  function removeAt(i: number) {
-    const before = structuredClone(session.state!.exercises);
-    const name = exerciseOf(before[i]).name;
-    session.update((s) => {
-      s.exercises.splice(i, 1);
-      if (s.currentIndex >= s.exercises.length) s.currentIndex = Math.max(0, s.exercises.length - 1);
-    });
-    toasts.show(`Removed ${name}`, () => session.update((s) => { s.exercises = before; }));
-  }
-
-  function move(i: number, by: number) {
-    session.update((s) => {
-      const j = i + by;
-      if (j < 0 || j >= s.exercises.length) return;
-      [s.exercises[i], s.exercises[j]] = [s.exercises[j], s.exercises[i]];
-      if (s.currentIndex === i) s.currentIndex = j; else if (s.currentIndex === j) s.currentIndex = i;
-    });
+  function remove(x: SessionExercise) {
+    const undo = session.removeExercise(x.id);
+    if (undo) toasts.show(`Removed ${exerciseOf(x).name}`, undo);
   }
 
   // Swipe between exercises, like the iOS pager.
@@ -83,18 +87,44 @@
     if (dx > 0 && index > 0) go(index - 1);
   }
 
+  // Personal records as they happen: a toast and a buzz the moment a set beats your best.
+  const live = $derived(new Map(ws.exercises.flatMap((x) =>
+    [...liveRecords(x.sets, app.derivedHistory.bestOneRM.get(x.exerciseID), x.rir)].map(([id, e1rm]) => [id, { x, e1rm }] as const))));
+  /** Records already shown, so reopening the logger or editing a set doesn't announce one twice. */
+  let announced: Set<string> | null = null;
+  $effect(() => {
+    const ids = [...live.keys()];
+    if (!announced) { announced = new Set(ids); return; }
+    for (const id of ids) {
+      if (announced.has(id)) continue;
+      announced.add(id);
+      const r = live.get(id)!;
+      navigator.vibrate?.([30, 40, 30, 40, 60]);
+      toasts.show(`New PR · ${exerciseOf(r.x).name} · est. 1RM ${app.units.format(r.e1rm)}`);
+    }
+  });
+
   // Finish review
   const done = $derived(ws.exercises.flatMap((x) => x.sets).filter((s) => !s.isWarmup && s.done));
   const pending = $derived(ws.exercises.flatMap((x) => x.sets).filter((s) => !s.isWarmup && !s.done).length);
   const volume = $derived(done.reduce((t, s) => t + (s.weight ?? 0) * s.reps, 0));
 
-  function save() {
-    reviewing = false;
-    session.finish();
+  let saveFailed = $state(false);
+  async function save() {
+    saveFailed = false;
+    const records = await session.finish();
+    if (records === null) saveFailed = true; // Still open, with every set intact.
+    else reviewing = false;
   }
+
+  // Discarding loses logged sets, so ask first when there are any.
+  let confirmingDiscard = $state(false);
+  const loggedCount = $derived(ws.exercises.flatMap((x) => x.sets).filter((s) => s.done).length);
+  function askDiscard() { if (loggedCount) confirmingDiscard = true; else discard(); }
 </script>
 
-<div class="logger" role="dialog" aria-modal="true" aria-label={title}>
+<div class="logger" class:typing={keyboardOpen} role="dialog" aria-modal="true" aria-label={title}
+  style={keyboardOpen && viewport ? `bottom:auto;height:${viewport.height}px;top:${viewport.top}px` : ''}>
   <header class="head">
     <button class="icon-btn" aria-label="Minimize workout" onclick={() => (session.isExpanded = false)}><ChevronDown size={20} /></button>
     <div class="center">
@@ -106,7 +136,7 @@
       { label: 'Swap this exercise', action: () => (swapping = true) },
       { label: 'Add exercise', action: () => (adding = true) },
       { label: 'Save as a workout', action: () => (savingTemplate = true) },
-      { label: 'Discard workout', danger: true, action: discard },
+      { label: 'Discard workout', danger: true, action: askDiscard },
     ]}><Ellipsis size={18} /></ActionMenu>
     <button class="btn primary finish" onclick={() => (reviewing = true)}>Finish</button>
   </header>
@@ -149,7 +179,7 @@
     {/if}
   </div>
 
-  <div class="rest"><RestTimerBar /></div>
+  <div class="rest"><RatePrompt /><RestTimerBar /></div>
 </div>
 
 {#if reviewing}
@@ -161,17 +191,35 @@
         <div><b class="num">{done.length}</b><span class="caption muted">sets logged</span></div>
         <div><b class="num">{volume > 0 ? app.units.format(volume) : '–'}</b><span class="caption muted">volume</span></div>
       </div>
+      {#if saveFailed}
+        <div class="card stack save-failed" role="alert">
+          <div class="row bold" style="--gap:8px;color:var(--fatigued)"><CircleAlert size={20} /> Your workout wasn't saved</div>
+          <p class="sub muted">{saving.lastFailure ?? "Forge couldn't save to this device."} The workout is still open and every set is kept. Free up some space if you can, then try again.</p>
+        </div>
+      {/if}
       {#if pending > 0}
         <div class="card stack">
           <div class="row bold" style="--gap:8px;color:var(--recovering)"><CircleAlert size={20} /> {pending} planned {pending === 1 ? "set wasn't" : "sets weren't"} logged</div>
           <p class="sub muted">Did you do them? Logging them keeps your recovery and progression accurate.</p>
-          <button class="btn primary block big" onclick={() => { session.logRemainingAsPlanned(); save(); }}>I did them, log as planned</button>
+          <!-- Equal weight: logging sets you didn't do would skew progression as much as missing ones. -->
+          <button class="btn block big" disabled={session.saving} onclick={() => { session.logRemainingAsPlanned(); save(); }}>I did them, log as planned</button>
           <!-- A workout with no working sets would only add noise to history and recovery. -->
-          <button class="btn block" disabled={!done.length} onclick={save}>{done.length ? 'Save without them' : 'Nothing logged to save'}</button>
+          <button class="btn block big" disabled={!done.length || session.saving} onclick={save}>{done.length ? 'Save without them' : 'Nothing logged to save'}</button>
         </div>
       {:else}
-        <button class="btn primary block big" disabled={!done.length} onclick={save}>Save Workout</button>
+        <button class="btn primary block big" disabled={!done.length || session.saving} onclick={save}>{saveFailed ? 'Try Again' : 'Save Workout'}</button>
       {/if}
+    </div>
+  </Sheet>
+{/if}
+
+{#if confirmingDiscard}
+  <Sheet title="Discard Workout?" onclose={() => (confirmingDiscard = false)}>
+    {#snippet leading()}<span></span>{/snippet}
+    <div class="stack" style="--gap:14px">
+      <p class="sub muted">{loggedCount} logged {loggedCount === 1 ? 'set' : 'sets'} will be thrown away and won't count toward your history or recovery.</p>
+      <button class="btn primary block big" onclick={() => (confirmingDiscard = false)}>Keep Training</button>
+      <button class="btn block big danger" onclick={() => { confirmingDiscard = false; discard(); }}>Discard Workout</button>
     </div>
   </Sheet>
 {/if}
@@ -189,9 +237,9 @@
             <span class="grow"><span>{exerciseOf(x).name}</span><br /><span class="caption muted mono">{w.filter((s) => s.done).length}/{w.length} sets</span></span>
             {#if isComplete(x)}<CircleCheck size={20} color="var(--fresh)" aria-label="Done" />{/if}
           </button>
-          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} up" disabled={i === 0} onclick={() => move(i, -1)}><ArrowUp size={18} /></button>
-          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} down" disabled={i === ws.exercises.length - 1} onclick={() => move(i, 1)}><ArrowDown size={18} /></button>
-          <button class="icon-btn" style="color:var(--fatigued)" aria-label="Remove {exerciseOf(x).name}" onclick={() => removeAt(i)}><Trash2 size={18} /></button>
+          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} up" disabled={i === 0} onclick={() => session.moveExercise(x.id, -1)}><ArrowUp size={18} /></button>
+          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} down" disabled={i === ws.exercises.length - 1} onclick={() => session.moveExercise(x.id, 1)}><ArrowDown size={18} /></button>
+          <button class="icon-btn" style="color:var(--fatigued)" aria-label="Remove {exerciseOf(x).name}" onclick={() => remove(x)}><Trash2 size={18} /></button>
         </div>
       {/each}
       <button class="item link" onclick={() => { overview = false; adding = true; }}>Add Exercise</button>
@@ -205,7 +253,7 @@
 {#if swapping && current}
   {@const c = current}
   <ExercisePicker title="Swap {exerciseOf(c).name}" exercises={app.planner().alternatives(exerciseOf(c), new Set(ws.exercises.map((x) => x.exerciseID)))}
-    onpick={(e) => { session.update((s) => swapInSession(s, c.id, e, app.planner())); toasts.show(`Swapped in ${e.name}`); }}
+    onpick={(e) => { session.swapExercise(c.id, e, app.planner()); toasts.show(`Swapped in ${e.name}`); }}
     onclose={() => (swapping = false)} />
 {/if}
 {#if adding}
@@ -220,10 +268,11 @@
   .title { font-weight: 650; font-size: 0.95rem; }
   .elapsed { font-size: 0.78rem; color: var(--text-3); }
   .finish { min-height: 40px; padding: 8px 16px; }
-  .pos { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px; }
-  .step { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--surface-2); }
-  .strip { display: flex; gap: 5px; padding: 8px 18px 6px; }
-  .strip button { flex: 1; padding: 8px 0; }
+  .pos { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 2px; }
+  .step { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--surface-2); }
+  .strip { display: flex; gap: 5px; padding: 0 18px; }
+  /* Thin bars, tall enough to tap. */
+  .strip button { flex: 1; padding: 14px 0; }
   .seg { display: block; height: 4px; border-radius: 3px; background: var(--surface-3); transition: background 0.3s, box-shadow 0.3s; }
   .seg.now { background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
   .seg.complete { background: var(--fresh); }
@@ -231,10 +280,11 @@
   .strip button:has(.pair-start) { padding-right: 0; margin-right: -5px; }
   .seg.pair-start { border-radius: 3px 0 0 3px; }
   .seg.pair-end { border-radius: 0 3px 3px 0; }
-  .scroll { flex: 1; overflow-y: auto; padding: 10px 18px 40px; -webkit-overflow-scrolling: touch; }
+  .scroll { flex: 1; overflow-y: auto; padding: 10px 18px 0; -webkit-overflow-scrolling: touch; }
   .scroll > :global(*) { max-width: 620px; margin: 0 auto; }
   .rest { padding-bottom: var(--safe-bottom); }
-  .rest:empty { display: none; }
+  .rest:empty, .typing .rest { display: none; }
+  .save-failed { border-color: rgba(255, 77, 109, 0.4); }
   .empty { align-items: center; text-align: center; padding-top: 22vh; }
   .stats > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .stats > div + div { border-left: 1px solid var(--hairline); }

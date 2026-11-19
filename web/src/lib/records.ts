@@ -59,3 +59,24 @@ export function prTimeline(logs: Log[]): PREvent[] {
   }
   return events.reverse();
 }
+
+/** A set in a workout in progress, as much as live records need. Weights are kg. */
+interface LiveSet { id: string; weight: number | null; reps: number; rir?: number | null; isWarmup: boolean; done: boolean }
+
+/**
+ * Sets in a workout in progress that are personal records, with their estimated 1RM, in the order
+ * they were done. A set counts when it beats your best before today by more than 0.5% and every
+ * earlier set today, so one big set is one record, not three. With no history there's no record, as
+ * at finish. `fallbackRIR` is used for sets not rated on their own.
+ */
+export function liveRecords(sets: LiveSet[], best: number | undefined, fallbackRIR: number | null = null): Map<string, number> {
+  const records = new Map<string, number>();
+  if (best === undefined) return records;
+  let bar = best * 1.005;
+  for (const s of sets) {
+    if (!s.done || s.isWarmup || !s.weight || s.weight <= 0 || s.reps <= 0) continue;
+    const e = oneRM(s.weight, s.reps, s.rir ?? fallbackRIR);
+    if (e > bar) { records.set(s.id, e); bar = e; }
+  }
+  return records;
+}

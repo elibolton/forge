@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 // Persistence is IndexedDB in the app; here it's a no-op.
 vi.mock('./db', () => ({
-  db: { get: async () => undefined, set: async () => {}, del: async () => {}, allLogs: async () => [], putLogs: async () => {}, deleteLog: async () => {}, replaceLogs: async () => {}, clear: async () => {} },
+  db: { get: vi.fn(async () => undefined), set: async () => {}, del: async () => {}, allLogs: async () => [], putLogs: vi.fn(async () => {}), deleteLog: async () => {}, replaceLogs: async () => {}, clear: async () => {} },
   requestPersistence: async () => false,
 }));
 
@@ -12,6 +12,12 @@ const { session, newSet } = await import('./session.svelte');
 const { goalStreak, trainedDays, weeklyCounts, DAY } = await import('./weeks');
 const { exerciseRecords, prTimeline } = await import('./records');
 const { toExternal } = await import('./activities');
+const { db } = await import('./db');
+const { saving } = await import('./saving.svelte');
+const { checkSet } = await import('./setCheck');
+const { workoutLog, newRecords, completesProgramDay } = await import('./finishWorkout');
+const { liveRecords } = await import('./records');
+const { oneRM } = await import('../engine');
 type SessionExercise = import('./session.svelte').SessionExercise;
 type ProgramSlotInfo = import('./session.svelte').ProgramSlotInfo;
 
@@ -100,13 +106,13 @@ describe('Logging sets', () => {
   });
 });
 
-describe('Finishing', () => {
-  test('saves only done sets, with RIR on working sets', () => {
+describe('Finishing', async () => {
+  test('saves only done sets, with RIR on working sets', async () => {
     start([
       exercise('a', [newSet(40, 8, { isWarmup: true, done: true }), newSet(80, 8, { done: true }), newSet(80, 8)], { rir: 1 }),
       exercise('b', [newSet(20, 12)], { exerciseID: 'db-fly' }),
     ]);
-    session.finish();
+    await session.finish();
     expect(app.logs.length).toBe(1);
     const [bench] = app.logs[0].exercises;
     expect(app.logs[0].exercises.map((e) => e.exerciseID)).toEqual(['bb-bench']);
@@ -116,34 +122,277 @@ describe('Finishing', () => {
     expect(session.finished?.records).toEqual([]);
   });
 
-  test('lowering-only work is saved without RIR', () => {
+  test('lowering-only work is saved without RIR', async () => {
     start([exercise('a', [newSet(0, 5, { done: true })], { exerciseID: 'nordic-curl', rir: 2, program: info({ effort: { type: 'eccentricOnly' } }) })]);
-    session.finish();
+    await session.finish();
     expect(app.logs[0].exercises[0].sets[0].rir).toBeNull();
     expect(app.logs[0].exercises[0].slotID).toBe('x.1');
   });
 
-  test('beating your best estimated 1RM is a personal record', () => {
+  test('beating your best estimated 1RM is a personal record', async () => {
     start([exercise('a', [newSet(80, 5, { done: true })], { rir: 2 })]);
-    session.finish();
+    await session.finish();
     start([exercise('a', [newSet(90, 5, { done: true })], { rir: 2 })]);
-    const records = session.finish();
+    const records = (await session.finish())!;
     expect(records.map((r) => r.exercise.id)).toEqual(['bb-bench']);
     expect(records[0].oneRM).toBeGreaterThan(records[0].previous);
   });
 
-  test('nothing logged saves nothing', () => {
+  test('nothing logged saves nothing', async () => {
     start([exercise('a', [newSet(80, 8)])]);
-    session.finish();
+    await session.finish();
     expect(app.logs.length).toBe(0);
   });
 
-  test('a program day moves the program on once it has working sets', () => {
+  test('a program day moves the program on once it has working sets', async () => {
     const program = Programs.pplul8;
     app.setProgramProgress(newProgress(program.id));
     start([exercise('a', [newSet(80, 8, { done: true })])], { programID: program.id, week: 1, dayID: 'push', isDeload: false });
-    session.finish();
+    await session.finish();
     expect(app.profile!.programProgress!.completed[1]).toEqual(['push']);
+  });
+
+  test('a failed save keeps the workout open, adds nothing and can be tried again', async () => {
+    const program = Programs.pplul8;
+    app.setProgramProgress(newProgress(program.id));
+    start([exercise('a', [newSet(80, 8, { done: true })])], { programID: program.id, week: 1, dayID: 'push', isDeload: false });
+    vi.mocked(db.putLogs).mockRejectedValueOnce(Object.assign(new Error('full'), { name: 'QuotaExceededError' }));
+    expect(await session.finish()).toBeNull();
+    expect(session.state).not.toBeNull();
+    expect(session.state!.exercises[0].sets[0].done).toBe(true);
+    expect(app.logs.length).toBe(0);
+    expect(app.profile!.programProgress!.completed[1] ?? []).toEqual([]);
+    expect(saving.lastFailure).toMatch(/out of storage/);
+    expect(saving.error).toBeNull(); // the dropped log isn't retried behind your back
+
+    expect(await session.finish()).toEqual([]);
+    expect(app.logs.length).toBe(1);
+    expect(session.state).toBeNull();
+    expect(saving.error).toBeNull();
+  });
+
+  test('a second tap while saving logs the workout once', async () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const [first, second] = await Promise.all([session.finish(), session.finish()]);
+    expect(first).toEqual([]);
+    expect(second).toBeNull();
+    expect(app.logs.length).toBe(1);
+  });
+});
+
+describe('Changing a workout in progress', () => {
+  const ids = () => session.state!.exercises.map((x) => x.id);
+
+  test('removing an exercise can be undone, back where it was and still showing', () => {
+    start([exercise('a', [newSet(80, 8)]), exercise('b', [newSet(20, 12)]), exercise('c', [newSet(30, 10)])]);
+    session.goTo(2);
+    const undo = session.removeExercise('c')!;
+    expect(ids()).toEqual(['a', 'b']);
+    expect(session.state!.currentIndex).toBe(1);
+    undo();
+    expect(ids()).toEqual(['a', 'b', 'c']);
+    expect(session.state!.currentIndex).toBe(2);
+    expect(session.removeExercise('nope')).toBeUndefined();
+  });
+
+  test('moving keeps the showing exercise showing; moves past the ends do nothing', () => {
+    start([exercise('a', [newSet(80, 8)]), exercise('b', [newSet(20, 12)])]);
+    session.moveExercise('a', 1);
+    expect(ids()).toEqual(['b', 'a']);
+    expect(session.state!.currentIndex).toBe(1);
+    session.moveExercise('a', 1);
+    expect(ids()).toEqual(['b', 'a']);
+    session.goTo(5);
+    expect(session.state!.currentIndex).toBe(1);
+  });
+
+  test('set edits are never negative and reps are whole', () => {
+    const set = newSet(80, 8);
+    start([exercise('a', [set])]);
+    session.editSet('a', set.id, { weight: -5, reps: 7.6 });
+    expect(session.state!.exercises[0].sets[0]).toMatchObject({ weight: 0, reps: 8 });
+    session.editSet('a', set.id, { reps: -2 });
+    expect(session.state!.exercises[0].sets[0].reps).toBe(0);
+    session.editSet('a', set.id, { weight: null });
+    expect(session.state!.exercises[0].sets[0].weight).toBeNull();
+  });
+
+  test('adding a set copies the last working set; per-side work adds both sides', () => {
+    start([
+      exercise('a', [newSet(40, 8, { isWarmup: true }), newSet(80, 6)]),
+      exercise('b', [newSet(20, 10, { side: 'left' }), newSet(20, 10, { side: 'right' })], { program: info({ laterality: 'perArm' }) }),
+      exercise('c', []),
+    ]);
+    session.addSet('a');
+    session.addSet('b');
+    session.addSet('c');
+    const [a, b, c] = session.state!.exercises;
+    expect(a.sets.slice(-1)[0]).toMatchObject({ weight: 80, reps: 6, isWarmup: false, done: false });
+    expect(b.sets.slice(-2).map((x) => x.side)).toEqual(['left', 'right']);
+    expect(c.sets).toMatchObject([{ weight: null, reps: 10 }]);
+  });
+
+  test('marking done, removing a set and rating RIR', () => {
+    const [s1, s2] = [newSet(80, 8), newSet(80, 8)];
+    start([exercise('a', [s1, s2])]);
+    session.setDone('a', s1.id, true);
+    session.removeSet('a', s2.id);
+    session.setRIR('a', 2.4);
+    const a = session.state!.exercises[0];
+    expect(a.sets.map((x) => x.done)).toEqual([true]);
+    expect(a.rir).toBe(2);
+    expect(session.restEndsAt).toBeNull(); // only logSet starts rest
+  });
+
+  test('discarding hands back the workout for undo', () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const snapshot = session.discard()!;
+    expect(session.state).toBeNull();
+    session.restore(snapshot);
+    expect(session.state!.exercises[0].sets[0].done).toBe(true);
+    expect(session.discard()).not.toBeNull();
+    expect(session.discard()).toBeNull();
+  });
+});
+
+describe('Building the saved workout', () => {
+  const state = (exercises: SessionExercise[], program?: { programID: string; week: number; dayID: string; isDeload: boolean }) =>
+    ({ startedAt: 1_000_000, focus: 'push' as const, exercises, currentIndex: 0, program });
+
+  test('nothing done is nothing to save', () => {
+    expect(workoutLog(state([exercise('a', [newSet(80, 8)])]), 'x', 2_000_000)).toBeNull();
+  });
+
+  test('it ends when told, never before it started', () => {
+    const st = state([exercise('a', [newSet(80, 8, { done: true })])]);
+    expect(workoutLog(st, 'x', 1_000_000 + 45 * 60_000)!.durationSeconds).toBe(45 * 60);
+    expect(workoutLog(st, 'x', 0)!.durationSeconds).toBe(0);
+  });
+
+  test('a program day completes only with a working set', () => {
+    const ref = { programID: 'p', week: 1, dayID: 'push', isDeload: false };
+    expect(completesProgramDay(workoutLog(state([exercise('a', [newSet(80, 8, { done: true })])], ref), 'x', 2_000_000))).toBe(true);
+    expect(completesProgramDay(workoutLog(state([exercise('a', [newSet(40, 8, { isWarmup: true, done: true })])], ref), 'x', 2_000_000))).toBe(false);
+    expect(completesProgramDay(workoutLog(state([exercise('a', [newSet(80, 8, { done: true })])]), 'x', 2_000_000))).toBe(false);
+  });
+
+  test('records beat the previous best by more than half a percent; first times are not records', () => {
+    const log = workoutLog(state([exercise('a', [newSet(100, 5, { done: true })], { rir: 0 })]), 'x', 2_000_000)!;
+    expect(newRecords(log.exercises, new Map())).toEqual([]);
+    expect(newRecords(log.exercises, new Map([['bb-bench', 200]]))).toEqual([]);
+    expect(newRecords(log.exercises, new Map([['bb-bench', 100]])).map((r) => r.exercise.id)).toEqual(['bb-bench']);
+  });
+});
+
+describe('Rating sets', () => {
+  test('logging a working set asks for its rating; warm-ups, first sides and lowering-only work do not', () => {
+    const [w, a1] = [newSet(40, 8, { isWarmup: true }), newSet(80, 8)];
+    start([
+      exercise('a', [w, a1]),
+      exercise('b', [newSet(20, 10, { side: 'left' }), newSet(20, 10, { side: 'right' })], { program: info({ laterality: 'perArm' }) }),
+      exercise('c', [newSet(0, 5)], { exerciseID: 'nordic-curl', program: info({ effort: { type: 'eccentricOnly' } }) }),
+    ]);
+    session.logSet(w.id, 'a');
+    expect(session.pendingRating).toBeNull();
+    session.logSet(a1.id, 'a');
+    expect(session.pendingRating).toEqual({ exerciseID: 'a', setID: a1.id });
+
+    const [left, right] = session.state!.exercises[1].sets;
+    session.logSet(left.id, 'b');
+    expect(session.pendingRating).toBeNull();
+    session.logSet(right.id, 'b');
+    expect(session.pendingRating?.setID).toBe(right.id);
+
+    session.logSet(session.state!.exercises[2].sets[0].id, 'c');
+    expect(session.pendingRating).toBeNull();
+  });
+
+  test('rating the right side rates an unrated left side too, and closes the prompt', () => {
+    start([exercise('b', [newSet(20, 10, { side: 'left', done: true }), newSet(20, 10, { side: 'right', done: true })], { program: info({ laterality: 'perLeg' }) })]);
+    const [left, right] = session.state!.exercises[0].sets;
+    session.pendingRating = { exerciseID: 'b', setID: right.id };
+    session.rateSet('b', right.id, 2);
+    expect(session.state!.exercises[0].sets.map((x) => x.rir)).toEqual([2, 2]);
+    expect(session.pendingRating).toBeNull();
+    session.rateSet('b', left.id, 1);
+    session.rateSet('b', right.id, 3);
+    expect(session.state!.exercises[0].sets.map((x) => x.rir)).toEqual([1, 3]); // a left side rated on its own keeps its rating
+  });
+
+  test('each set is saved with its own rating, falling back to the exercise rating', async () => {
+    start([exercise('a', [newSet(80, 8, { done: true, rir: 3 }), newSet(80, 8, { done: true }), newSet(80, 8, { done: true, rir: 0 })], { rir: 1 })]);
+    await session.finish();
+    expect(app.logs[0].exercises[0].sets.map((x) => x.rir)).toEqual([3, 1, 0]);
+  });
+});
+
+describe('Live personal records', () => {
+  const set = (weight: number, reps: number, o: Partial<ReturnType<typeof newSet>> = {}) => newSet(weight, reps, { done: true, ...o });
+
+  test('a set beating your best by over 0.5% is a record; only sets that beat earlier ones today count', () => {
+    const sets = [set(100, 5), set(105, 5), set(102.5, 5), set(110, 5)];
+    const best = oneRM(100, 5, 0);
+    expect([...liveRecords(sets, best).keys()]).toEqual([sets[1].id, sets[3].id]);
+  });
+
+  test('no history, warm-ups, unlogged sets and bodyweight sets are never records', () => {
+    expect(liveRecords([set(200, 5)], undefined).size).toBe(0);
+    expect(liveRecords([set(200, 5, { isWarmup: true }), newSet(200, 5), set(0, 20)], 50).size).toBe(0);
+  });
+
+  test('a rating counts toward the estimate', () => {
+    const best = oneRM(100, 5, 0);
+    expect(liveRecords([set(100, 5)], best).size).toBe(0);
+    expect(liveRecords([set(100, 5, { rir: 2 })], best).size).toBe(1);
+    expect(liveRecords([set(100, 5)], best, 2).size).toBe(1);
+  });
+});
+
+describe('Forgotten workouts', () => {
+  test('a workout untouched for hours is flagged; a recent change is not', () => {
+    start([exercise('a', [newSet(80, 8)])]);
+    // update() stamps the change itself, so set the old time on the state directly.
+    session.state = { ...session.state!, updatedAt: Date.now() - 4 * 3_600_000 };
+    session.checkStale();
+    expect(session.staleSince).not.toBeNull();
+    session.keepGoing();
+    expect(session.staleSince).toBeNull();
+    session.checkStale();
+    expect(session.staleSince).toBeNull();
+  });
+
+  test('saving a forgotten workout ends it at the last change', async () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const startedAt = session.state!.startedAt;
+    await session.finish(startedAt + 50 * 60_000);
+    expect(app.logs[0].durationSeconds).toBe(50 * 60);
+  });
+});
+
+describe('Loading', () => {
+  test('an unreadable workout in progress blocks the app instead of being overwritten', async () => {
+    vi.mocked(db.get).mockRejectedValueOnce(new Error('Connection to Indexed Database server lost'));
+    await session.load();
+    expect(app.loadError).toMatch(/Indexed Database/);
+    app.loadError = null;
+  });
+});
+
+describe('Checking a set before logging', () => {
+  test('no reps is never logged', () => {
+    expect(checkSet(80, 0, 100)).toEqual({ kind: 'noReps' });
+  });
+  test('far over your heaviest asks first; a normal jump does not', () => {
+    expect(checkSet(105, 5, 100)).toBeNull();
+    expect(checkSet(119, 5, 100)).toBeNull();
+    expect(checkSet(1000, 5, 100)).toEqual({ kind: 'heavy', heaviest: 100 });
+    expect(checkSet(35, 5, 10)).toEqual({ kind: 'heavy', heaviest: 10 }); // light lifts: needs +20 kg too
+    expect(checkSet(25, 5, 10)).toBeNull();
+  });
+  test('with no history only absurd weights ask', () => {
+    expect(checkSet(200, 5, undefined)).toBeNull();
+    expect(checkSet(450, 5, undefined)).toEqual({ kind: 'heavy' });
+    expect(checkSet(null, 12, undefined)).toBeNull();
   });
 });
 

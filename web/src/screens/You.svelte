@@ -148,7 +148,7 @@
     <div class="list">
       {@render link('Workout Style', variabilityTitle[p.plan.variability], { name: 'style' })}
       {@render link('Injuries & Limitations', p.plan.injuries.length ? `${p.plan.injuries.length}` : 'None', { name: 'injuries' })}
-      <button class="item" onclick={() => (pickingTemplate = true)}>Saved Workouts<span class="value">{p.templates.length || 'None'}</span><ChevronRight size={16} color="var(--muted)" /></button>
+      <button class="item" onclick={() => (pickingTemplate = true)}>Saved Workouts<span class="value">{app.templates.length || 'None'}</span><ChevronRight size={16} color="var(--muted)" /></button>
       {@render link('My Exercises', p.customExercises.length ? `${p.customExercises.length}` : 'None', { name: 'customExercises' })}
       {@render link('Exercise Preferences', Object.keys(p.plan.preferences).length ? `${Object.keys(p.plan.preferences).length}` : 'None', { name: 'preferences' })}
     </div>

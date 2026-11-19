@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type LoggedSet, isBodyweight, isPerSide, muscleName, repRangeText } from '../engine';
-  import { ArrowLeftRight, ArrowRight, Check, ChevronDown, Circle, CircleCheck, Flag, Flame, Info, Pencil, Plus } from '@lucide/svelte';
-  import { type SessionExercise, type SessionSet, exerciseOf, newSet, session } from '../lib/session.svelte';
+  import { ArrowLeftRight, ArrowRight, Check, ChevronDown, Circle, CircleCheck, Flag, Flame, Info, Pencil, Plus, Trophy } from '@lucide/svelte';
+  import { type SessionExercise, type SessionSet, exerciseOf, isRated, session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { fmtNum } from '../lib/units';
   import ActionMenu from './ActionMenu.svelte';
@@ -10,6 +10,11 @@
   import { barFor } from '../lib/plates';
   import ExerciseThumb from './ExerciseThumb.svelte';
   import ValueStepper from './ValueStepper.svelte';
+  import RIRChips from './RIRChips.svelte';
+  import Sheet from './Sheet.svelte';
+  import { checkSet } from '../lib/setCheck';
+  import { exerciseRecords, liveRecords } from '../lib/records';
+  import { toasts } from '../lib/toasts.svelte';
 
   let { exercise: ex, nextName, onNext, onFinish, onswap, partner }: {
     exercise: SessionExercise; nextName?: string; onNext: () => void; onFinish: () => void;
@@ -32,6 +37,12 @@
   const weightStep = $derived(app.weightStep(e));
   const bar = $derived(barFor(e, units.pounds));
   const eccentric = $derived(ex.program?.effort.type === 'eccentricOnly');
+  const rated = $derived(isRated(ex));
+  /** Sets today that are personal records. */
+  const prs = $derived(liveRecords(ex.sets, app.derivedHistory.bestOneRM.get(ex.exerciseID), ex.rir));
+  /** A set's reps in reserve: its own rating, else the old per-exercise one. */
+  const rirOf = (s: SessionSet) => s.rir ?? ex.rir;
+  const rirText = (v: number | null | undefined) => (v == null ? '–' : v >= 4 ? '4+' : String(v));
 
   /** Set number; for per-side work both sides of a round share it. */
   function number(id: string) {
@@ -45,28 +56,28 @@
     return lastSets[i] ?? lastSets[lastSets.length - 1];
   }
 
-  const setUpdate = (id: string, change: (s: SessionSet) => void) =>
-    session.updateExercise(ex.id, (x) => { const s = x.sets.find((y) => y.id === id); if (s) change(s); });
+  /** Heaviest working set ever logged for this exercise (kg). */
+  const heaviest = $derived(exerciseRecords(app.derivedHistory.sessions.get(ex.exerciseID) ?? []).heaviest?.value);
+  /** A set that looks like a typo, waiting for "log it anyway". */
+  let checking = $state<{ id: string; weight: number; heaviest?: number } | null>(null);
 
-  function log(id: string) {
+  function log(id: string, checked = false) {
+    const s = ex.sets.find((x) => x.id === id);
+    if (!s) return;
+    if (!checked) {
+      const problem = checkSet(isBodyweight(e) ? null : s.weight, s.reps, heaviest);
+      if (problem?.kind === 'noReps') { toasts.show(e.isTimed ? 'Set the time before logging' : 'Set your reps before logging'); return; }
+      if (problem?.kind === 'heavy') { checking = { id, weight: s.weight ?? 0, heaviest: problem.heaviest }; return; }
+    }
     session.logSet(id, ex.id);
     editingID = null;
   }
 
-  function toggle(id: string) { setUpdate(id, (s) => { s.done = !s.done; }); }
+  const toggle = (s: SessionSet) => session.setDone(ex.id, s.id, !s.done);
 
   function remove(id: string) {
-    session.updateExercise(ex.id, (x) => { x.sets = x.sets.filter((s) => s.id !== id); });
+    session.removeSet(ex.id, id);
     if (editingID === id) editingID = null;
-  }
-
-  function addSet() {
-    const last = working[working.length - 1];
-    session.updateExercise(ex.id, (x) => {
-      if (perSide) {
-        x.sets.push(newSet(last?.weight ?? null, last?.reps ?? 10, { side: 'left' }), newSet(last?.weight ?? null, last?.reps ?? 10, { side: 'right' }));
-      } else x.sets.push(newSet(last?.weight ?? null, last?.reps ?? 10));
-    });
   }
 
   const repsLabel = (reps: number) => (e.isTimed ? `${reps}s` : `${reps}`);
@@ -123,7 +134,7 @@
       {#if showWarmups}
         <div class="stack" style="--gap:6px;margin-top:10px">
           {#each warmups as w (w.id)}
-            <button class="set-row" class:done={w.done} onclick={() => toggle(w.id)} aria-label="Warm-up set, {setText(w)}{w.done ? ', done' : ''}">
+            <button class="set-row" class:done={w.done} onclick={() => toggle(w)} aria-label="Warm-up set, {setText(w)}{w.done ? ', done' : ''}">
               <span class="badge">W</span>
               <span class="semibold mono grow">{setText(w)}</span>
               {#if w.done}<CircleCheck size={22} color="var(--fresh)" />{:else}<Circle size={22} color="var(--text-3)" />{/if}
@@ -160,17 +171,20 @@
       <div class="row steppers" style="--gap:10px">
         {#if !isBodyweight(e)}
           <ValueStepper title="Weight" value={units.display(s.weight ?? 0)} step={weightStep} unit={units.symbol} decimals
-            onchange={(v) => setUpdate(s.id, (x) => { x.weight = units.kg(v); })} />
+            onchange={(v) => session.editSet(ex.id, s.id, { weight: units.kg(v) })} />
         {/if}
         <ValueStepper title={e.isTimed ? 'Time' : 'Reps'} value={s.reps} step={e.isTimed ? 5 : 1} unit={e.isTimed ? 'seconds' : 'reps'} decimals={false}
-          onchange={(v) => setUpdate(s.id, (x) => { x.reps = Math.max(0, Math.round(v)); })} />
+          onchange={(v) => session.editSet(ex.id, s.id, { reps: v })} />
       </div>
       {#if bar !== undefined && (s.weight ?? 0) > 0}
         <PlateBar total={units.display(s.weight ?? 0)} {bar} pounds={units.pounds} />
       {/if}
-      <button class="btn primary block big log" onclick={() => log(s.id)}>
-        <span class="check"><Check size={18} strokeWidth={3.2} /></span> {s.done ? 'Update set' : `Log set ${number(s.id)}`}
-      </button>
+      {#if s.done && rated && !s.isWarmup}
+        <div class="stack" style="--gap:8px">
+          <span class="eyebrow">Reps left</span>
+          <RIRChips compact value={s.rir} label="Reps left on set {number(s.id)}" onpick={(v) => session.rateSet(ex.id, s.id, v)} />
+        </div>
+      {/if}
     </section>
   {:else if working.length}
     <section class="focus complete stack" style="--gap:18px">
@@ -180,22 +194,22 @@
       </div>
       {#if eccentric}
         <p class="sub muted">Lowering reps only, so there's no RIR to rate. Progress comes from more controlled reps.</p>
-      {:else if !e.isTimed}
-        <div class="stack" style="--gap:10px">
-          <span class="sub semibold" id="rir-{ex.id}">How many more reps did you have left?</span>
-          <div class="rirs" role="radiogroup" aria-labelledby="rir-{ex.id}">
-            {#each [0, 1, 2, 3, 4] as v (v)}
-              <button class="rir num" class:on={ex.rir === v} role="radio" aria-checked={ex.rir === v}
-                aria-label={v === 0 ? 'None, went to failure' : `${v} reps left`}
-                onclick={() => session.updateExercise(ex.id, (x) => { x.rir = v; })}>{v === 4 ? '4+' : v}<small>{v === 0 ? 'failure' : v === 1 ? 'one' : v === 4 ? 'easy' : ''}</small></button>
-            {/each}
+      {:else if rated}
+        {@const doneSets = working.filter((x) => x.done)}
+        {@const last = doneSets[doneSets.length - 1]}
+        {#if last && rirOf(last) == null && session.pendingRating?.setID !== last.id}
+          <div class="stack" style="--gap:10px">
+            <span class="sub semibold">How many more reps did you have left on your last set?</span>
+            <RIRChips value={last.rir} label="Reps left on your last set" onpick={(v) => session.rateSet(ex.id, last.id, v)} />
           </div>
-          <span class="caption faint">This tunes how quickly Forge adds weight next time.</span>
-        </div>
+        {:else}
+          <div class="row wrap" style="--gap:6px">
+            <span class="caption muted" style="margin-right:4px">Reps left</span>
+            {#each doneSets as d (d.id)}<span class="chip small-chip num">{rirText(rirOf(d))}</span>{/each}
+          </div>
+        {/if}
+        <span class="caption faint">Rating each set tunes how quickly Forge adds weight next time.</span>
       {/if}
-      <button class="btn primary block big" onclick={nextName ? onNext : onFinish}>
-        {#if nextName}<span class="one-line">Next · {nextName}</span> <ArrowRight size={18} />{:else}<Flag size={18} /> Finish workout{/if}
-      </button>
     </section>
   {/if}
 
@@ -206,23 +220,56 @@
       {@const last = lastFor(s.id)}
       <div class="row" style="--gap:4px">
         <button class="set-row grow" class:active={isActive} class:done={s.done && !isActive}
-          aria-label="Set {s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}, {setText(s)}{s.done ? ', done' : ''}"
+          aria-label="Set {s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}, {setText(s)}{s.done ? ', done' : ''}{s.done && rated && rirOf(s) != null ? `, ${rirText(rirOf(s))} reps left` : ''}{prs.has(s.id) ? ', personal record' : ''}"
           aria-pressed={isActive} onclick={() => (editingID = isActive ? null : s.id)}>
           <span class="badge num">{s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}</span>
           <span class="semibold mono">{setText(s)}</span>
-          {#if last && !s.done}<span class="caption faint mono">last {lastShort(last)}</span>{/if}
+          {#if last && !s.done}<span class="caption muted mono">last {lastShort(last)}</span>{/if}
+          {#if prs.has(s.id)}<span class="pr" role="img" aria-label="Personal record"><Trophy size={13} /></span>{/if}
+          {#if s.done && rated && rirOf(s) != null}<span class="caption muted nowrap">{rirOf(s) === 0 ? 'to failure' : `${rirText(rirOf(s))} left`}</span>{/if}
           <span class="grow"></span>
           {#if s.done}<CircleCheck size={22} color="var(--fresh)" />{:else if isActive}<Pencil size={18} color="var(--ember-2)" />{:else}<Circle size={22} color="var(--text-3)" />{/if}
         </button>
         <ActionMenu label="Set {number(s.id)} options" items={[
-          ...(s.done ? [{ label: 'Mark not done', action: () => toggle(s.id) }] : []),
+          ...(s.done ? [{ label: 'Mark not done', action: () => toggle(s) }] : []),
           { label: 'Delete set', danger: true, action: () => remove(s.id) },
         ]}><span class="dots">⋯</span></ActionMenu>
       </div>
     {/each}
-    <button class="add-set" onclick={addSet}><Plus size={16} /> Add set</button>
+    <button class="add-set" onclick={() => session.addSet(ex.id)}><Plus size={16} /> Add set</button>
   </div>
+
+  <!-- The one action that matters between sets, pinned where the thumb rests. -->
+  {#if active || working.length}
+    <div class="dock">
+      {#if active}
+        {@const s = active}
+        <button class="btn primary block big log" onclick={() => log(s.id)}>
+          <span class="check"><Check size={18} strokeWidth={3.2} /></span> {s.done ? 'Update set' : `Log set ${number(s.id)}`}
+        </button>
+      {:else}
+        <button class="btn primary block big log" onclick={nextName ? onNext : onFinish}>
+          {#if nextName}<span class="one-line">Next · {nextName}</span> <ArrowRight size={18} />{:else}<Flag size={18} /> Finish workout{/if}
+        </button>
+      {/if}
+    </div>
+  {/if}
 </div>
+
+{#if checking}
+  {@const c = checking}
+  <Sheet title="Check the Weight" onclose={() => (checking = null)}>
+    {#snippet leading()}<span></span>{/snippet}
+    <div class="stack" style="--gap:14px">
+      <p class="sub muted">
+        {units.format(c.weight)} is {c.heaviest ? `far more than your heaviest ${e.name} so far (${units.format(c.heaviest)})` : 'a lot of weight'}.
+        A typo here would count as a personal record and change your next workouts.
+      </p>
+      <button class="btn primary block big" onclick={() => (checking = null)}>Fix the Weight</button>
+      <button class="btn block big" onclick={() => { checking = null; log(c.id, true); }}>Log {units.format(c.weight)}</button>
+    </div>
+  </Sheet>
+{/if}
 
 <style>
   .ex-name { font-size: 1.55rem; line-height: 1.05; }
@@ -243,15 +290,15 @@
   .last { text-align: right; align-items: flex-end; }
   .target { color: var(--ember-2); }
   .note { color: var(--recovering); background: rgba(255, 187, 69, 0.1); border: 1px solid rgba(255, 187, 69, 0.2); padding: 10px 12px; border-radius: 14px; --gap: 8px; }
+  /* Sticks to the bottom of the logger's scroll area; its natural place is after the set list. */
+  .dock { position: sticky; bottom: 0; z-index: 2; margin: 0 -18px; padding: 10px 18px 12px;
+    background: linear-gradient(to top, var(--bg) 70%, rgba(7, 7, 8, 0)); }
   .log { min-height: 62px; font-size: 1.08rem; }
   .check { width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); display: grid; place-items: center; }
+  .pr { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%;
+    color: var(--recovering); background: rgba(255, 187, 69, 0.14); border: 1px solid rgba(255, 187, 69, 0.3); }
+  .nowrap, .set-row .mono { white-space: nowrap; }
   .done-badge { width: 40px; height: 40px; border-radius: 50%; background: var(--fresh); color: #062b1e; display: grid; place-items: center; box-shadow: 0 0 24px rgba(60, 239, 176, 0.45); }
-  .rirs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-  .rir { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 0 8px; border-radius: 16px; background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--hairline); font-size: 1.3rem; }
-  .rir small { font-family: var(--font); font-size: 0.6rem; font-weight: 600; color: var(--text-3); min-height: 0.8em; }
-  .rir.on { background: var(--ember-gradient); border-color: transparent; color: #fff; box-shadow: 0 10px 24px -8px var(--ember-glow); }
-  .rir.on small { color: rgba(255, 255, 255, 0.8); }
   .set-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 16px; width: 100%; text-align: left; min-height: 52px;
     background: var(--surface); border: 1px solid var(--hairline); }
   .set-row:active { transform: none; }

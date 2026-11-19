@@ -1,6 +1,10 @@
 <script lang="ts">
   import { ChartLine, CircleUser, Dumbbell } from '@lucide/svelte';
   import FinishSummary from './components/FinishSummary.svelte';
+  import ProblemScreen from './components/ProblemScreen.svelte';
+  import SaveErrorBanner from './components/SaveErrorBanner.svelte';
+  import StaleWorkoutSheet from './components/StaleWorkoutSheet.svelte';
+  import { saving } from './lib/saving.svelte';
   import MiniBar from './components/MiniBar.svelte';
   import ToastHost from './components/ToastHost.svelte';
   import UpdateBanner from './components/UpdateBanner.svelte';
@@ -95,8 +99,12 @@
   const loggerOpen = $derived(session.isActive && session.isExpanded);
 </script>
 
+<svelte:boundary onerror={(e) => console.error('Forge hit an error', e)}>
 {#if !app.ready}
   <div style="min-height:100dvh"></div>
+{:else if app.loadError}
+  <ProblemScreen title="Couldn't open your data" detail={app.loadError} recover
+    message="Your workouts are still on this phone, but Forge couldn't read them just now. Reload to try again. If it keeps happening, restart your phone." />
 {:else if !app.profile}
   <Onboarding />
 {:else}
@@ -133,9 +141,17 @@
 
   {#if loggerOpen}<ActiveWorkout />{/if}
   {#if session.finished}<FinishSummary />{/if}
+  {#if session.isActive && session.staleSince !== null}<StaleWorkoutSheet />{/if}
 {/if}
 
+{#snippet failed(error)}
+  <ProblemScreen title="Something went wrong" detail={error instanceof Error ? error.message : String(error)}
+    message="Forge hit an error. A workout in progress is saved as you go, so reloading picks up where you left off." />
+{/snippet}
+</svelte:boundary>
+
 <ToastHost />
+{#if saving.error}<SaveErrorBanner />{/if}
 <!-- Never interrupt a set: the banner waits until the logger is closed. -->
 {#if updates.ready && !(session.isActive && session.isExpanded)}<UpdateBanner />{/if}
 
