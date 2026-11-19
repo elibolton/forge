@@ -46,13 +46,16 @@ export function planBasis(p: Profile, activities: { id: string }[] = app.activit
   const plan = p.plan;
   const gym = p.gyms.find((g) => g.id === p.activeGymID) ?? p.gyms[0];
   const increments = Object.entries(gym?.increments ?? {}).map(([k, v]) => `${k}=${v}`).sort();
+  // Plates and bars only join the key when set, so gyms without them keep their saved plans.
+  const plates = gym?.plates ? [`plates:${gym.plates.map((x) => `${x.weight}x${x.pairs ?? ''}`).join(',')}`] : [];
+  const bars = gym?.bars ? [`bars:${Object.entries(gym.bars).map(([k, v]) => `${k}=${v}`).sort().join(',')}`] : [];
   const overrides = p.overrides.map((o) => `${o.muscle}=${o.recovery}@${Math.trunc(o.date / 1000)}`).sort();
   return [
     // Bump when the generator changes, so saved plans offer a rebuild.
     GENERATOR_VERSION,
     plan.goal, plan.experience, plan.split, plan.sessionMinutes, plan.variability, plan.warmUpSets, plan.supersets,
     [...plan.injuries].sort().join(','), gym?.id, [...(gym?.equipment ?? [])].sort().join(','), gym?.usesPounds,
-    increments.join(','), overrides.join(','), activities.map((a) => a.id).sort().join(','),
+    increments.join(','), overrides.join(','), activities.map((a) => a.id).sort().join(','), ...plates, ...bars,
     // Only when there are some, so plans saved before check-ins existed don't all offer a rebuild.
     ...(checkInBasis(p) ? [checkInBasis(p)] : []),
   ].join('|');

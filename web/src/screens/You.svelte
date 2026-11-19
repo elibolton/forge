@@ -1,6 +1,6 @@
 <script lang="ts">
   import TemplatePicker from '../components/TemplatePicker.svelte';
-  import { GOALS, type Gym, Gyms, LEVELS, Programs, SPLITS, uuid } from '../engine';
+  import { GOALS, type Gym, Gyms, LEVELS, Programs, SPLITS, uuid, withGymUnits } from '../engine';
   import { ChevronRight, MapPin, Trash2 } from '@lucide/svelte';
   import ActionMenu from '../components/ActionMenu.svelte';
   import BackBar from '../components/BackBar.svelte';
@@ -23,7 +23,7 @@
   });
 
   function addGym(preset: () => Gym, name: string) {
-    const gym = { ...preset(), id: uuid(), name, usesPounds: p.usesPounds };
+    const gym = { ...withGymUnits(preset(), p.usesPounds), id: uuid(), name };
     app.updateProfile((x) => { x.gyms.push(gym); });
     nav.push({ name: 'gym', id: gym.id });
   }
@@ -44,8 +44,9 @@
   }
 
   function setPounds(pounds: boolean) {
-    // Increment overrides were in the old unit; drop them rather than misread them.
-    app.updateProfile((x) => { x.usesPounds = pounds; x.gyms = x.gyms.map((g) => ({ ...g, usesPounds: pounds, increments: {} })); });
+    // Increment overrides and bar weights were in the old unit; drop them rather than misread them. A preset
+    // plate set carries over as the same preset in the new unit.
+    app.updateProfile((x) => { x.usesPounds = pounds; x.gyms = x.gyms.map((g) => ({ ...withGymUnits(g, pounds), increments: {} })); });
   }
 
   const goalStep = (by: number) => app.updateProfile((x) => { x.weeklyGoal = Math.min(7, Math.max(1, x.weeklyGoal + by)); });

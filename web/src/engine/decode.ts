@@ -4,7 +4,7 @@
 import { placeholderName } from './catalog';
 import {
   type DayFocus, type Exercise, type MovementPattern, type Muscle, type Gym, type LoggedExercise, type LoggedSet, type RecoveryOverride, type RepRange,
-  type UserPlan, type WorkoutRecord, type Equipment, DAY_FOCUSES, EQUIPMENT, LOAD_KINDS, NEEDS, GOALS, JOINTS, LEVELS, MUSCLES, PATTERNS, PREFERENCES,
+  type UserPlan, type WorkoutRecord, type Equipment, type PlateStock, BAR_KINDS, MAX_BAR, MAX_PAIRS, MAX_PLATE, DAY_FOCUSES, EQUIPMENT, LOAD_KINDS, NEEDS, GOALS, JOINTS, LEVELS, MUSCLES, PATTERNS, PREFERENCES,
   SPLITS, VARIABILITIES, defaultPlan, uuid,
 } from './models';
 import type { ProgramRef } from './models';
@@ -78,6 +78,28 @@ function upgradeEquipment(raw: unknown[]): { equipment: Equipment[]; review: boo
 /** Weight steps above this are corrupt or a typo (they'd round every suggestion to the starting weight). */
 const MAX_INCREMENT = 50;
 
+const sane = (n: unknown, max: number): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= max;
+
+/** A gym's plate list: bad sizes dropped, a bad pair count read as unlimited, one entry per size, heaviest first. */
+function readPlates(v: unknown): PlateStock[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const bySize = new Map<number, PlateStock>();
+  for (const x of v) {
+    const weight = isObj(x) ? x.weight : x;
+    if (!sane(weight, MAX_PLATE) || bySize.has(weight)) continue;
+    const pairs = isObj(x) && sane(x.pairs, MAX_PAIRS) ? Math.floor(x.pairs) : undefined;
+    bySize.set(weight, pairs ? { weight, pairs } : { weight });
+  }
+  return bySize.size ? [...bySize.values()].sort((a, b) => b.weight - a.weight) : undefined;
+}
+
+function readBars(v: unknown): Gym['bars'] {
+  if (!isObj(v)) return undefined;
+  const out: NonNullable<Gym['bars']> = {};
+  for (const k of BAR_KINDS) if (sane(v[k], MAX_BAR)) out[k] = v[k] as number;
+  return Object.keys(out).length ? out : undefined;
+}
+
 /**
  * A stored gym. One saved without an id gets `fallbackID` (stable, e.g. from its place in the list) so it
  * keeps the same id from one read to the next; with none given it gets a random one.
@@ -94,9 +116,12 @@ export function readGym(v: unknown, fallbackID?: string): Gym | undefined {
   // Lists saved before version 2 used the broad names.
   const upgraded = num(v.equipmentVersion, 1) < 2 ? upgradeEquipment(raw) : { equipment: known(EQUIPMENT, raw), review: false };
   const review = upgraded.review || bool(v.reviewEquipment, false);
+  const plates = readPlates(v.plates);
+  const bars = readBars(v.bars);
   return {
     id: str(v.id, fallbackID ?? uuid()), name: str(v.name, 'Gym'), equipment: upgraded.equipment, equipmentVersion: 2,
     usesPounds: bool(v.usesPounds, false), increments, ...(review ? { reviewEquipment: true } : {}),
+    ...(plates ? { plates } : {}), ...(bars ? { bars } : {}),
   };
 }
 
