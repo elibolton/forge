@@ -1,6 +1,6 @@
 <script lang="ts">
   import { GOALS, type Gym, Gyms, LEVELS, Programs, SPLITS, uuid } from '../engine';
-  import { ChevronRight, Trash2 } from '@lucide/svelte';
+  import { ChevronRight, MapPin, Trash2 } from '@lucide/svelte';
   import ActionMenu from '../components/ActionMenu.svelte';
   import BackBar from '../components/BackBar.svelte';
   import { goalTitle, levelTitle, splitTitle, variabilityTitle } from '../lib/labels';
@@ -11,6 +11,7 @@
   /** Pushed from Today rather than shown as its own tab. */
   let { embedded = false }: { embedded?: boolean } = $props();
   const p = $derived(app.profile!);
+  const splitShort = { pushPullLegs: 'PPL', upperLower: 'U/L', fullBody: 'Full', freshMuscles: 'Fresh' } as const;
 
   const programStatus = $derived.by(() => {
     const progress = p.programProgress;
@@ -49,7 +50,22 @@
 {/snippet}
 
 <div class="screen">
-  {#if embedded}<BackBar title="Your Plan" />{:else}<h1 class="display" style="font-size:2rem;margin-top:12px">You</h1>{/if}
+  {#if embedded}<BackBar title="Your Plan" />{:else}
+    <header class="stack" style="--gap:6px;padding-top:6px"><span class="eyebrow">Settings</span><h1 class="page-title">You</h1></header>
+  {/if}
+
+  <section class="profile">
+    <div class="glow" aria-hidden="true"></div>
+    <span class="eyebrow" style="color:var(--ember-2)">Your plan</span>
+    <div class="display goal">{goalTitle[p.plan.goal]}</div>
+    <div class="facts">
+      <div><span class="num">{p.plan.sessionMinutes}</span><span class="eyebrow">min</span></div>
+      <div><span class="num">{splitShort[p.plan.split]}</span><span class="eyebrow">split</span></div>
+      <div><span class="num">{levelTitle[p.plan.experience].slice(0, 3)}</span><span class="eyebrow">level</span></div>
+      <div><span class="num">{app.logs.length}</span><span class="eyebrow">workouts</span></div>
+    </div>
+    <div class="row caption muted" style="--gap:6px"><MapPin size={13} /> {app.activeGym.name} · {app.activeGym.equipment.length} pieces of equipment</div>
+  </section>
 
   <div class="section">
     <div class="head">Training</div>
@@ -135,5 +151,15 @@
 </div>
 
 <style>
-  .item select { width: auto; margin-left: auto; min-height: 0; padding: 4px 8px; background: transparent; color: var(--muted); text-align: right; }
+  .profile { position: relative; overflow: hidden; margin-top: 18px; padding: 20px; border-radius: var(--r-xl); border: 1px solid var(--hairline-2);
+    background: linear-gradient(165deg, #1d1410, #111013 55%); display: flex; flex-direction: column; gap: 10px; }
+  .glow { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(70% 70% at 100% 0%, rgba(255, 90, 31, 0.38), transparent 60%); }
+  .profile > * { position: relative; }
+  .goal { font-size: 2rem; }
+  .facts { display: grid; grid-template-columns: repeat(4, 1fr); padding: 12px 0; margin: 4px 0; border-block: 1px solid var(--hairline); }
+  .facts div { display: flex; flex-direction: column; gap: 4px; }
+  .facts div + div { padding-left: 12px; border-left: 1px solid var(--hairline); }
+  .facts .num { font-size: 1.2rem; }
+  .facts .eyebrow { font-stretch: 100%; letter-spacing: 0.08em; font-size: 0.6rem; }
+  .item select { width: auto; margin-left: auto; min-height: 0; padding: 4px 8px; background: transparent; border: 0; color: var(--text-2); text-align: right; }
 </style>

@@ -3,6 +3,8 @@
   import FinishSummary from './components/FinishSummary.svelte';
   import MiniBar from './components/MiniBar.svelte';
   import ToastHost from './components/ToastHost.svelte';
+  import UpdateBanner from './components/UpdateBanner.svelte';
+  import { updates } from './lib/pwa.svelte';
   import { type Tab, nav } from './lib/nav.svelte';
   import { session } from './lib/session.svelte';
   import { app } from './lib/store.svelte';
@@ -24,7 +26,71 @@
     { id: 'you', label: 'You', icon: CircleUser },
   ];
 
+  import { tick } from 'svelte';
+
   const route = $derived(nav.top);
+
+  // Put each screen back where it was scrolled to (or the top for a new one).
+  $effect(() => {
+    void nav.key;
+    const y = nav.savedScroll();
+    tick().then(() => scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }));
+  });
+
+  // Swipe from the left edge to go back, like iOS.
+  let screen = $state<HTMLDivElement>();
+  let drag: { x: number; y: number; t: number; dx: number; locked: boolean } | null = null;
+  function edgeStart(e: TouchEvent) {
+    const t = e.touches[0];
+    if (!nav.depth || t.clientX > 28) return;
+    drag = { x: t.clientX, y: t.clientY, t: performance.now(), dx: 0, locked: false };
+  }
+  function edgeMove(e: TouchEvent) {
+    if (!drag || !screen) return;
+    const t = e.touches[0];
+    const dx = t.clientX - drag.x, dy = t.clientY - drag.y;
+    if (!drag.locked) {
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 8) { drag = null; return; }
+      if (dx > 8) drag.locked = true; else return;
+    }
+    drag.dx = Math.max(0, dx);
+    e.preventDefault();
+    screen.style.transition = 'none';
+    screen.style.transform = `translateX(${drag.dx}px)`;
+    screen.style.opacity = `${1 - Math.min(0.5, drag.dx / innerWidth)}`;
+  }
+  // Non-passive so the drag can stop the page scrolling sideways.
+  $effect(() => {
+    const el = screen;
+    if (!el) return;
+    el.addEventListener('touchstart', edgeStart, { passive: true });
+    el.addEventListener('touchmove', edgeMove, { passive: false });
+    el.addEventListener('touchend', edgeEnd);
+    el.addEventListener('touchcancel', edgeEnd);
+    return () => {
+      el.removeEventListener('touchstart', edgeStart);
+      el.removeEventListener('touchmove', edgeMove);
+      el.removeEventListener('touchend', edgeEnd);
+      el.removeEventListener('touchcancel', edgeEnd);
+    };
+  });
+
+  function edgeEnd() {
+    if (!drag || !screen) return;
+    const el = screen;
+    const velocity = drag.dx / Math.max(1, performance.now() - drag.t);
+    const go = drag.locked && (drag.dx > innerWidth * 0.33 || velocity > 0.6);
+    drag = null;
+    el.style.transition = 'transform 0.25s var(--ease), opacity 0.25s';
+    if (go) {
+      el.style.transform = `translateX(${innerWidth}px)`;
+      el.style.opacity = '0';
+      setTimeout(() => { nav.pop(); el.style.transition = el.style.transform = el.style.opacity = ''; }, 200);
+    } else {
+      el.style.transform = '';
+      el.style.opacity = '';
+    }
+  }
   // Hide the tabs underneath the full-screen logger from assistive tech.
   const loggerOpen = $derived(session.isActive && session.isExpanded);
 </script>
@@ -35,7 +101,8 @@
   <Onboarding />
 {:else}
   <main inert={loggerOpen}>
-    {#key `${nav.tab}:${nav.stacks[nav.tab].length}`}
+    {#key nav.key}
+      <div class="nav-screen {nav.direction}" bind:this={screen} role="presentation">
       {#if !route}
         {#if nav.tab === 'today'}<Today />{:else if nav.tab === 'progress'}<Progress />{:else}<You />{/if}
       {:else if route.name === 'exercise'}<ExerciseDetail id={route.id} />
@@ -46,17 +113,20 @@
       {:else if route.name === 'data'}<Data />
       {:else}<Settings {route} />
       {/if}
+      </div>
     {/key}
   </main>
 
   {#if session.isActive && !session.isExpanded}<MiniBar />{/if}
 
-  <nav class="tabbar" inert={loggerOpen} aria-label="Tabs">
+  <div class="bottom-fade" aria-hidden="true"></div>
+  <nav class="dock glass" inert={loggerOpen} aria-label="Tabs">
     {#each TABS as t (t.id)}
       {@const Icon = t.icon}
-      <button class:on={nav.tab === t.id} aria-current={nav.tab === t.id ? 'page' : undefined} onclick={() => nav.select(t.id)}>
-        <Icon size={24} strokeWidth={nav.tab === t.id ? 2.4 : 1.8} aria-hidden="true" />
-        <span>{t.label}</span>
+      {@const on = nav.tab === t.id}
+      <button class:on aria-current={on ? 'page' : undefined} aria-label={t.label} onclick={() => nav.select(t.id)}>
+        <Icon size={22} strokeWidth={on ? 2.3 : 1.9} aria-hidden="true" />
+        <span class="label" aria-hidden="true">{t.label}</span>
       </button>
     {/each}
   </nav>
@@ -66,12 +136,25 @@
 {/if}
 
 <ToastHost />
+<!-- Never interrupt a set: the banner waits until the logger is closed. -->
+{#if updates.ready && !(session.isActive && session.isExpanded)}<UpdateBanner />{/if}
 
 <style>
-  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; justify-content: space-around;
-    padding: 6px 8px calc(var(--safe-bottom) + 4px); background: rgba(22, 22, 24, 0.88);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 0.5px solid var(--line); }
-  .tabbar button { flex: 1; max-width: 140px; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--muted);
-    font-size: 0.66rem; font-weight: 600; min-height: 44px; }
-  .tabbar button.on { color: var(--accent); }
+  .nav-screen { will-change: transform; }
+  .nav-screen.forward { animation: in-right 0.38s var(--ease); }
+  .nav-screen.back { animation: in-left 0.38s var(--ease); }
+  .nav-screen :global(.screen) { animation: none; }
+  .nav-screen.none :global(.screen) { animation: screen-in 0.3s var(--ease); }
+  @keyframes in-right { from { transform: translateX(28%); opacity: 0; } }
+  @keyframes in-left { from { transform: translateX(-18%); opacity: 0; } }
+  .bottom-fade { position: fixed; left: 0; right: 0; bottom: 0; height: calc(var(--dock-h) + var(--safe-bottom) + 40px); z-index: 39;
+    pointer-events: none; background: linear-gradient(to top, var(--bg) 35%, rgba(7, 7, 8, 0)); }
+  .dock { position: fixed; left: 50%; transform: translateX(-50%); bottom: var(--safe-bottom); z-index: 40;
+    display: flex; gap: 4px; padding: 6px; border-radius: 999px; width: min(340px, calc(100% - 36px)); height: var(--dock-h);
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+  .dock button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 999px;
+    color: var(--text-3); font-size: 0.85rem; font-weight: 640; transition: flex 0.35s var(--ease), background 0.3s, color 0.3s; }
+  .dock button .label { max-width: 0; overflow: hidden; white-space: nowrap; opacity: 0; transition: max-width 0.35s var(--ease), opacity 0.25s; }
+  .dock button.on { flex: 1.9; color: #fff; background: var(--ember-gradient); box-shadow: 0 8px 20px -6px var(--ember-glow), inset 0 1px 0 rgba(255,255,255,.25); }
+  .dock button.on .label { max-width: 90px; opacity: 1; }
 </style>

@@ -3,7 +3,7 @@
   interface Series { name: string; points: { x: number; y: number }[] }
   let { series, height = 200, unit = '', label }: { series: Series[]; height?: number; unit?: string; label: string } = $props();
 
-  const COLORS = ['#ff6b2e', '#4d8cff', '#5cdb9e', '#c08bff', '#ffc74d'];
+  const COLORS = ['#ff7a2b', '#5c96ff', '#3cefb0', '#b98bff', '#ffbb45'];
   const W = 340, PAD_L = 36, PAD_R = 8, PAD_T = 8, PAD_B = 22;
 
   const all = $derived(series.flatMap((s) => s.points));
@@ -29,14 +29,20 @@
 <figure aria-label={label}>
   <svg viewBox="0 0 {W} {height}" width="100%" role="img" aria-label={label}>
     {#each ticks as t (t)}
-      <line x1={PAD_L} x2={W - PAD_R} y1={sy(t)} y2={sy(t)} stroke="var(--line)" stroke-width="0.5" />
+      <line x1={PAD_L} x2={W - PAD_R} y1={sy(t)} y2={sy(t)} stroke="var(--hairline)" stroke-width="1" stroke-dasharray="2 3" />
       <text x={PAD_L - 6} y={sy(t)} text-anchor="end" dominant-baseline="central" class="tick">{t}</text>
     {/each}
     <text x={PAD_L} y={height - 4} class="tick">{dateLabel(xMin)}</text>
     {#if xMax !== xMin}<text x={W - PAD_R} y={height - 4} text-anchor="end" class="tick">{dateLabel(xMax)}</text>{/if}
+    <defs>
+      {#each series as s, i (s.name)}
+        <linearGradient id="area-{i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color={COLORS[i % COLORS.length]} stop-opacity="0.28" /><stop offset="1" stop-color={COLORS[i % COLORS.length]} stop-opacity="0" /></linearGradient>
+      {/each}
+    </defs>
     {#each series as s, i (s.name)}
-      <path d={path(s.points)} fill="none" stroke={COLORS[i % COLORS.length]} stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-      {#each s.points as p (p.x)}<circle cx={sx(p.x)} cy={sy(p.y)} r="3" fill={COLORS[i % COLORS.length]}><title>{s.name}: {p.y} {unit}, {dateLabel(p.x)}</title></circle>{/each}
+      {#if s.points.length > 1}<path d="{path(s.points)}L{sx(Math.max(...s.points.map((p) => p.x)))},{height - PAD_B}L{sx(Math.min(...s.points.map((p) => p.x)))},{height - PAD_B}Z" fill="url(#area-{i})" />{/if}
+      <path d={path(s.points)} fill="none" stroke={COLORS[i % COLORS.length]} stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" />
+      {#each s.points as p (p.x)}<circle cx={sx(p.x)} cy={sy(p.y)} r="3.2" fill="#0b0b0d" stroke={COLORS[i % COLORS.length]} stroke-width="2"><title>{s.name}: {p.y} {unit}, {dateLabel(p.x)}</title></circle>{/each}
     {/each}
   </svg>
   {#if series.length > 1}

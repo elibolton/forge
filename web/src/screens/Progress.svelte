@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Catalog, MUSCLES, type Muscle, Planner, computeRecovery, muscleName, oneRM, workingSets } from '../engine';
-  import { ChevronRight, List } from '@lucide/svelte';
+  import { ChevronRight } from '@lucide/svelte';
   import ExerciseThumb from '../components/ExerciseThumb.svelte';
   import LineChart from '../components/LineChart.svelte';
-  import MuscleTile from '../components/MuscleTile.svelte';
+  import BodyMap from '../components/BodyMap.svelte';
   import RecoveryRing from '../components/RecoveryRing.svelte';
   import Sheet from '../components/Sheet.svelte';
   import WorkoutCalendar from '../components/WorkoutCalendar.svelte';
@@ -37,6 +37,17 @@
     return n;
   });
 
+  /** Workouts in each of the last 8 weeks, oldest first. */
+  const weeksBars = $derived.by(() => {
+    const start = weekStart(Date.now());
+    return Array.from({ length: 8 }, (_, i) => {
+      const from = weekStart(start - (7 - i) * 7 * DAY + DAY), to = from + 7 * DAY;
+      return app.logs.filter((l) => l.date >= from && l.date < to).length;
+    });
+  });
+  const maxBar = $derived(Math.max(3, ...weeksBars));
+  const overall = $derived(MUSCLES.reduce((t, m) => t + (recovery[m] ?? 1), 0) / MUSCLES.length);
+
   const best = (id: string) => app.derivedHistory.bestOneRM.get(id);
   const series = $derived(BENCHMARKS.map((id) => ({
     name: Catalog.exercise(id).name,
@@ -56,77 +67,87 @@
   }
 </script>
 
-<div class="screen stack" style="--gap:24px">
-  <h1 class="display" style="font-size:2rem;margin-top:12px">Progress</h1>
+<div class="screen stack" style="--gap:26px">
+  <header class="stack" style="--gap:6px;padding-top:6px">
+    <span class="eyebrow">Your training</span>
+    <h1 class="page-title">Progress</h1>
+  </header>
 
-  <div class="stats">
-    {@render stat(daysSinceLast === null ? '–' : `${daysSinceLast}`, daysSinceLast === 1 ? 'day since your last workout' : 'days since your last workout', 'var(--accent)')}
-    {@render stat(`${fresh.length}`, fresh.length === 1 ? 'fresh muscle group' : 'fresh muscle groups', 'var(--fresh)')}
-    {@render stat(`${thisWeek}`, 'workouts this week', 'var(--text)')}
-    {@render stat(`${streak}`, streak === 1 ? 'week streak' : 'weeks streak', 'var(--recovering)')}
+  <div class="bento">
+    <div class="tile streak">
+      <span class="eyebrow">Week streak</span>
+      <span class="num huge gradient-text">{streak}</span>
+      <div class="bars" aria-label="Workouts per week, last 8 weeks">
+        {#each weeksBars as n, i (i)}<i class:now={i === 7} style="height:{Math.max(6, (n / maxBar) * 100)}%" title="{n} workouts"></i>{/each}
+      </div>
+      <span class="caption faint">{streak === 1 ? 'week' : 'weeks'} in a row with a workout</span>
+    </div>
+    <div class="tile">
+      <span class="eyebrow">This week</span>
+      <span class="num big">{thisWeek}</span>
+      <span class="caption faint">{thisWeek === 1 ? 'workout' : 'workouts'}</span>
+    </div>
+    <div class="tile">
+      <span class="eyebrow">Last workout</span>
+      <span class="num big">{daysSinceLast === null ? '–' : daysSinceLast === 0 ? 'Today' : daysSinceLast}</span>
+      <span class="caption faint">{daysSinceLast === null ? 'none yet' : daysSinceLast === 0 ? 'nice work' : daysSinceLast === 1 ? 'day ago' : 'days ago'}</span>
+    </div>
   </div>
 
-  <section class="stack" style="--gap:10px">
-    <h2 class="h">Calendar</h2>
-    <WorkoutCalendar />
-    <button class="card tight row sub semibold" onclick={() => nav.push({ name: 'history' })}>
-      <List size={18} /> <span class="grow" style="text-align:left">All Workouts</span> <span class="muted">{app.logs.length}</span> <ChevronRight size={16} color="var(--muted)" />
-    </button>
-  </section>
-
-  <section class="stack" style="--gap:10px">
-    <h2 class="h">Muscle Recovery</h2>
-    <div class="tiles">
-      {#each [...MUSCLES].sort((a, b) => (recovery[a] ?? 1) - (recovery[b] ?? 1)) as m (m)}
-        <MuscleTile muscle={m} value={recovery[m] ?? 1} fill onclick={() => openAdjust(m)} />
-      {/each}
+  <section class="card stack" style="--gap:14px">
+    <div class="row between" style="align-items:flex-end">
+      <div class="stack" style="--gap:6px">
+        <span class="eyebrow">Recovery</span>
+        <span class="num big" style="color:var(--{overall >= 0.8 ? 'fresh' : overall >= 0.5 ? 'recovering' : 'fatigued'})">{Math.round(overall * 100)}<span class="pct">%</span></span>
+      </div>
+      <div class="caption muted" style="text-align:right">{fresh.length} of 6 muscle groups<br />fresh and ready</div>
     </div>
-    <p class="caption muted">Tap a muscle if it feels more or less sore than shown.</p>
+    <div class="figure"><BodyMap {recovery} onpick={openAdjust} size={128} /></div>
+    <p class="caption faint" style="text-align:center">Tap a muscle if it feels more or less sore than shown.</p>
   </section>
 
-  <section class="stack" style="--gap:10px">
-    <h2 class="h">Sets This Week</h2>
-    <div class="card stack">
-      {#if !trained.length}<span class="muted">No sets logged this week yet.</span>{/if}
+  <section class="stack" style="--gap:12px">
+    <div class="row between head-row"><h2 class="eyebrow">Calendar</h2>
+      <button class="link caption" onclick={() => nav.push({ name: 'history' })}>All {app.logs.length} workouts</button></div>
+    <WorkoutCalendar />
+  </section>
+
+  <section class="stack" style="--gap:12px">
+    <div class="row between head-row"><h2 class="eyebrow">Sets this week</h2><span class="caption faint">Target {planner.weeklySetTarget} per muscle</span></div>
+    <div class="card stack" style="--gap:14px">
+      {#if !trained.length}<span class="sub muted">No sets logged this week yet.</span>{/if}
       {#each trained as m (m)}
         {@const sets = weekly[m] ?? 0}
-        <div class="row" role="group" aria-label="{muscleName(m)}, {Math.round(sets)} of {planner.weeklySetTarget} sets">
-          <span class="sub name" aria-hidden="true">{muscleName(m)}</span>
-          <span class="bar" aria-hidden="true"><i style="width:{Math.min(1, sets / planner.weeklySetTarget) * 100}%"></i></span>
-          <span class="sub bold mono" style="width:28px;text-align:right" aria-hidden="true">{Math.round(sets)}</span>
+        {@const pct = Math.min(1, sets / planner.weeklySetTarget)}
+        <div class="vol" role="group" aria-label="{muscleName(m)}, {Math.round(sets)} of {planner.weeklySetTarget} sets">
+          <span class="sub" aria-hidden="true">{muscleName(m)}</span>
+          <span class="track" aria-hidden="true"><i style="width:{pct * 100}%" class:full={pct >= 1}></i></span>
+          <span class="num sub" aria-hidden="true">{Math.round(sets)}</span>
         </div>
       {/each}
     </div>
-    <p class="caption muted">Target {planner.weeklySetTarget} working sets per muscle.</p>
   </section>
 
-  <section class="stack" style="--gap:10px">
-    <h2 class="h">Strength</h2>
-    <div class="card stack" style="--gap:16px">
+  <section class="stack" style="--gap:12px">
+    <div class="row between head-row"><h2 class="eyebrow">Strength</h2><span class="caption faint">Estimated 1RM</span></div>
+    <div class="card stack" style="--gap:6px">
       {#if !series.length}
-        <p class="sub muted">Log squat, bench, deadlift or overhead press to see your estimated 1RM trend.</p>
+        <p class="sub muted" style="padding-bottom:8px">Log squat, bench, deadlift or overhead press to see your estimated 1RM trend.</p>
       {:else}
         <LineChart {series} unit={app.units.symbol} label="Estimated one rep max trend" />
       {/if}
       {#each BENCHMARKS as id (id)}
         {@const e = Catalog.exercise(id)}
-        <button class="row" onclick={() => nav.push({ name: 'exercise', id })}>
-          <ExerciseThumb exercise={e} size={40} />
+        <button class="lift row" onclick={() => nav.push({ name: 'exercise', id })}>
+          <ExerciseThumb exercise={e} size={38} />
           <span class="sub semibold grow" style="text-align:left">{e.name}</span>
-          <span class="sub bold mono">{best(id) ? app.units.format(best(id)) : '–'}</span>
-          <ChevronRight size={16} color="var(--muted)" />
+          <span class="num">{best(id) ? app.units.format(best(id)) : '–'}</span>
+          <ChevronRight size={16} color="var(--text-3)" />
         </button>
       {/each}
     </div>
   </section>
 </div>
-
-{#snippet stat(value: string, label: string, color: string)}
-  <div class="card tight stack" style="--gap:4px">
-    <span class="display mono" style="font-size:2.1rem;color:{color}">{value}</span>
-    <span class="kicker muted">{label.toUpperCase()}</span>
-  </div>
-{/snippet}
 
 {#if adjusting}
   <Sheet title={muscleName(adjusting)} onclose={() => (adjusting = null)}>
@@ -141,10 +162,24 @@
 {/if}
 
 <style>
-  .h { font-size: 1.25rem; font-weight: 700; }
-  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(98px, 1fr)); gap: 10px; }
-  .name { width: 96px; flex: none; }
-  .bar { flex: 1; height: 8px; border-radius: 4px; background: var(--raised); overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+  .bento { display: grid; grid-template-columns: 1.25fr 1fr; grid-template-rows: auto auto; gap: 10px; }
+  .tile { display: flex; flex-direction: column; gap: 6px; padding: 16px; border-radius: var(--r-lg); border: 1px solid var(--hairline);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)); }
+  .streak { grid-row: span 2; background: radial-gradient(90% 60% at 100% 0%, rgba(255, 90, 31, 0.22), transparent 70%), linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)); }
+  .huge { font-size: 3.6rem; font-stretch: 125%; font-weight: 800; line-height: 0.95; }
+  .big { font-size: 2.1rem; font-stretch: 125%; font-weight: 800; line-height: 1; }
+  .pct { font-size: 1rem; opacity: 0.7; margin-left: 2px; }
+  .bars { display: flex; align-items: flex-end; gap: 4px; flex: 1; min-height: 54px; margin: 8px 0 4px; }
+  .bars i { flex: 1; border-radius: 3px; background: rgba(255, 255, 255, 0.12); }
+  .bars i.now { background: var(--ember-gradient); box-shadow: 0 0 12px var(--ember-glow); }
+  .figure { padding: 8px 0; background: radial-gradient(55% 60% at 50% 45%, rgba(255, 255, 255, 0.04), transparent 70%); }
+  .head-row { padding: 0 4px; }
+  .vol { display: grid; grid-template-columns: 92px 1fr 26px; align-items: center; gap: 12px; }
+  .vol .num { text-align: right; }
+  .track { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+  .track i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, rgba(255, 90, 31, 0.6), var(--ember-2)); }
+  .track i.full { background: linear-gradient(90deg, rgba(60, 239, 176, 0.6), var(--fresh)); }
+  .lift { padding: 10px 0; border-top: 1px solid var(--hairline); }
+  .lift:first-of-type { border-top: 0; }
+  .lift:active { transform: none; opacity: 0.7; }
 </style>

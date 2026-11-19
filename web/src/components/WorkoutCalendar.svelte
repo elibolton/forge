@@ -41,14 +41,14 @@
 <div class="card stack" style="--gap:14px">
   <div class="row">
     <div class="grow">
-      <div class="bold">{monthDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</div>
+      <div class="month">{monthDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</div>
       <div class="caption muted">{count === 1 ? '1 workout' : `${count} workouts`}</div>
     </div>
-    <button class="icon-btn" aria-label="Previous month" onclick={() => shift(-1)}><ChevronLeft /></button>
-    <button class="icon-btn" aria-label="Next month" disabled={isCurrentMonth} onclick={() => shift(1)}><ChevronRight /></button>
+    <button class="icon-btn plain" aria-label="Previous month" onclick={() => shift(-1)}><ChevronLeft /></button>
+    <button class="icon-btn plain" aria-label="Next month" disabled={isCurrentMonth} onclick={() => shift(1)}><ChevronRight /></button>
   </div>
   <div class="grid">
-    {#each ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as s, i (i)}<span class="caption bold muted" aria-hidden="true">{s}</span>{/each}
+    {#each ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as s, i (i)}<span class="eyebrow" aria-hidden="true">{s}</span>{/each}
     {#each Array(leading) as _, i (i)}<span></span>{/each}
     {#each days as d (d)}
       {@const trained = byDay.has(dayKey(d))}
@@ -76,11 +76,12 @@
 </div>
 
 <style>
-  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px 4px; text-align: center; align-items: center; }
-  .day { width: 36px; height: 36px; border-radius: 50%; margin: 0 auto; font-size: 0.92rem; border: 2px solid transparent; }
-  .day:disabled { opacity: 0.35; }
-  .day.trained { background: var(--accent); color: #fff; font-weight: 700; }
-  .day.today { border-color: var(--accent); font-weight: 700; }
-  .day.sel { border-color: #fff; }
-  .ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255, 107, 46, 0.18); color: var(--accent); flex: none; }
+  .month { font-family: var(--font-display); font-stretch: 112%; font-weight: 750; font-size: 1.05rem; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px 2px; text-align: center; align-items: center; }
+  .day { width: 38px; height: 38px; border-radius: 12px; margin: 0 auto; font-size: 0.88rem; font-weight: 550; border: 1px solid transparent; color: var(--text-2); }
+  .day:disabled { opacity: 0.25; }
+  .day.trained { background: var(--ember-gradient); color: #fff; font-weight: 750; box-shadow: 0 6px 16px -6px var(--ember-glow); }
+  .day.today { border-color: rgba(255, 106, 46, 0.7); color: var(--text); font-weight: 750; }
+  .day.sel { outline: 2px solid #fff; outline-offset: 2px; }
+  .ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--ember-soft); color: var(--ember-2); flex: none; }
 </style>

@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [
     svelte(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Forge',

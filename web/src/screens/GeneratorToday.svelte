@@ -3,13 +3,16 @@
     Catalog, type DayFocus, type Exercise, type ExercisePreference, type PlannedExercise, Programs, estimatedMinutes,
     isBodyweight, plannedWorkingSets,
   } from '../engine';
-  import { ArrowLeftRight, BadgeCheck, ChevronDown, ChevronRight, Clock, Building2, Ellipsis, Play, Plus, RefreshCw, TimerOff, Wand } from '@lucide/svelte';
+  import { ArrowLeftRight, BadgeCheck, ChevronRight, Clock, Ellipsis, MapPin, Plus, RefreshCw, SlidersHorizontal, TimerOff, Wand } from '@lucide/svelte';
   import ActionMenu, { type MenuItem } from '../components/ActionMenu.svelte';
   import ExercisePicker from '../components/ExercisePicker.svelte';
-  import ExerciseThumb from '../components/ExerciseThumb.svelte';
-  import MuscleTile from '../components/MuscleTile.svelte';
+  import ExerciseCard from '../components/ExerciseCard.svelte';
+  import HeroCard from '../components/HeroCard.svelte';
+  import ScreenHeader from '../components/ScreenHeader.svelte';
+  import TargetMuscles from '../components/TargetMuscles.svelte';
   import TrainedCard from '../components/TrainedCard.svelte';
-  import { dayTitle, focusTitle, goalTitle, splitTitle, swappableFocuses } from '../lib/labels';
+  import BackupNudge from '../components/BackupNudge.svelte';
+  import { dayTitle, focusTitle, goalTitle, swappableFocuses } from '../lib/labels';
   import { nav } from '../lib/nav.svelte';
   import { type TodayPlan, buildToday, isTodayPlanCurrent, planBasis } from '../lib/plans';
   import { session } from '../lib/session.svelte';
@@ -82,14 +85,14 @@
     });
   }
 
-  function summary(p: PlannedExercise): string {
+  function summary(p: PlannedExercise): string[] {
     const working = plannedWorkingSets(p);
     const first = working[0];
-    if (!first) return '';
-    const parts = [`${working.length} sets`, p.exercise.isTimed ? `${first.reps}s` : `${first.reps} reps`];
+    if (!first) return [];
+    const parts = [`${working.length} × ${p.exercise.isTimed ? `${first.reps}s` : first.reps}`];
     if (!isBodyweight(p.exercise)) parts.push(app.units.format(first.weight));
-    if (working.some((s) => s.isAMRAP)) parts.push('max effort');
-    return parts.join(' · ');
+    parts.push(`${p.restSeconds < 120 ? `${p.restSeconds}s` : `${Math.round(p.restSeconds / 30) / 2} min`} rest`);
+    return parts;
   }
 
   function rowMenu(p: PlannedExercise): MenuItem[] {
@@ -125,15 +128,20 @@
   });
 </script>
 
-<div class="screen stack" style="--gap:20px">
-  <div class="topbar">
-    <span></span>
-    <ActionMenu items={optionsMenu} label="Workout options"><Ellipsis /></ActionMenu>
-  </div>
+<div class="screen stack" style="--gap:16px">
+  <ScreenHeader>
+    {#snippet actions()}
+      <button class="icon-btn" aria-label="Your plan" onclick={() => nav.push({ name: 'plan' })}><SlidersHorizontal size={18} /></button>
+      <ActionMenu items={optionsMenu} label="Workout options" class="icon-btn"><Ellipsis size={18} /></ActionMenu>
+    {/snippet}
+  </ScreenHeader>
+
+  <BackupNudge />
 
   {#if today}
     {@const workout = today.workout}
     {@const estimate = estimatedMinutes(workout.exercises)}
+    {@const totalSets = workout.exercises.reduce((t, p) => t + plannedWorkingSets(p).length, 0)}
     {#if trainedToday && !session.isActive}
       {@const sets = trainedToday.exercises.reduce((t, e) => t + e.sets.filter((s) => !s.isWarmup && s.reps > 0).length, 0)}
       {@const count = sets > 0 ? sets : trainedToday.exercises.length}
@@ -142,85 +150,68 @@
 
     {#if app.activeProgram}
       <div class="card tight row">
-        <Wand size={18} aria-hidden="true" />
+        <Wand size={18} aria-hidden="true" color="var(--ember-2)" />
         <span class="grow sub semibold">Using the generator today</span>
-        <button class="link sub" onclick={() => app.set('generatorDay', undefined)}>Back to Program</button>
+        <button class="link sub" onclick={() => app.set('generatorDay', undefined)}>Back to program</button>
       </div>
     {:else if finishedProgram}
-      <button class="card tight row pressable" style="text-align:left" onclick={() => nav.push({ name: 'program', id: finishedProgram.id })}>
+      <button class="card tight row" style="text-align:left" onclick={() => nav.push({ name: 'program', id: finishedProgram.id })}>
         <BadgeCheck color="var(--fresh)" aria-hidden="true" />
         <span class="grow"><span class="sub bold">{finishedProgram.name} complete</span><br /><span class="caption muted">Start it again or pick another program.</span></span>
-        <ChevronRight size={16} class="muted" />
+        <ChevronRight size={16} color="var(--text-3)" />
       </button>
     {/if}
 
-    <header class="stack" style="--gap:14px">
-      <button class="row muted sub semibold" style="--gap:4px" onclick={() => nav.push({ name: 'plan' })}>
-        {goalTitle[profile.plan.goal]} · {splitTitle[profile.plan.split]} <ChevronRight size={14} color="var(--accent)" aria-hidden="true" />
-      </button>
-      <div class="row between" style="align-items:flex-end">
-        <div class="stack" style="--gap:4px">
-          {#if trainedToday}<span class="kicker accent">NEXT UP</span>{/if}
-          <h1 class="display" style="font-size:1.75rem">{dayTitle(workout.focus)}</h1>
-          <span class="sub muted">{workout.exercises.length} exercises · {workout.targetMuscles.length} muscles · ~{estimate} min</span>
-        </div>
-        <ActionMenu items={switchMenu} label="Switch workout focus" class="chip on"><ArrowLeftRight size={16} /> Switch</ActionMenu>
-      </div>
-      <div class="row wrap" style="--gap:8px">
-        <ActionMenu items={durationMenu} label="Duration, {chosenMinutes} minutes" class="chip"><Clock size={16} /> {chosenMinutes}m <ChevronDown size={14} /></ActionMenu>
-        <ActionMenu items={gymMenu} label="Gym, {app.activeGym.name}" class="chip"><Building2 size={16} /> {app.activeGym.name} <ChevronDown size={14} /></ActionMenu>
-      </div>
-    </header>
+    <HeroCard eyebrow={trainedToday ? 'Next up' : `Today · ${goalTitle[profile.plan.goal]}`} title={dayTitle(workout.focus)}
+      stats={[{ value: `${estimate}`, label: 'Minutes' }, { value: `${workout.exercises.length}`, label: 'Exercises' }, { value: `${totalSets}`, label: 'Sets' }]}
+      startLabel={trainedToday ? 'Start next workout' : 'Start workout'} showStart={!session.isActive} onstart={() => session.start(workout)}>
+      {#snippet controls()}
+        <ActionMenu items={switchMenu} label="Switch workout focus" class="chip glass-chip"><ArrowLeftRight size={15} /> Switch</ActionMenu>
+        <ActionMenu items={durationMenu} label="Duration, {chosenMinutes} minutes" class="chip glass-chip"><Clock size={15} /> {chosenMinutes} min</ActionMenu>
+        <ActionMenu items={gymMenu} label="Gym, {app.activeGym.name}" class="chip glass-chip"><MapPin size={15} /> <span class="one-line" style="max-width:120px">{app.activeGym.name}</span></ActionMenu>
+      {/snippet}
+    </HeroCard>
 
     {#if today.basis !== planBasis(profile)}
-      <div class="card tight stack" style="outline:1px solid rgba(255,107,46,.4)">
-        <div class="row sub bold" style="--gap:8px"><RefreshCw size={16} /> Your plan or recovery changed</div>
+      <div class="card stack notice">
+        <div class="row sub bold" style="--gap:8px"><RefreshCw size={16} color="var(--ember-2)" /> Your plan or recovery changed</div>
         <p class="caption muted">This workout was built before the change. Update it, or keep it and your edits.</p>
-        <div class="row" style="--gap:10px">
-          <button class="btn primary" onclick={() => rebuild(today.focus, today.minutes, today.seed)}>Update Workout</button>
-          <button class="btn" onclick={() => edit((t) => { t.basis = planBasis(profile); })}>Keep This One</button>
+        <div class="row" style="--gap:8px">
+          <button class="btn primary" onclick={() => rebuild(today.focus, today.minutes, today.seed)}>Update workout</button>
+          <button class="btn" onclick={() => edit((t) => { t.basis = planBasis(profile); })}>Keep this one</button>
         </div>
       </div>
     {/if}
 
     {#if chosenMinutes - estimate >= 10 && estimate < chosenMinutes * 0.8}
       <div class="card tight row" style="align-items:flex-start">
-        <TimerOff size={20} color="var(--recovering)" aria-hidden="true" />
+        <TimerOff size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
         <div class="stack grow" style="--gap:6px">
           <div class="sub bold">About {estimate} of your {chosenMinutes} min</div>
           <p class="caption muted">Only a few {focusTitle[workout.focus].toLowerCase()} exercises suit {app.activeGym.name}'s equipment and today's recovery. Add one to use the time, or shorten today's session.</p>
-          <button class="link sub" style="text-align:left" onclick={() => (adding = true)}>Add an Exercise</button>
+          <button class="link sub" style="text-align:left" onclick={() => (adding = true)}>Add an exercise</button>
         </div>
       </div>
     {/if}
 
-    <div class="strip" role="group" aria-label="Target muscle recovery">
-      {#each workout.targetMuscles as m (m)}<MuscleTile muscle={m} value={workout.recovery[m] ?? 1} />{/each}
-    </div>
+    <TargetMuscles targets={workout.targetMuscles} recovery={workout.recovery} />
 
-    <div class="card exercises">
+    <div class="row between section-row">
+      <h2 class="eyebrow">The session</h2>
+      <span class="caption faint">{workout.exercises.length} exercises</span>
+    </div>
+    <div class="stack" style="--gap:10px">
       {#each workout.exercises as p, i (p.exercise.id)}
-        <div class="ex-row">
-          <button class="row grow" style="--gap:14px;text-align:left" onclick={() => nav.push({ name: 'exercise', id: p.exercise.id })}>
-            <ExerciseThumb exercise={p.exercise} />
-            <span class="stack grow" style="--gap:3px">
-              {#if i === 0 && p.exercise.isCompound}<span class="kicker" style="color:var(--recovering)">MAIN LIFT</span>{/if}
-              <span class="bold">{p.exercise.name}</span>
-              <span class="sub muted mono">{summary(p)}</span>
-              {#if p.reasons[1] ?? p.reasons[0]}<span class="caption muted">{p.reasons[1] ?? p.reasons[0]}</span>{/if}
-            </span>
-          </button>
-          <ActionMenu items={rowMenu(p)} label="{p.exercise.name} options"><Ellipsis size={20} /></ActionMenu>
-        </div>
+        {@const reason = p.reasons[1] ?? p.reasons[0]}
+        <ExerciseCard index={i} exercise={p.exercise} pills={summary(p)}
+          tag={i === 0 && p.exercise.isCompound ? [{ text: 'MAIN LIFT', tone: 'amber' }] : plannedWorkingSets(p).some((s) => s.isAMRAP) ? [{ text: 'MAX EFFORT' }] : []}
+          onopen={() => nav.push({ name: 'exercise', id: p.exercise.id })}>
+          {#snippet menu()}<ActionMenu items={rowMenu(p)} label="{p.exercise.name} options"><Ellipsis size={18} /></ActionMenu>{/snippet}
+          {#snippet detail()}{#if reason}<p class="caption muted">{reason}</p>{/if}{/snippet}
+        </ExerciseCard>
       {/each}
-      <button class="ex-row row link" style="--gap:16px" onclick={() => (adding = true)}>
-        <span class="plus-tile"><Plus size={24} strokeWidth={2.6} /></span> <span class="bold">Add an Exercise</span>
-      </button>
+      <button class="add" onclick={() => (adding = true)}><Plus size={18} /> Add an exercise</button>
     </div>
-
-    {#if !session.isActive}
-      <button class="fab" onclick={() => session.start(workout)}><Play size={20} fill="currentColor" /> {trainedToday ? 'Start Next Workout' : 'Start Workout'}</button>
-    {/if}
   {/if}
 </div>
 
@@ -235,10 +226,10 @@
 {/if}
 
 <style>
-  .strip { display: flex; gap: 10px; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
-  .strip::-webkit-scrollbar { display: none; }
-  .exercises { padding: 4px 14px; border-radius: 24px; }
-  .ex-row { display: flex; align-items: center; gap: 8px; padding: 12px 0; width: 100%; }
-  .ex-row + .ex-row { border-top: 0.5px solid var(--line); }
-  .plus-tile { width: 60px; height: 60px; border-radius: 16px; background: var(--accent-soft); display: grid; place-items: center; }
+  .notice { border-color: rgba(255, 106, 46, 0.35); }
+  .section-row { margin-top: 10px; padding: 0 4px; }
+  .add { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; border-radius: var(--r-lg);
+    border: 1px dashed var(--hairline-2); color: var(--text-2); font-weight: 600; }
+  :global(.glass-chip) { background: rgba(0, 0, 0, 0.28) !important; border-color: rgba(255, 255, 255, 0.12) !important;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 </style>

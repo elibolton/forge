@@ -4,6 +4,7 @@
   import BackBar from '../components/BackBar.svelte';
   import CustomExerciseEditor from '../components/CustomExerciseEditor.svelte';
   import ExerciseThumb from '../components/ExerciseThumb.svelte';
+  import ExerciseNote from '../components/ExerciseNote.svelte';
   import LineChart from '../components/LineChart.svelte';
   import { removeCustomExercise } from '../lib/customExercises';
   import { equipmentTitle } from '../lib/labels';
@@ -47,6 +48,8 @@
       <span class="caption muted">{isCustom(e) ? 'Custom exercise' : e.isCompound ? 'Compound lift' : 'Isolation'}</span>
     </div>
   </div>
+
+  <div class="section"><div class="head">Your note</div><ExerciseNote exerciseID={id} /></div>
 
   {#if guide}
     <div class="section">

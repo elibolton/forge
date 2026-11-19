@@ -20,6 +20,8 @@ export interface Profile {
   customExercises: Exercise[];
   /** The active program and where you are in it. */
   programProgress: ProgramProgress | null;
+  /** Your own sticky note per exercise ("seat on 4", "use the blue band"). */
+  exerciseNotes: Record<string, string>;
 }
 
 export interface WorkoutLog {
@@ -54,6 +56,9 @@ function readProfile(v: unknown): Profile | null {
     createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now(),
     customExercises: lossy(v.customExercises, readExercise),
     programProgress: readProgress(v.programProgress),
+    exerciseNotes: isObj(v.exerciseNotes)
+      ? Object.fromEntries(Object.entries(v.exerciseNotes).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].trim() !== ''))
+      : {},
   };
 }
 
@@ -140,7 +145,7 @@ class AppStore {
   createProfile(plan: UserPlan, gym: Gym, usesPounds: boolean) {
     this.setProfile({
       plan, gyms: [gym], overrides: [], activeGymID: gym.id, usesPounds, createdAt: Date.now(), customExercises: [],
-      programProgress: null,
+      programProgress: null, exerciseNotes: {},
     });
   }
 
@@ -179,6 +184,10 @@ class AppStore {
       const i = p.customExercises.findIndex((x) => x.id === e.id);
       if (i >= 0) p.customExercises[i] = e; else p.customExercises.push(e);
     });
+  }
+
+  setExerciseNote(id: string, text: string) {
+    this.updateProfile((p) => { if (text.trim()) p.exerciseNotes[id] = text.trim(); else delete p.exerciseNotes[id]; });
   }
 
   planner(minutes?: number | null): Planner {

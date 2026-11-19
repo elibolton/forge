@@ -21,18 +21,22 @@
   });
 </script>
 
-<button class="mini" aria-label="Resume workout, {current ? exerciseOf(current).name : ''}" onclick={() => (session.isExpanded = true)}>
+<button class="mini glass" aria-label="Resume workout, {current ? exerciseOf(current).name : ''}" onclick={() => (session.isExpanded = true)}>
   {#if current}<ExerciseThumb exercise={exerciseOf(current)} size={40} />{/if}
   <span class="grow" style="text-align:left">
     <span class="sub bold one">{current ? exerciseOf(current).name : 'Workout in progress'}</span><br />
     <span class="caption mono" style="color:{resting ? 'var(--accent)' : 'var(--muted)'}">{status}</span>
   </span>
-  <ChevronUp size={20} color="var(--muted)" />
+  <span class="open"><ChevronUp size={18} /></span>
 </button>
 
 <style>
-  .mini { position: fixed; left: 16px; right: 16px; bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 8px); z-index: 30;
-    display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 22px; max-width: 688px; margin: 0 auto;
-    background: rgba(44, 44, 46, 0.9); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 107, 46, 0.35); }
+  .mini { position: fixed; left: 50%; transform: translateX(-50%); width: min(420px, calc(100% - 24px)); z-index: 41;
+    bottom: calc(var(--safe-bottom) + var(--dock-h) + 10px); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 8px;
+    border-radius: 22px; border-color: rgba(255, 106, 46, 0.35) !important; box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.8), 0 0 30px -12px var(--ember-glow);
+    animation: rise 0.4s var(--ease); }
+  .mini:active { transform: translateX(-50%) scale(0.98); }
   .one { display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .open { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--ember-gradient); color: #fff; flex: none; }
+  @keyframes rise { from { transform: translate(-50%, 20px); opacity: 0; } }
 </style>

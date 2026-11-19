@@ -11,11 +11,16 @@
   import { exerciseOf, isComplete, session, sessionExerciseFrom } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
+  import { minSec } from '../lib/units';
+  import { swapInSession } from '../lib/swap';
 
   let adding = $state(false);
+  let swapping = $state(false);
   let overview = $state(false);
   let reviewing = $state(false);
   let scroller = $state<HTMLDivElement>();
+  let tick = $state(Date.now());
+  $effect(() => { const t = setInterval(() => (tick = Date.now()), 1000); return () => clearInterval(t); });
 
   const ws = $derived(session.state!);
   const index = $derived(Math.min(ws.currentIndex, Math.max(0, ws.exercises.length - 1)));
@@ -80,21 +85,28 @@
 </script>
 
 <div class="logger" role="dialog" aria-modal="true" aria-label={title}>
-  <header class="topbar head">
-    <button class="icon-btn" aria-label="Minimize workout" onclick={() => (session.isExpanded = false)}><ChevronDown /></button>
-    <div class="title">{title}</div>
+  <header class="head">
+    <button class="icon-btn" aria-label="Minimize workout" onclick={() => (session.isExpanded = false)}><ChevronDown size={20} /></button>
+    <div class="center">
+      <div class="title one-line">{title}</div>
+      <div class="num elapsed" aria-label="Elapsed time">{minSec((tick - ws.startedAt) / 1000)}</div>
+    </div>
     <ActionMenu label="Workout options" class="icon-btn" items={[
-      { label: 'All Exercises', action: () => (overview = true) },
-      { label: 'Add Exercise', action: () => (adding = true) },
-      { label: 'Discard Workout', danger: true, action: discard },
-    ]}><Ellipsis /></ActionMenu>
-    <button class="btn primary" style="min-height:36px;padding:6px 14px;border-radius:999px" onclick={() => (reviewing = true)}>Finish</button>
+      { label: 'All exercises', action: () => (overview = true) },
+      { label: 'Swap this exercise', action: () => (swapping = true) },
+      { label: 'Add exercise', action: () => (adding = true) },
+      { label: 'Discard workout', danger: true, action: discard },
+    ]}><Ellipsis size={18} /></ActionMenu>
+    <button class="btn primary finish" onclick={() => (reviewing = true)}>Finish</button>
   </header>
 
+  {#if ws.exercises.length}<div class="eyebrow pos">Exercise {index + 1} of {ws.exercises.length}</div>{/if}
   <div class="strip" role="tablist" aria-label="Exercises">
     {#each ws.exercises as x, i (x.id)}
       <button role="tab" aria-selected={i === index} aria-label="{exerciseOf(x).name}{isComplete(x) ? ', done' : ''}" onclick={() => go(i)}>
-        <span class="seg" class:now={i === index} class:complete={isComplete(x)}></span>
+        <span class="seg" class:now={i === index} class:complete={isComplete(x)}
+          class:pair-start={!!x.program?.supersetGroup && ws.exercises[i + 1]?.program?.supersetGroup === x.program?.supersetGroup}
+          class:pair-end={!!x.program?.supersetGroup && ws.exercises[i - 1]?.program?.supersetGroup === x.program?.supersetGroup}></span>
       </button>
     {/each}
   </div>
@@ -110,7 +122,11 @@
       </div>
     {:else if current}
       {#key current.id}
+        {@const group = current.program?.supersetGroup}
+        {@const partnerIndex = group ? ws.exercises.findIndex((x, i) => i !== index && x.program?.supersetGroup === group) : -1}
         <ExercisePage exercise={current} nextName={ws.exercises[index + 1] ? exerciseOf(ws.exercises[index + 1]).name : undefined}
+          onswap={() => (swapping = true)}
+          partner={partnerIndex >= 0 ? { name: exerciseOf(ws.exercises[partnerIndex]).name, go: () => go(partnerIndex) } : undefined}
           onNext={() => go(index + 1)} onFinish={() => (reviewing = true)} />
       {/key}
     {/if}
@@ -124,9 +140,9 @@
     {#snippet leading()}<button class="link" onclick={() => (reviewing = false)}>Keep Going</button>{/snippet}
     <div class="stack" style="--gap:18px">
       <div class="card tight row stats">
-        <div><b class="mono">{Math.floor((Date.now() - ws.startedAt) / 60000)} min</b><span class="caption muted">duration</span></div>
-        <div><b class="mono">{done.length}</b><span class="caption muted">sets logged</span></div>
-        <div><b class="mono">{volume > 0 ? app.units.format(volume) : '–'}</b><span class="caption muted">volume</span></div>
+        <div><b class="num">{Math.floor((Date.now() - ws.startedAt) / 60000)} min</b><span class="caption muted">duration</span></div>
+        <div><b class="num">{done.length}</b><span class="caption muted">sets logged</span></div>
+        <div><b class="num">{volume > 0 ? app.units.format(volume) : '–'}</b><span class="caption muted">volume</span></div>
       </div>
       {#if pending > 0}
         <div class="card stack">
@@ -166,24 +182,41 @@
   </Sheet>
 {/if}
 
+{#if swapping && current}
+  {@const c = current}
+  <ExercisePicker title="Swap {exerciseOf(c).name}" exercises={app.planner().alternatives(exerciseOf(c), new Set(ws.exercises.map((x) => x.exerciseID)))}
+    onpick={(e) => { session.update((s) => swapInSession(s, c.id, e, app.planner())); toasts.show(`Swapped in ${e.name}`); }}
+    onclose={() => (swapping = false)} />
+{/if}
 {#if adding}
   <ExercisePicker title="Add Exercise" exercises={Catalog.all.filter((e) => app.planner().isEligible(e))} allowCreate onpick={add} onclose={() => (adding = false)} />
 {/if}
 
 <style>
-  .logger { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; animation: up 0.25s ease-out; }
-  .head { padding: calc(var(--safe-top) + 4px) 8px 0; gap: 4px; }
-  .strip { display: flex; gap: 4px; padding: 10px 16px; }
-  .strip button { flex: 1; padding: 10px 0; }
-  .seg { display: block; height: 4px; border-radius: 3px; background: var(--raised); }
-  .seg.now { height: 6px; background: var(--accent); }
+  .logger { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; animation: up 0.45s var(--ease);
+    background: radial-gradient(80% 40% at 100% 0%, rgba(255, 90, 31, 0.14), transparent 70%), var(--bg); }
+  .head { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 8px; padding: calc(var(--safe-top) + 8px) 14px 4px; }
+  .center { text-align: center; min-width: 0; }
+  .title { font-weight: 650; font-size: 0.95rem; }
+  .elapsed { font-size: 0.78rem; color: var(--text-3); }
+  .finish { min-height: 40px; padding: 8px 16px; }
+  .pos { text-align: center; margin-top: 8px; }
+  .strip { display: flex; gap: 5px; padding: 8px 18px 6px; }
+  .strip button { flex: 1; padding: 8px 0; }
+  .seg { display: block; height: 4px; border-radius: 3px; background: var(--surface-3); transition: background 0.3s, box-shadow 0.3s; }
+  .seg.now { background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
   .seg.complete { background: var(--fresh); }
-  .scroll { flex: 1; overflow-y: auto; padding: 4px 16px 40px; -webkit-overflow-scrolling: touch; }
-  .scroll > :global(*) { max-width: 640px; margin: 0 auto; }
-  .rest { padding-bottom: calc(var(--safe-bottom) + 8px); }
+  /* Superset pairs read as one joined segment. */
+  .strip button:has(.pair-start) { padding-right: 0; margin-right: -5px; }
+  .seg.pair-start { border-radius: 3px 0 0 3px; }
+  .seg.pair-end { border-radius: 0 3px 3px 0; }
+  .scroll { flex: 1; overflow-y: auto; padding: 10px 18px 40px; -webkit-overflow-scrolling: touch; }
+  .scroll > :global(*) { max-width: 620px; margin: 0 auto; }
+  .rest { padding-bottom: var(--safe-bottom); }
   .rest:empty { display: none; }
-  .empty { align-items: center; text-align: center; padding-top: 25vh; }
-  .stats > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-  .stats b { font-size: 1.2rem; white-space: nowrap; }
-  @keyframes up { from { transform: translateY(30px); opacity: 0; } }
+  .empty { align-items: center; text-align: center; padding-top: 22vh; }
+  .stats > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .stats > div + div { border-left: 1px solid var(--hairline); }
+  .stats b { font-size: 1.35rem; white-space: nowrap; }
+  @keyframes up { from { transform: translateY(40px); opacity: 0; } }
 </style>

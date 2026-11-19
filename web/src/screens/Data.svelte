@@ -9,8 +9,10 @@
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { dayKey } from '../lib/units';
+  import { exportBackup, lastBackupText } from '../lib/backup';
 
   // CSV import from Fitbod, Strong or Hevy, so recommendations start from real numbers.
+  const lastBackup = $derived.by(() => { void app.kv; return lastBackupText(); });
   let pounds = $state(app.profile!.usesPounds);
   let fileText = $state<string | null>(null);
   let result = $state.raw<ImportResult | null>(null);
@@ -52,20 +54,6 @@
 
   function match(name: string, e: Exercise) { manualMatches = { ...manualMatches, [name]: e.id }; reparse(); }
 
-  // Backup
-  async function exportBackup() {
-    const name = `forge-backup-${dayKey()}.json`;
-    const file = new File([app.backup()], name, { type: 'application/json' });
-    // The share sheet is the reliable way to save a file from a home-screen app on iPhone.
-    if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: 'Forge backup' }); return; } catch (err) { if ((err as Error).name === 'AbortError') return; }
-    }
-    const url = URL.createObjectURL(file);
-    const a = Object.assign(document.createElement('a'), { href: url, download: name });
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
   async function pickBackup(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -92,6 +80,7 @@
   <div class="section">
     <div class="head">Backup</div>
     <div class="list">
+      <div class="item">Last backup<span class="value">{lastBackup}</span></div>
       <button class="item link" onclick={exportBackup}><Download size={18} /> Export Backup</button>
       <button class="item link" onclick={() => backupInput?.click()}><Upload size={18} /> Restore from Backup</button>
     </div>

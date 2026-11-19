@@ -1,14 +1,17 @@
 <script lang="ts">
   import {
     type Exercise, type FatigueCheckIn, type WeekRule, Programs, checkInDue, nextDayID, programDay, rirText, rxExercise,
-    scheduledOn, setsText, effortText, restText, skipDay,
+    scheduledOn, setsText, effortText, restText, skipDay, dayOrder, isDone, ruleFor,
   } from '../engine';
-  import { BedDouble, Ellipsis, Flame, HeartPulse, Info, MoonStar, Play, TriangleAlert, ChevronRight } from '@lucide/svelte';
+  import { BedDouble, ChevronRight, Ellipsis, Flame, HeartPulse, Info, MoonStar, TriangleAlert } from '@lucide/svelte';
   import ActionMenu, { type MenuItem } from '../components/ActionMenu.svelte';
   import ExercisePicker from '../components/ExercisePicker.svelte';
-  import ExerciseThumb from '../components/ExerciseThumb.svelte';
+  import ExerciseCard from '../components/ExerciseCard.svelte';
+  import HeroCard from '../components/HeroCard.svelte';
+  import ScreenHeader from '../components/ScreenHeader.svelte';
   import FatigueCheckInSheet from '../components/FatigueCheckInSheet.svelte';
   import TrainedCard from '../components/TrainedCard.svelte';
+  import BackupNudge from '../components/BackupNudge.svelte';
   import { nav } from '../lib/nav.svelte';
   import {
     type ProgramDayEdits, type ProgramDayItem, dayPlanMinutes, editsKey, loadEdits, makeDayPlan, saveEdits, startDayPlan,
@@ -117,20 +120,21 @@
   ]);
 </script>
 
-<div class="screen stack" style="--gap:20px">
-  <div class="topbar">
-    <span></span>
-    <ActionMenu items={options} label="Workout options"><Ellipsis /></ActionMenu>
-  </div>
+<div class="screen stack" style="--gap:16px">
+  <ScreenHeader>
+    {#snippet actions()}<ActionMenu items={options} label="Workout options" class="icon-btn"><Ellipsis size={18} /></ActionMenu>{/snippet}
+  </ScreenHeader>
+
+  <BackupNudge />
 
   {#if trainedToday && !session.isActive}<TrainedCard detail={trainedDetail()} />{/if}
 
   {#if dueWeek}
-    <div class="card tight stack" style="--gap:10px;outline:1px solid rgba(255,107,46,.4)">
-      <div class="row sub bold" style="--gap:8px"><HeartPulse size={18} /> Week {dueWeek} check-in</div>
+    <div class="card stack notice" style="--gap:10px">
+      <div class="row sub bold" style="--gap:8px"><HeartPulse size={18} color="var(--ember-2)" /> Week {dueWeek} check-in</div>
       <p class="caption muted">Four quick fatigue flags. Two or more and it's time to deload early.</p>
-      <div class="row" style="--gap:10px">
-        <button class="btn primary" onclick={() => (checkInWeek = dueWeek)}>Check In</button>
+      <div class="row" style="--gap:8px">
+        <button class="btn primary" onclick={() => (checkInWeek = dueWeek)}>Check in</button>
         <button class="btn" onclick={() => saveCheckIn({ jointPain: false, stillSore: false, poorSleepOrMotivation: false, repsDropped: false }, dueWeek)}>Skip</button>
       </div>
     </div>
@@ -142,77 +146,90 @@
 
   {#if plan}
     {@const rule = plan.session.rule}
-    <header class="stack" style="--gap:12px">
-      <button class="row muted sub semibold" style="--gap:4px" onclick={() => nav.push({ name: 'program', id: plan.program.id })}>
-        {plan.program.name} <ChevronRight size={14} color="var(--accent)" aria-hidden="true" />
-      </button>
-      <div class="stack" style="--gap:4px">
-        {#if trainedToday}<span class="kicker accent">NEXT UP</span>{/if}
-        <h1 class="display" style="font-size:1.75rem">{plan.session.day.title} Day</h1>
-        <span class="sub muted">Week {plan.session.week} of {plan.program.weeks} · {plan.items.length} exercises · ~{dayPlanMinutes(plan)} min</span>
-      </div>
-      <div class="row wrap" style="--gap:8px">
-        {#if rule.isDeload}<span class="chip on"><BedDouble size={16} /> Deload week</span>{/if}
-        {#each chips(rule) as c (c)}<span class="chip">{c}</span>{/each}
-      </div>
-    </header>
+    {@const totalSets = plan.items.reduce((t, i) => t + i.prescription.sets, 0)}
+    <HeroCard eyebrow={trainedToday ? 'Next up' : `Week ${plan.session.week} of ${plan.program.weeks}`} title="{plan.session.day.title} Day"
+      stats={[{ value: `${dayPlanMinutes(plan)}`, label: 'Minutes' }, { value: `${plan.items.length}`, label: 'Exercises' }, { value: `${totalSets}`, label: 'Sets' }]}
+      startLabel="Start {plan.session.day.title}" showStart={!session.isActive && !showRest} onstart={start}>
+      {#snippet top()}
+        <button class="program row" onclick={() => nav.push({ name: 'program', id: plan.program.id })}>
+          <span class="grow stack" style="--gap:8px;text-align:left">
+            <span class="caption semibold one-line">{plan.program.name}</span>
+            <span class="weeks" aria-label="Week {plan.session.week} of {plan.program.weeks}">
+              {#each Array(plan.program.weeks) as _, w (w)}
+                <i class:done={w + 1 < plan.session.week} class:now={w + 1 === plan.session.week} class:deload={ruleFor(plan.program, w + 1).isDeload}></i>
+              {/each}
+            </span>
+          </span>
+          <ChevronRight size={16} color="var(--text-3)" />
+        </button>
+        <div class="days" aria-label="This week">
+          {#each dayOrder(plan.program) as d (d)}
+            {@const done = isDone(active.progress, d)}
+            {@const now = d === plan.session.day.id}
+            <span class="day" class:done class:now><i aria-hidden="true"></i>{programDay(plan.program, d)?.title}</span>
+          {/each}
+        </div>
+      {/snippet}
+      {#snippet controls()}
+        {#if rule.isDeload}<span class="chip on glass-chip"><BedDouble size={15} /> Deload week</span>{/if}
+        {#each chips(rule) as c (c)}<span class="chip glass-chip">{c}</span>{/each}
+      {/snippet}
+    </HeroCard>
 
     {#if rule.notes.length}
       <div class="card tight stack" style="--gap:8px">
-        {#each rule.notes as n (n)}<div class="row sub" style="--gap:8px;align-items:flex-start"><Info size={16} style="flex:none;margin-top:2px" /> {n}</div>{/each}
+        {#each rule.notes as n (n)}<div class="row sub" style="--gap:10px;align-items:flex-start"><Info size={16} color="var(--ember-2)" style="flex:none;margin-top:2px" /> {n}</div>{/each}
       </div>
     {/if}
 
     {#if showRest}
-      <div class="card stack">
-        <div class="row bold" style="--gap:8px"><MoonStar size={18} /> Rest day</div>
+      <div class="card stack rest">
+        <div class="row bold" style="--gap:10px"><MoonStar size={20} color="var(--ember-2)" /> Rest day</div>
         <p class="sub muted">The schedule has today off. Next session: {plan.session.day.title}.</p>
-        <button class="btn" style="align-self:flex-start" onclick={() => (trainOnRestDay = true)}>Train Anyway</button>
+        <button class="btn" style="align-self:flex-start" onclick={() => (trainOnRestDay = true)}>Train anyway</button>
       </div>
     {:else}
-      <div class="card exercises">
-        {#each plan.items as item (item.prescription.slot.id)}
+      <div class="row between section-row">
+        <h2 class="eyebrow">The session</h2>
+        <span class="caption faint">{plan.items.length} exercises</span>
+      </div>
+      <div class="stack" style="--gap:10px">
+        {#each plan.items as item, i (item.prescription.slot.id)}
           {@const p = item.prescription}
           {@const s = item.suggestion}
           {@const e = rxExercise(p)}
-          <div class="ex-row">
-            <button class="row grow" style="--gap:14px;text-align:left;align-items:flex-start" onclick={() => nav.push({ name: 'exercise', id: e.id })}>
-              <ExerciseThumb exercise={e} />
-              <span class="stack grow" style="--gap:3px">
-                {#if p.slot.label || p.slot.supersetGroup || p.slot.isOptional}
-                  <span class="row" style="--gap:6px">
-                    {#if p.slot.label}<span class="kicker accent">{p.slot.label.toUpperCase()}</span>{/if}
-                    {#if p.slot.supersetGroup}<span class="kicker accent">SUPERSET</span>{/if}
-                    {#if p.slot.isOptional}<span class="kicker muted">OPTIONAL</span>{/if}
-                  </span>
-                {/if}
-                <span class="bold">{e.name}</span>
-                <span class="sub muted mono">{setsText(p)} · {effortText(p.effort)}</span>
-                <span class="caption muted">Rest {restText(p)}</span>
-                <span class="sub semibold mono">Target: {s.weight !== null ? `${app.units.format(s.weight)} × ` : ''}{s.reps}+ reps</span>
+          {@const tags = [
+            ...(p.slot.label ? [{ text: p.slot.label.toUpperCase() }] : []),
+            ...(p.slot.supersetGroup ? [{ text: 'SUPERSET' }] : []),
+            ...(p.slot.isOptional ? [{ text: 'OPTIONAL', tone: 'muted' as const }] : []),
+          ]}
+          <ExerciseCard index={i} exercise={e} tag={tags} pills={[setsText(p), effortText(p.effort), `Rest ${restText(p)}`]}
+            onopen={() => nav.push({ name: 'exercise', id: e.id })}>
+            {#snippet menu()}<ActionMenu items={rowMenu(item)} label="{e.name} options"><Ellipsis size={18} /></ActionMenu>{/snippet}
+            {#snippet detail()}
+              <div class="stack" style="--gap:6px">
+                <div class="target row" style="--gap:8px">
+                  <span class="eyebrow" style="color:var(--ember-2)">Target</span>
+                  <span class="num">{s.weight !== null ? `${app.units.format(s.weight)} × ` : ''}{s.reps}+</span>
+                </div>
                 <span class="caption muted">{s.reason}</span>
-                {#if p.lastSetNote}<span class="caption row" style="--gap:4px;color:var(--recovering)"><Flame size={12} /> {p.lastSetNote}</span>{/if}
-                {#each [...p.slot.notes, ...(p.weekNote ? [p.weekNote] : [])] as n (n)}<span class="caption muted">• {n}</span>{/each}
+                {#if p.lastSetNote}<span class="caption row" style="--gap:6px;color:var(--recovering)"><Flame size={13} /> {p.lastSetNote}</span>{/if}
+                {#each [...p.slot.notes, ...(p.weekNote ? [p.weekNote] : [])] as n (n)}<span class="caption faint">• {n}</span>{/each}
                 {#if !e.equipment.every((x) => app.activeGym.equipment.includes(x))}
-                  <span class="caption row" style="--gap:4px;color:var(--recovering)"><TriangleAlert size={12} /> {app.activeGym.name} doesn't list all the equipment</span>
+                  <span class="caption row" style="--gap:6px;color:var(--recovering)"><TriangleAlert size={13} /> {app.activeGym.name} doesn't list all the equipment</span>
                 {/if}
-                {#if item.isSwapped}<span class="caption muted">Swapped for today</span>{/if}
-              </span>
-            </button>
-            <ActionMenu items={rowMenu(item)} label="{e.name} options"><Ellipsis size={20} /></ActionMenu>
-          </div>
+                {#if item.isSwapped}<span class="caption faint">Swapped for today</span>{/if}
+              </div>
+            {/snippet}
+          </ExerciseCard>
         {/each}
         {#each plan.removed as p (p.slot.id)}
-          <div class="ex-row">
-            <span class="grow sub muted">Skipped: {rxExercise(p).name}</span>
+          <div class="skipped row">
+            <span class="grow sub muted">Skipped today · {rxExercise(p).name}</span>
             <button class="link sub" onclick={() => restore(p.slot.id)}>Restore</button>
           </div>
         {/each}
       </div>
-    {/if}
-
-    {#if !session.isActive && !showRest}
-      <button class="fab" onclick={start}><Play size={20} fill="currentColor" /> Start {plan.session.day.title}</button>
     {/if}
   {/if}
 </div>
@@ -227,7 +244,24 @@
 {/if}
 
 <style>
-  .exercises { padding: 4px 14px; border-radius: 24px; }
-  .ex-row { display: flex; align-items: flex-start; gap: 8px; padding: 12px 0; }
-  .ex-row + .ex-row { border-top: 0.5px solid var(--line); }
+  .notice { border-color: rgba(255, 106, 46, 0.35); }
+  .section-row { margin-top: 10px; padding: 0 4px; }
+  .program { width: 100%; padding: 12px 14px; border-radius: var(--r-md); background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.1); }
+  .program:active { transform: none; }
+  .weeks { display: flex; gap: 4px; }
+  .weeks i { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); }
+  .weeks i.deload { background: rgba(255, 255, 255, 0.06); outline: 1px dashed rgba(255, 255, 255, 0.2); outline-offset: -1px; }
+  .weeks i.done { background: rgba(255, 166, 70, 0.6); }
+  .weeks i.now { background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
+  .days { display: flex; gap: 6px; }
+  .day { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 0 9px; border-radius: 14px;
+    background: rgba(0, 0, 0, 0.22); border: 1px solid rgba(255, 255, 255, 0.08); font-size: 0.68rem; font-weight: 650; color: var(--text-3); }
+  .day i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); }
+  .day.done { color: var(--text-2); }
+  .day.done i { background: var(--fresh); box-shadow: 0 0 8px rgba(60, 239, 176, 0.6); }
+  .day.now { color: #fff; background: var(--ember-soft); border-color: rgba(255, 106, 46, 0.55); }
+  .day.now i { background: var(--ember-2); box-shadow: 0 0 10px var(--ember-glow); }
+  .target .num { font-size: 1.05rem; }
+  .rest { background: radial-gradient(80% 100% at 100% 0%, rgba(255, 90, 31, 0.12), transparent 70%), var(--surface); }
+  .skipped { padding: 14px 16px; border-radius: var(--r-lg); border: 1px dashed var(--hairline-2); }
 </style>

@@ -43,13 +43,14 @@
 
 {#snippet pageTitle(title: string, subtitle: string)}
   <div class="stack" style="--gap:8px;margin:4px 0 8px">
-    <h1 class="display" style="font-size:1.75rem">{title}</h1>
+    <h1 class="display" style="font-size:2.2rem;line-height:1">{title}</h1>
     <p class="muted">{subtitle}</p>
   </div>
 {/snippet}
 
 <div class="onboarding">
   <div class="dots" aria-label="Step {page + 1} of {PAGES.length}">
+    <span class="brand eyebrow" aria-hidden="true">Forge</span>
     {#each PAGES as _, i (i)}<span class:on={i <= page} class:now={i === page}></span>{/each}
     {#if page < 4}<button class="skip muted" onclick={() => (page = 4)}>Skip</button>{/if}
   </div>
@@ -143,23 +144,26 @@
 {/if}
 
 <style>
-  .onboarding { min-height: 100dvh; display: flex; flex-direction: column; max-width: 640px; margin: 0 auto; padding: calc(var(--safe-top) + 8px) 20px calc(var(--safe-bottom) + 12px); }
-  .dots { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 12px 0; position: relative; min-height: 44px; }
-  .dots span { width: 8px; height: 8px; border-radius: 4px; background: var(--raised); transition: width 0.2s; }
-  .dots span.on { background: var(--accent); }
-  .dots span.now { width: 22px; }
-  .skip { position: absolute; right: 0; min-height: 44px; }
-  .body { flex: 1; padding-bottom: 24px; }
-  .option { display: flex; align-items: center; gap: 14px; border: 2px solid transparent; width: 100%; }
-  .option.selected { border-color: var(--accent); }
-  .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--raised); color: var(--accent); flex: none; }
-  .selected .ico { background: var(--accent); color: #fff; }
-  .day { flex: 1; min-height: 48px; border-radius: 14px; background: var(--raised); font-weight: 700; font-size: 1.2rem; }
-  .day.on { background: var(--accent); color: #fff; }
+  .onboarding { min-height: 100dvh; display: flex; flex-direction: column; max-width: 620px; margin: 0 auto; padding: calc(var(--safe-top) + 8px) 20px calc(var(--safe-bottom) + 12px);
+    position: relative; }
+  .dots { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px 0 18px; position: relative; min-height: 48px; }
+  .dots span:not(.brand) { width: 6px; height: 6px; border-radius: 3px; background: var(--surface-3); transition: width 0.35s var(--ease), background 0.3s; }
+  .dots span.on { background: var(--ember-2); }
+  .dots span.now { width: 24px; background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
+  .brand { position: absolute; left: 0; color: var(--ember-2) !important; letter-spacing: 0.3em; }
+  .skip { position: absolute; right: 0; min-height: 44px; font-weight: 600; }
+  .body { flex: 1; padding-bottom: 24px; animation: screen-in 0.35s var(--ease); }
+  .option { display: flex; align-items: center; gap: 14px; width: 100%; transition: border-color 0.25s, background 0.25s; }
+  .option.selected { border-color: rgba(255, 106, 46, 0.6); background: radial-gradient(80% 120% at 0% 0%, rgba(255, 90, 31, 0.16), transparent 60%), var(--surface); }
+  .ico { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-2); color: var(--ember-2); flex: none; }
+  .selected .ico { background: var(--ember-gradient); color: #fff; box-shadow: 0 8px 18px -6px var(--ember-glow); }
+  .day { flex: 1; min-height: 52px; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--hairline);
+    font-family: var(--font-display); font-stretch: 125%; font-weight: 800; font-size: 1.3rem; }
+  .day.on { background: var(--ember-gradient); border-color: transparent; color: #fff; box-shadow: 0 10px 22px -8px var(--ember-glow); }
   .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
   footer { position: sticky; bottom: 0; padding: 12px 0 calc(var(--safe-bottom) + 12px); margin-bottom: calc(-1 * (var(--safe-bottom) + 12px));
-    background: linear-gradient(to bottom, transparent, var(--bg) 30%); }
-  .back { width: 54px; height: 54px; border-radius: 50%; background: var(--raised); display: grid; place-items: center; }
-  .go { white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; padding: 16px 28px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 700; font-size: 1.05rem;
-    box-shadow: 0 8px 24px rgba(255, 107, 46, 0.45); }
+    background: linear-gradient(to bottom, transparent, var(--bg) 35%); }
+  .back { width: 56px; height: 56px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--hairline); display: grid; place-items: center; }
+  .go { white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; padding: 17px 28px; border-radius: 999px; background: var(--ember-gradient);
+    color: #fff; font-weight: 700; font-size: 1.05rem; box-shadow: 0 16px 36px -10px var(--ember-glow), inset 0 1px 0 rgba(255, 255, 255, 0.3); }
 </style>

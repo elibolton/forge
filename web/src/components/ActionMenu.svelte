@@ -52,15 +52,18 @@
 {/if}
 
 <style>
-  .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 70; }
-  .menu { position: fixed; left: 8px; right: 8px; bottom: calc(var(--safe-bottom) + 8px); z-index: 71; max-width: 560px; margin: 0 auto;
-    background: #2c2c2e; border-radius: 16px; overflow: hidden; max-height: 70dvh; overflow-y: auto; animation: rise 0.2s ease-out; }
-  .menu button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 52px;
-    padding: 12px 18px; font-size: 1.05rem; text-align: left; border-top: 0.5px solid #48484a; }
-  .menu button:first-child { border-top: 0; }
-  .menu button:active { background: #3a3a3c; }
+  .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 70; animation: fade 0.2s; }
+  .menu { position: fixed; left: 10px; right: 10px; bottom: calc(var(--safe-bottom) + 6px); z-index: 71; max-width: 520px; margin: 0 auto;
+    background: rgba(28, 28, 33, 0.92); backdrop-filter: blur(30px) saturate(160%); -webkit-backdrop-filter: blur(30px) saturate(160%);
+    border: 1px solid var(--hairline-2); border-radius: 26px; overflow: hidden; max-height: 72dvh; overflow-y: auto; padding: 6px;
+    box-shadow: 0 30px 60px -10px rgba(0, 0, 0, 0.7); animation: rise 0.32s var(--ease); }
+  .menu button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 50px;
+    padding: 12px 16px; font-size: 1rem; font-weight: 520; text-align: left; border-radius: 16px; }
+  .menu button:active { background: var(--surface-2); transform: none; }
   .danger { color: var(--fatigued); }
-  .cancel { font-weight: 700; color: var(--accent); justify-content: center !important; border-top: 6px solid #1c1c1e !important; }
-  .section-head { padding: 10px 18px 4px; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; border-top: 0.5px solid #48484a; }
-  @keyframes rise { from { transform: translateY(30px); opacity: 0; } }
+  .cancel { font-weight: 650; color: var(--text-2); justify-content: center !important; margin-top: 4px; background: var(--surface-2); }
+  .section-head { padding: 12px 16px 4px; font-family: var(--font-display); font-stretch: 125%; font-size: 0.66rem; font-weight: 700;
+    letter-spacing: 0.13em; color: var(--text-3); text-transform: uppercase; }
+  @keyframes rise { from { transform: translateY(30px) scale(0.98); opacity: 0; } }
+  @keyframes fade { from { opacity: 0; } }
 </style>

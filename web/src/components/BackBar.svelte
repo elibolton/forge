@@ -7,7 +7,13 @@
 </script>
 
 <header class="topbar">
-  <button class="row link" style="--gap:0;min-width:80px;min-height:44px" onclick={() => nav.pop()} aria-label="Back"><ChevronLeft /> Back</button>
-  <h1 class="title" style="font-size:1rem">{title}</h1>
-  <div class="row" style="min-width:80px;justify-content:flex-end">{#if trailing}{@render trailing()}{/if}</div>
+  <div class="side"><button class="icon-btn" onclick={() => nav.pop()} aria-label="Back"><ChevronLeft size={20} /></button></div>
+  <h1 class="title">{title}</h1>
+  <div class="side end">{#if trailing}{@render trailing()}{/if}</div>
 </header>
+
+<style>
+  .side { min-width: 64px; display: flex; }
+  .side.end { justify-content: flex-end; }
+  .title { font-family: var(--font-display); font-stretch: 112%; font-weight: 750; font-size: 1rem; }
+</style>

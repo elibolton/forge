@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Minus, Plus } from '@lucide/svelte';
 
-  /** Big number with − and + buttons; type to set it directly. */
+  /** A big numeral with − and + on either side; tap the number to type it. */
   let { title, value, step, unit, decimals, onchange }: {
     title: string; value: number; step: number; unit: string; decimals: boolean; onchange: (v: number) => void;
   } = $props();
@@ -16,21 +16,25 @@
   }
 </script>
 
-<div class="stepper">
-  <div class="kicker muted" aria-hidden="true">{title.toUpperCase()}</div>
-  <input class="display mono" type="text" inputmode={decimals ? 'decimal' : 'numeric'} value={shown} aria-label={title}
+<div class="dial">
+  <span class="eyebrow" aria-hidden="true">{title}</span>
+  <input class="num value" type="text" inputmode={decimals ? 'decimal' : 'numeric'} value={shown} aria-label="{title} in {unit}"
+    style="font-size:{shown.length > 4 ? 2.3 : shown.length > 3 ? 2.7 : 3.1}rem"
     onchange={input} onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
-  <div class="caption semibold muted" aria-hidden="true">{unit}</div>
-  <div class="row" style="--gap:8px">
-    <button class="step" aria-label="Decrease {title}" onclick={() => onchange(Math.max(0, round(value - step)))}><Minus size={22} strokeWidth={2.6} /></button>
-    <button class="step" aria-label="Increase {title}" onclick={() => onchange(round(value + step))}><Plus size={22} strokeWidth={2.6} /></button>
+  <span class="caption faint" aria-hidden="true">{unit}</span>
+  <div class="steps">
+    <button aria-label="Decrease {title}" onclick={() => onchange(Math.max(0, round(value - step)))}><Minus size={20} strokeWidth={2.6} /></button>
+    <button aria-label="Increase {title}" onclick={() => onchange(round(value + step))}><Plus size={20} strokeWidth={2.6} /></button>
   </div>
 </div>
 
 <style>
-  .stepper { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px;
-    background: var(--raised); border-radius: 20px; }
-  input { background: transparent !important; text-align: center; font-size: 2.1rem; padding: 0 !important; min-height: 0 !important; }
-  .row { width: 100%; }
-  .step { flex: 1; min-height: 44px; display: grid; place-items: center; background: var(--card); border-radius: 12px; }
+  .dial { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 14px 10px 10px;
+    border-radius: var(--r-lg); background: rgba(0, 0, 0, 0.28); border: 1px solid var(--hairline); }
+  .value { background: transparent !important; border: 0 !important; text-align: center; padding: 0 !important; min-height: 0 !important;
+    height: 3.4rem; line-height: 1; font-stretch: 125%; font-weight: 800; letter-spacing: -0.03em; width: 100%; }
+  .steps { display: flex; gap: 8px; width: 100%; margin-top: 10px; }
+  .steps button { flex: 1; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-2);
+    border: 1px solid var(--hairline); }
+  .steps button:active { background: var(--surface-3); }
 </style>
