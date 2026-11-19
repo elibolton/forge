@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
-  DAY_MS, Gyms, type LoggedExercise, Planner, type WorkoutRecord, blockRIR, blockStatus, defaultPlan, fallingLifts,
+  DAY_MS, Gyms, type LoggedExercise, Planner, SeededRandom, type WorkoutRecord, blockRIR, blockStatus, defaultPlan, deloadDates,
+  fallingLifts,
   plannedWorkingSets,
 } from './index';
 
@@ -98,5 +99,57 @@ describe('Generated workouts across a block', () => {
       const kept = later.filter((id) => first.has(id)).length;
       expect(kept / later.length).toBeGreaterThanOrEqual(0.7);
     }
+  });
+});
+
+describe('Deload weeks in one pass (bug hunt B3)', () => {
+  /** The slow way the planner used to ask, one blockStatus per record. */
+  const slow = (h: WorkoutRecord[]) => new Set(h.filter((r) => blockStatus(h, r.date).isDeload).map((r) => r.date));
+
+  test('matches blockStatus for every record: plain blocks, breaks, early deloads, ties, unsorted input', () => {
+    const falling = every2Days(0, 13, (d) => [lift('bb-bench', 80 - d, 8), lift('bb-squat', 100 - d, 8)]);
+    const histories: WorkoutRecord[][] = [
+      [],
+      every2Days(0, 90),
+      [...every2Days(0, 20), ...every2Days(40, 100)],
+      [...falling, ...every2Days(14, 60)],
+      // Two workouts on the same timestamp, and out of order.
+      [...every2Days(0, 50), ...every2Days(30, 50)].reverse(),
+    ];
+    for (const h of histories) {
+      const fast = deloadDates(h);
+      expect([...fast].sort()).toEqual([...slow(h)].sort());
+    }
+    expect(deloadDates(histories[1]).size).toBeGreaterThan(0);
+    expect(deloadDates(histories[3]).size).toBeGreaterThan(0);
+  });
+
+  test('2,000 workouts generate in well under a second', () => {
+    const ids = ['bb-bench', 'bb-squat', 'bb-row', 'db-incline-bench', 'cable-fly', 'bb-ohp', 'db-lateral-raise', 'bb-deadlift'];
+    const history: WorkoutRecord[] = Array.from({ length: 2000 }, (_, i) => ({
+      date: now - (i * 0.5 + 1) * DAY_MS,
+      focus: 'push',
+      exercises: ids.map((id, j) => lift(id, 60 + j * 5 + (i % 7), 8)),
+    }));
+    const planner = new Planner({ plan: defaultPlan(), gym: Gyms.commercial(), history });
+    const t0 = performance.now();
+    const w = planner.generate({ now, seed: 1, focus: 'push' });
+    // A swap or a template start makes a fresh Planner on the same history: the cache carries over.
+    new Planner({ plan: defaultPlan(), gym: Gyms.commercial(), history }).generate({ now, seed: 2, focus: 'pull' });
+    const ms = performance.now() - t0;
+    expect(w.exercises.length).toBeGreaterThan(0);
+    expect(ms).toBeLessThan(1000);
+  });
+});
+
+describe('Seeds (bug hunt B16)', () => {
+  test('fractional, NaN and infinite seeds (and a NaN now) don\'t throw', () => {
+    const planner = new Planner({ plan: defaultPlan(), gym: Gyms.commercial(), history: every2Days(0, 20) });
+    for (const seed of [0.5, NaN, Infinity, -Infinity, -3.7]) {
+      expect(() => planner.generate({ now: day(21), seed, focus: 'push' })).not.toThrow();
+    }
+    expect(() => planner.generate({ now: NaN, seed: 1 })).not.toThrow();
+    expect(new SeededRandom(2.9).next(0, 1)).toBe(new SeededRandom(2).next(0, 1));
+    expect(new SeededRandom(NaN).next(0, 1)).toBe(new SeededRandom(0).next(0, 1));
   });
 });

@@ -1,4 +1,4 @@
-import { type LoggedExercise, oneRM, workingSets } from '../engine';
+import { Catalog, type LoggedExercise, oneRM, workingSets } from '../engine';
 
 /** A logged workout, as much as records need. */
 interface Log { id: string; date: number; exercises: LoggedExercise[] }
@@ -47,6 +47,7 @@ export function prTimeline(logs: Log[]): PREvent[] {
   const events: PREvent[] = [];
   for (const log of [...logs].sort((a, b) => a.date - b.date)) {
     for (const logged of log.exercises) {
+      if (Catalog.exercise(logged.exerciseID).pattern === 'mobility') continue;
       const values = workingSets(logged).filter((s) => s.weight > 0).map((s) => oneRM(s.weight, s.reps, s.rir));
       if (!values.length) continue;
       const top = Math.max(...values);

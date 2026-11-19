@@ -3,7 +3,7 @@ import {
   DAY_MS, Gyms, type LoggedExercise, POUNDS_PER_KG, Programs, type WorkoutRecord, completeDay, checkInDue, deloadNow,
   dayOrder, newProgress, nextDayID, nextSession, programDay, readProgress, readRecord, repRange, repsDropped,
   repsDroppedFlag, resolveSession, restText, rirTarget, scheduledOn, setsText, suggest, suggestsDeload, skipDay,
-  Catalog, isPerSide, effortRIR, type ProgramProgress, straightSets, workingSets, readSet,
+  Catalog, isPerSide, effortRIR, type ProgramProgress, straightSets, workingSets, readSet, jumpToWeek,
 } from './index';
 
 const now = 1_800_000_000_000;
@@ -295,5 +295,50 @@ describe('Simulation', () => {
     expect(bench[6]).toBeGreaterThan(bench[0]);
     expect(weekly[8]).toBeLessThan(Math.floor(weekly[7] * 2 / 3));
     expect(programDay(program, 'push')).toBeDefined();
+  });
+});
+
+// Bug hunt P1: jumping back to a week that was already done left no next day and no way forward.
+describe('Jump to Week', () => {
+  const finishWeek = (p: ProgramProgress, week: number) => { for (const d of dayOrder(program)) completeDay(p, d, week, program); };
+
+  test('jumping back to a finished week starts it over', () => {
+    const p = newProgress(program.id, now, 1);
+    finishWeek(p, 1);
+    finishWeek(p, 2);
+    expect(p.week).toBe(3);
+    jumpToWeek(p, 1, program);
+    expect(p.week).toBe(1);
+    expect(nextDayID(p, program)).toBe(dayOrder(program)[0]);
+    // Weeks after the jump are cleared too, so finishing week 1 lands on a week with a session.
+    finishWeek(p, 1);
+    expect(p.week).toBe(2);
+    expect(nextDayID(p, program)).toBe(dayOrder(program)[0]);
+    skipDay(p, dayOrder(program)[0], program);
+    expect(p.skipped[2]).toEqual([dayOrder(program)[0]]);
+  });
+
+  test('jumping out of a finished program reopens it', () => {
+    const p = newProgress(program.id, now, program.weeks);
+    finishWeek(p, program.weeks);
+    expect(p.isFinished).toBe(true);
+    jumpToWeek(p, program.weeks, program);
+    expect([p.isFinished, p.week, nextDayID(p, program)]).toEqual([false, program.weeks, dayOrder(program)[0]]);
+  });
+
+  test('an old stuck state (week done, not finished) moves on at the next completion or skip', () => {
+    const p = newProgress(program.id, now, 1);
+    finishWeek(p, 1);
+    finishWeek(p, 2);
+    // What the old jump did: point back at week 1 and keep its completions.
+    p.week = 1;
+    // Completing the day again (a repeat log) moves on past every already-done week.
+    completeDay(p, dayOrder(program)[0], 2, program);
+    expect(p.week).toBe(1);
+    const q = structuredClone(p);
+    q.completed[1] = q.completed[1].slice(1);
+    completeDay(q, dayOrder(program)[0], 1, program);
+    expect(q.week).toBe(3);
+    expect(nextDayID(q, program)).toBe(dayOrder(program)[0]);
   });
 });

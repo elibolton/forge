@@ -5,7 +5,7 @@ import {
   type Need, DAY_MS, focusMuscles, gymBaseLoadKg, provides, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
   straightSets, workingSets,
 } from './models';
-import { type BlockStatus, blockRIR, blockStatus } from './block';
+import { type BlockStatus, blockRIR, blockStatus, deloadDates } from './block';
 import { qualityOf, qualityScore, tierKey } from './quality';
 import { computeRecovery } from './recovery';
 import { type Slot, templateFor } from './templates';
@@ -112,7 +112,11 @@ const MASK = (1n << 64n) - 1n;
 /** SplitMix64, so the same seed regenerates the same workout. */
 export class SeededRandom {
   private state: bigint;
-  constructor(seed: number | bigint) { this.state = (BigInt(seed) + 0x9E3779B97F4A7C15n) & MASK; }
+  constructor(seed: number | bigint) {
+    // BigInt() throws on fractions, NaN and Infinity; a corrupted saved seed shouldn't crash Today.
+    const n = typeof seed === 'bigint' ? seed : BigInt(Number.isFinite(seed) ? Math.trunc(seed) : 0);
+    this.state = (n + 0x9E3779B97F4A7C15n) & MASK;
+  }
 
   nextUInt64(): bigint {
     this.state = (this.state + 0x9E3779B97F4A7C15n) & MASK;
@@ -286,6 +290,7 @@ export class Planner {
   }) {
     this.plan = args.plan;
     this.gym = args.gym;
+    this.source = args.history;
     this.history = [...args.history].sort((a, b) => b.date - a.date);
     this.external = args.external ?? [];
     this.overrides = args.overrides ?? [];
@@ -311,7 +316,7 @@ export class Planner {
    * Pass a different `seed` to regenerate; `focus` forces a day (swap menu).
    */
   generate(opts: { now?: number; seed?: number; focus?: DayFocus | null } = {}): PlannedWorkout {
-    const now = opts.now ?? Date.now();
+    const now = Number.isFinite(opts.now) ? opts.now! : Date.now();
     const byID = this.byID();
     const recovery = computeRecovery({
       history: this.history, external: this.external, overrides: this.overrides, catalog: byID, now,
@@ -790,16 +795,12 @@ export class Planner {
     return { exercise: e, sets, restSeconds: rest, targetRIR: rir, reasons };
   }
 
-  private deloadDays = new Map<number, boolean>();
+  /** The history array as passed in: the key for the deload-week cache, shared by Planners on the same history. */
+  private source: readonly WorkoutRecord[];
 
-  /** Whether a past workout fell in a deload week (cached; history doesn't change during a Planner's life). */
+  /** Whether a past workout fell in a deload week. Worked out for the whole history in one pass and cached. */
   wasDeload(date: number): boolean {
-    let v = this.deloadDays.get(date);
-    if (v === undefined) {
-      v = blockStatus(this.history, date).isDeload;
-      this.deloadDays.set(date, v);
-    }
-    return v;
+    return deloadDates(this.source).has(date);
   }
 
   /** One loadable step for double progression; lower-body barbell lifts take two (5 kg / 10 lb). */
