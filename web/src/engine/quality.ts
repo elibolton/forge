@@ -294,27 +294,48 @@ export const QUALITY: Record<string, Quality> = {
   'weighted-pull-up': q('SABA', [4, 3, 5, 2, 2, 2, 2], 'verticalPull'),
 };
 
-/** A best guess for exercises without an entry (the user's custom ones). */
+/** The role an isolation exercise for this muscle plays. */
+function isolationRole(m: Muscle | undefined): Role {
+  switch (m) {
+    case 'chest': return 'chestFly';
+    case 'sideDelts': return 'sideRaise';
+    case 'rearDelts': return 'rearDelt';
+    case 'frontDelts': return 'frontRaise';
+    case 'biceps': return 'curl';
+    case 'triceps': return 'tricepsOther';
+    case 'lats': return 'latIso';
+    case 'upperBack': return 'shrug';
+    case 'quads': return 'kneeExt';
+    case 'hamstrings': return 'legCurl';
+    case 'calves': return 'calf';
+    case 'glutes': return 'hipThrust';
+    case 'abs': return 'abs';
+    case 'forearms': return 'forearm';
+    default: return 'other';
+  }
+}
+
+/**
+ * A best guess for exercises without an entry (the user's custom ones). A movement pattern gives its
+ * compound role (main squat, flat press, ...) only when the exercise's first muscle is one that role
+ * serves. A custom adductor "squat" or triceps-first "press" is placed by its muscle instead, so it
+ * can't take the slot meant for quads or chest.
+ */
 function inferred(e: Exercise): Quality {
-  const has = (m: Muscle) => e.primary[0] === m;
-  let role: Role = 'other';
+  const first = e.primary[0];
+  const by = (role: Role, ...muscles: Muscle[]): Role => (first && muscles.includes(first) ? role : isolationRole(first));
+  let role: Role;
   switch (e.pattern) {
-    case 'horizontalPush': role = 'pressFlat'; break;
-    case 'verticalPush': role = 'pressVertical'; break;
-    case 'verticalPull': role = 'verticalPull'; break;
-    case 'horizontalPull': role = 'row'; break;
-    case 'squat': role = 'squatMain'; break;
-    case 'lunge': role = 'unilateral'; break;
-    case 'hinge': role = has('glutes') ? 'hipThrust' : 'hinge'; break;
+    case 'horizontalPush': role = by('pressFlat', 'chest'); break;
+    case 'verticalPush': role = by('pressVertical', 'frontDelts', 'sideDelts'); break;
+    case 'verticalPull': role = by('verticalPull', 'lats', 'upperBack'); break;
+    case 'horizontalPull': role = by('row', 'upperBack', 'lats', 'rearDelts'); break;
+    case 'squat': role = by('squatMain', 'quads'); break;
+    case 'lunge': role = by('unilateral', 'quads', 'glutes'); break;
+    case 'hinge': role = first === 'glutes' ? 'hipThrust' : by('hinge', 'hamstrings', 'lowerBack'); break;
     case 'core': role = 'abs'; break;
     case 'carry': role = 'carry'; break;
-    case 'isolation':
-      role = has('chest') ? 'chestFly' : has('sideDelts') ? 'sideRaise' : has('rearDelts') ? 'rearDelt'
-        : has('frontDelts') ? 'frontRaise' : has('biceps') ? 'curl'
-        : has('triceps') ? 'tricepsOther' : has('lats') ? 'latIso' : has('upperBack') ? 'shrug'
-        : has('quads') ? 'kneeExt' : has('hamstrings') ? 'legCurl' : has('calves') ? 'calf'
-        : has('glutes') ? 'hipThrust' : has('abs') ? 'abs' : has('forearms') ? 'forearm' : 'other';
-      break;
+    default: role = isolationRole(first);
   }
   const bodyweight = e.starterOneRM === 0;
   return {

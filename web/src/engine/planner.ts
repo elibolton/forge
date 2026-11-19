@@ -1,7 +1,7 @@
 import { Catalog } from './catalog';
 import {
-  type DayFocus, type Exercise, type ExternalActivity, type Goal, type Gym, type Level, type LoggedExercise,
-  type Muscle, type MuscleMap, type RecoveryOverride, type UserPlan, type WorkoutRecord,
+  type DayFocus, type Exercise, type ExternalActivity, type Goal, type Gym, type Level, type LoadKind, type LoggedExercise,
+  type LoggedSet, type Muscle, type MuscleMap, type RecoveryOverride, type UserPlan, type WorkoutRecord,
   type Need, DAY_MS, focusMuscles, gymBaseLoadKg, provides, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
   straightSets, workingSets,
 } from './models';
@@ -9,7 +9,7 @@ import { type BlockStatus, blockRIR, blockStatus, deloadDates } from './block';
 import { qualityOf, qualityScore, tierKey } from './quality';
 import { computeRecovery } from './recovery';
 import { type Slot, templateFor } from './templates';
-import { bestReps, estimatedOneRM, oneRM as epley, weightForReps } from './strength';
+import { MAX_PLAUSIBLE_KG, bestReps, estimatedOneRM, oneRM as epley, plausibleLoad, setRIR, weightForReps } from './strength';
 
 // MARK: - Output
 
@@ -46,6 +46,10 @@ export interface PlannedWorkout {
   note?: string;
   /** Where this workout sits in the current training block. */
   block?: BlockStatus;
+  /** Muscles the day trains that no eligible exercise works directly (equipment, injuries, exclusions). */
+  uncovered?: Muscle[];
+  /** Nothing the day could train is well recovered yet (Fresh Muscles). */
+  fatigued?: boolean;
 }
 
 // MARK: - Goal schemes
@@ -101,7 +105,8 @@ export function makeScheme(goal: Goal, experience: Level): Scheme {
   } else if (experience === 'advanced') {
     s.compoundExtraSets += 1;
   }
-  if (goal === 'getStronger' || goal === 'powerlifting') s.maxSetsPerExercise = 5;
+  // Strength goals allow more sets of a main lift, but the beginner cap of 3 still holds.
+  if ((goal === 'getStronger' || goal === 'powerlifting') && experience !== 'beginner') s.maxSetsPerExercise = 5;
   return s;
 }
 
@@ -191,12 +196,15 @@ export function pairSupersets(list: PlannedExercise[]): PlannedExercise[] {
   return out;
 }
 
-/** Breaks a pair up again (its partner was dropped), giving the one left its normal rest. */
-function unpair(list: PlannedExercise[], group: string): PlannedExercise[] {
+/**
+ * Breaks a pair up again (its partner was dropped), giving the one left the scheme's normal rest for
+ * its kind of exercise (the paired rests were 30 s, or the partner's).
+ */
+export function unpair(list: PlannedExercise[], group: string, scheme: { restCompound: number; restIsolation: number }): PlannedExercise[] {
   return list.map((p) => {
     if (p.supersetGroup !== group) return p;
     const { supersetGroup: _, ...rest } = p;
-    return { ...rest, restSeconds: Math.max(p.restSeconds, 60) };
+    return { ...rest, restSeconds: p.exercise.isCompound ? scheme.restCompound : scheme.restIsolation };
   });
 }
 
@@ -243,6 +251,28 @@ function credit(p: PlannedExercise): MuscleMap {
   for (const m of p.exercise.primary) out[m] = n;
   return out;
 }
+
+/**
+ * The weight most straight sets were done at (the heavier on a tie), with those sets. Double
+ * progression judges these, so a heavy single or a light back-off set doesn't mix one set's weight with
+ * another's reps. Undefined when no set had a believable load.
+ */
+export function workingLoad(l: LoggedExercise): { load: number; sets: LoggedSet[] } | undefined {
+  const groups = new Map<number, LoggedSet[]>();
+  for (const s of straightSets(l)) {
+    if (!plausibleLoad(s.weight)) continue;
+    const key = Math.round(s.weight * 100) / 100;
+    groups.set(key, [...(groups.get(key) ?? []), s]);
+  }
+  let best: { load: number; sets: LoggedSet[] } | undefined;
+  for (const [load, sets] of groups) {
+    if (!best || sets.length > best.sets.length || (sets.length === best.sets.length && load > best.load)) best = { load, sets };
+  }
+  return best;
+}
+
+/** Prescriptions whose empty bar is well over the planned load; generate() tries something else first. */
+const overBar = new WeakSet<PlannedExercise>();
 
 /** Adds one working set, keeping a max-effort set last. */
 function withSetAdded(p: PlannedExercise): PlannedExercise {
@@ -317,6 +347,21 @@ export class Planner {
    */
   generate(opts: { now?: number; seed?: number; focus?: DayFocus | null } = {}): PlannedWorkout {
     const now = Number.isFinite(opts.now) ? opts.now! : Date.now();
+    return this.asOf(now, () => this.generateAt(now, opts));
+  }
+
+  /**
+   * Runs `fn` with records dated after `now` hidden: a wrong clock or an edited or imported date
+   * mustn't count toward this week's sets, the day rotation or "last done".
+   */
+  private asOf<T>(now: number, fn: () => T): T {
+    if (!(this.history[0]?.date > now)) return fn();
+    const full = this.history;
+    this.history = full.filter((r) => r.date <= now);
+    try { return fn(); } finally { this.history = full; }
+  }
+
+  private generateAt(now: number, opts: { seed?: number; focus?: DayFocus | null }): PlannedWorkout {
     const byID = this.byID();
     const recovery = computeRecovery({
       history: this.history, external: this.external, overrides: this.overrides, catalog: byID, now,
@@ -365,9 +410,19 @@ export class Planner {
     const countFor = (m: Muscle) => picks.filter((p) => p.planned.exercise.primary.includes(m)).length;
 
     const fill = (i: number, exclude: Set<string> = new Set()): PlannedExercise | undefined => {
-      const choice = this.pickFor(slots, i, picks, recovery, weekly, scheme, now, rng, block, exclude);
-      if (!choice) { filled.add(i); return undefined; }
-      return this.prescribeWith(choice.exercise, scheme, now, choice.reasons, { main: !!slots[i].main, block });
+      let first: PlannedExercise | undefined;
+      const skip = new Set(exclude);
+      // An empty bar much heavier than the planned load is a poor pick: try a lighter-loading one first.
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const choice = this.pickFor(slots, i, picks, recovery, weekly, scheme, now, rng, block, skip);
+        if (!choice) break;
+        const p = this.prescribeWith(choice.exercise, scheme, now, choice.reasons, { main: !!slots[i].main, block });
+        if (!overBar.has(p)) return p;
+        first ??= p;
+        skip.add(choice.exercise.id);
+      }
+      if (!first) filled.add(i);
+      return first;
     };
     /** Whether a muscle couldn't grow because the session ran out of time (not out of options). */
     let outOfTime = false;
@@ -469,26 +524,71 @@ export class Planner {
         const i = lastAdded(chosen);
         if (i < 0) break;
         const [dropped] = chosen.splice(i, 1);
-        if (dropped.supersetGroup) chosen = unpair(chosen, dropped.supersetGroup);
+        if (dropped.supersetGroup) chosen = unpair(chosen, dropped.supersetGroup, scheme);
       }
     }
 
-    // The 3-exercise minimum can overrun short sessions with long rests: trim sets until it fits.
-    while (total(chosen) > budget) {
-      let i = -1;
-      for (let j = 0; j < chosen.length; j++) {
-        if (i < 0 || plannedWorkingSets(chosen[j]).length > plannedWorkingSets(chosen[i]).length) i = j;
+    // The 3-exercise minimum can overrun short sessions with long rests. Trim until it fits, gentlest
+    // cut first: sets down to 2, warm-ups on everything but the main lift, then whole exercises down to
+    // two, then the main lift's warm-ups, then sets down to 1, then down to one exercise.
+    const trimSets = (floor: number) => {
+      while (total(chosen) > budget) {
+        let i = -1;
+        for (let j = 0; j < chosen.length; j++) {
+          if (i < 0 || plannedWorkingSets(chosen[j]).length > plannedWorkingSets(chosen[i]).length) i = j;
+        }
+        if (i < 0 || plannedWorkingSets(chosen[i]).length <= floor) return;
+        chosen[i] = withSetRemoved(chosen[i]);
       }
-      if (i < 0 || plannedWorkingSets(chosen[i]).length <= 2) break;
-      chosen[i] = withSetRemoved(chosen[i]);
-    }
+    };
+    const dropWarmups = (from: number) => {
+      for (let i = chosen.length - 1; i >= from && total(chosen) > budget; i--) {
+        if (chosen[i].sets.some((s) => s.isWarmup)) chosen[i] = { ...chosen[i], sets: chosen[i].sets.filter((s) => !s.isWarmup) };
+      }
+    };
+    const dropExercises = (floor: number) => {
+      while (total(chosen) > budget && chosen.length > floor) {
+        const i = lastAdded(chosen);
+        if (i < 0) return;
+        const [dropped] = chosen.splice(i, 1);
+        if (dropped.supersetGroup) chosen = unpair(chosen, dropped.supersetGroup, scheme);
+      }
+    };
+    trimSets(2);
+    dropWarmups(1);
+    dropExercises(2);
+    dropWarmups(0);
+    trimSets(1);
+    dropExercises(1);
+
+    // Muscles the day trains that nothing eligible works directly: say so rather than call the day complete.
+    const direct = new Set(chosen.flatMap((p) => p.exercise.primary));
+    const options = new Set(this.catalog.filter((e) => e.pattern !== 'mobility' && this.isEligible(e)).flatMap((e) => e.primary));
+    const uncovered = targets.filter((m) => base[m] !== undefined && !direct.has(m) && !options.has(m));
+    // Fresh Muscles picks the two freshest groups even when none of them has recovered.
+    const fatigued = focus === 'recovered' && !FRESH_GROUPS.some((g) => avg(recovery, g) >= 0.5);
 
     const minutes = Math.round(total(chosen) / 60);
-    const note = block.isDeload
-      ? `Deload week: fewer sets and easier effort so you recover. ${block.earlyReason ? `${block.earlyReason}, so it came early. ` : ''}Next week starts a new block.`
-      : done && minutes < this.plan.sessionMinutes - 10
-        ? `Every muscle today has all the sets that help, so this runs about ${minutes} minutes instead of ${this.plan.sessionMinutes}.`
-        : undefined;
+    const names = (ms: Muscle[]) => {
+      const n = ms.map(muscleName);
+      return n.length > 1 ? `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}` : n[0];
+    };
+    const notes: string[] = [];
+    if (block.isDeload) {
+      notes.push(`Deload week: fewer sets and easier effort so you recover. ${block.earlyReason ? `${block.earlyReason}, so it came early. ` : ''}Next week starts a new block.`);
+    }
+    if (!chosen.length) {
+      notes.push('No exercise for today fits this gym\'s equipment and your settings (injuries and excluded exercises). Try another day, or add equipment or exercises.');
+    } else if (uncovered.length) {
+      notes.push(`Nothing for ${names(uncovered)} fits this gym's equipment and your settings, so ${uncovered.length > 1 ? 'they get' : 'it gets'} no direct work today.`);
+    } else if (!block.isDeload && done && minutes < this.plan.sessionMinutes - 10) {
+      notes.push(`Every muscle today has all the sets that help, so this runs about ${minutes} minutes instead of ${this.plan.sessionMinutes}.`);
+    }
+    if (fatigued) notes.push('Nothing is well recovered yet: a rest day or easy mobility work may serve you better. If you train, keep it easy.');
+    if (total(chosen) > budget) {
+      notes.push(`Even trimmed to the essentials, this runs about ${minutes} minutes, over your ${this.plan.sessionMinutes}.`);
+    }
+    const note = notes.join(' ');
     return {
       focus,
       targetMuscles: [...targets].sort((a, b) => (priority[b] ?? 0) - (priority[a] ?? 0)),
@@ -497,6 +597,8 @@ export class Planner {
       recovery,
       block,
       ...(note ? { note } : {}),
+      ...(uncovered.length || !chosen.length ? { uncovered: chosen.length ? uncovered : targets.filter((m) => base[m] !== undefined) } : {}),
+      ...(fatigued ? { fatigued } : {}),
     };
   }
 
@@ -504,7 +606,7 @@ export class Planner {
 
   /** Sets, reps and weight for one exercise (swaps, or adding mid-workout). */
   prescribe(e: Exercise, now = Date.now()): PlannedExercise {
-    return this.prescribeWith(e, this.scheme, now, [], { block: blockStatus(this.history, now) });
+    return this.asOf(now, () => this.prescribeWith(e, this.scheme, now, [], { block: blockStatus(this.history, now) }));
   }
 
   /** Eligible exercises that hit the same primary muscles, closest matches first. */
@@ -528,7 +630,8 @@ export class Planner {
   private weeklySetsBy(byID: Map<string, Exercise>, now: number): MuscleMap {
     const sets: MuscleMap = {};
     for (const record of this.history) {
-      if (now - record.date >= 7 * DAY_MS) continue;
+      const age = now - record.date;
+      if (age < 0 || age >= 7 * DAY_MS) continue;
       for (const logged of record.exercises) {
         const e = byID.get(logged.exerciseID);
         if (!e || e.pattern === 'mobility') continue;
@@ -602,14 +705,26 @@ export class Planner {
     });
     // C-tier only when it's all there is for a required slot, or you asked for it.
     const good = candidates.filter((e) => qualityOf(e).tiers[key] !== 'C' || this.plan.preferences[e.id] === 'more');
-    const pool = good.length ? good : slot.required ? candidates : [];
+    let pool = good.length ? good : slot.required ? candidates : [];
+    // Nothing in the slot's roles fits (no equipment, injuries): any eligible exercise that works the
+    // slot's muscle directly beats leaving it untrained, e.g. a close-grip push-up for triceps.
+    // Optional slots keep the C-tier rule.
+    const fallback = !candidates.length && !slot.extra;
+    if (fallback) {
+      pool = this.catalog.filter((e) => !taken.has(e.id) && !exclude.has(e.id) && e.pattern !== 'mobility'
+        && this.isEligible(e) && e.primary.includes(slot.muscle)
+        && (slot.required || qualityOf(e).tiers[key] !== 'C' || this.plan.preferences[e.id] === 'more'));
+    }
 
     let best: { exercise: Exercise; score: number } | undefined;
     for (const e of pool) {
       const qv = qualityOf(e);
       let score = qualityScore(e, goal, this.plan.experience, !!slot.main);
       // Prefer roles in the order the slot lists them (e.g. a long-length curl before any curl).
-      score -= 6 * Math.max(0, slot.roles.indexOf(qv.roles.find((r) => slot.roles.includes(r))!));
+      const role = qv.roles.find((r) => slot.roles.includes(r));
+      if (role) score -= 6 * Math.max(0, slot.roles.indexOf(role));
+      // Fallback picks: an exercise whose first muscle is the slot's beats one that only includes it.
+      else if (e.primary[0] !== slot.muscle) score -= 10;
       if (levelRank(e.level) > levelRank(this.plan.experience)) score -= 10;
       if (e.primary.some((m) => (recovery[m] ?? 1) < 0.4)) score -= 20;
       // Size goals: one very fatiguing lift per session is plenty.
@@ -652,6 +767,7 @@ export class Planner {
       reasons.push(`${muscleName(lead)} ${Math.round((recovery[lead] ?? 1) * 100)}% recovered · `
         + `${Math.round(weekly[lead] ?? 0)}/${Math.trunc(scheme.weeklySetTarget)} sets this week`);
     }
+    if (fallback) reasons.push(`Nothing usual for ${muscleName(slot.muscle).toLowerCase()} fits your equipment: this works it with what you have`);
     if (slot.extra) reasons.push('Time to spare: a muscle today\'s plan doesn\'t otherwise train');
     else if (slot.main && strengthGoal) reasons.push('Main lift for your strength goal');
     else if (qualityOf(e).longLength >= 5 && !strengthGoal) reasons.push('Works the muscle in a stretched position, which builds more size');
@@ -704,7 +820,8 @@ export class Planner {
       const best = bestReps(e.id, this.history, now);
       const seconds = best !== undefined ? Math.min(best + (block.isDeload ? -5 : 5), 120) : 30;
       // Loaded holds and carries: reuse the last weight, else a moderate share of the starter 1RM.
-      const lastWeights = past[0] ? workingSets(past[0]).map((s) => s.weight) : [];
+      // A logged 0 (or a typo) isn't a weight to repeat.
+      const lastWeights = past[0] ? workingSets(past[0]).map((s) => s.weight).filter(plausibleLoad) : [];
       const lastWeight = lastWeights.length ? Math.max(...lastWeights) : undefined;
       const weight = isBodyweight(e) ? null : this.round(lastWeight ?? this.startingOneRM(e, now) * 0.6, e);
       const n = Math.max(2, setCount - 1);
@@ -713,6 +830,8 @@ export class Planner {
     }
 
     let weight: number | null = null;
+    /** The load the numbers asked for, before rounding to something loadable. */
+    let intended: number | undefined;
     const lastDate = this.history.find((r) => r.exercises.some((x) => x.exerciseID === e.id))?.date;
     const away = lastDate !== undefined && now - lastDate > 14 * DAY_MS;
     if (isBodyweight(e)) {
@@ -725,7 +844,8 @@ export class Planner {
       }
     } else if (loadFromMax) {
       // Daily undulation for trained lifters; beginners progress the same rep target every session.
-      const wave = this.plan.experience === 'beginner' ? 0 : [0, 0.5, 1][sessions % 3];
+      // A deload sits on the middle of the wave so its heaviest day can't be the block's heaviest load.
+      const wave = this.plan.experience === 'beginner' ? 0 : block.isDeload ? 0.5 : [0, 0.5, 1][sessions % 3];
       reps = range[0] + Math.round((range[1] - range[0]) * wave);
       let oneRM: number;
       const known = estimatedOneRM(e.id, this.history, now);
@@ -734,7 +854,8 @@ export class Planner {
         const last = training[0];
         const target = last?.targetReps;
         if (last && target != null && straightSets(last).length && !block.isDeload) {
-          const hit = straightSets(last).every((s) => s.reps >= target && (s.rir ?? 0) >= (last.targetRIR ?? 0));
+          // An unrated set counts as done at the prescribed effort, not as a set to failure.
+          const hit = straightSets(last).every((s) => s.reps >= target && setRIR(s, last.targetRIR) >= (last.targetRIR ?? 0));
           const missed = (l: LoggedExercise) => straightSets(l).some((s) => s.reps < target - 1);
           if (hit) {
             oneRM += this.progressionBump(e);
@@ -749,22 +870,32 @@ export class Planner {
         oneRM = this.startingOneRM(e, now);
         reasons.push('New exercise: starting light, adjust to feel');
       }
-      weight = this.round(weightForReps(reps, rir, oneRM), e);
+      intended = weightForReps(reps, rir, oneRM);
+      weight = this.round(intended, e);
+      if (block.isDeload) {
+        // Lighter than the last training session, whatever the estimate says.
+        const lastTop = training[0] ? workingLoad(training[0])?.load : undefined;
+        if (lastTop !== undefined) weight = Math.min(weight, this.lighter(lastTop, e));
+      }
     } else {
       const last = training[0];
-      const working = last ? straightSets(last).filter((s) => s.weight > 0) : [];
-      if (!working.length || away) {
+      const top = last ? workingLoad(last) : undefined;
+      if (!top || away) {
         const known = estimatedOneRM(e.id, this.history, now);
-        weight = this.round(weightForReps(reps, rir, known ?? this.startingOneRM(e, now)), e);
-        reasons.push(known === undefined ? 'New exercise: starting light, adjust to feel'
-          : away ? 'Easing back in after time off' : 'From your recent sets');
+        intended = weightForReps(reps, rir, known ?? this.startingOneRM(e, now));
+        weight = this.round(intended, e);
+        reasons.push(known !== undefined ? (away ? 'Easing back in after time off' : 'From your recent sets')
+          : past.some((l) => workingSets(l).length) ? 'No weight logged last time: starting light, adjust to feel'
+            : 'New exercise: starting light, adjust to feel');
       } else {
-        const lastLoad = Math.max(...working.map((s) => s.weight));
-        const minReps = Math.min(...working.map((s) => s.reps));
+        // Judge the weight most sets were done at, and only those sets: a heavier single or a light
+        // back-off set says little about what you can do for the planned reps.
+        const lastLoad = top.load;
+        const minReps = Math.min(...top.sets.map((s) => s.reps));
         const step = this.progressionStep(e);
-        const missed = (l: LoggedExercise) => straightSets(l).some((s) => s.weight >= lastLoad - 0.01 && s.reps < range[0]);
+        const missed = (l: LoggedExercise) => (workingLoad(l)?.sets ?? []).some((s) => s.reps < range[0]);
         if (block.isDeload) {
-          weight = this.round(lastLoad * 0.9, e);
+          weight = this.lighter(lastLoad, e);
         } else if (training.length >= 2 && missed(training[0]) && missed(training[1])) {
           weight = this.round(lastLoad * 0.95, e);
           reasons.push('Missed reps twice, backing off 5%');
@@ -772,7 +903,7 @@ export class Planner {
           // A step over ~7.5% of the load (light dumbbells, cable pins) is too big: add reps first.
           const extendedTop = range[1] + 3;
           if (step > lastLoad * 0.075 && minReps < extendedTop) {
-            weight = lastLoad;
+            weight = this.round(lastLoad, e);
             reps = extendedTop;
             reasons.push(`The next weight is a big jump: build to ${extendedTop} reps first`);
           } else {
@@ -780,19 +911,32 @@ export class Planner {
             reasons.push('Hit the top of the range on every set, adding weight');
           }
         } else {
-          weight = lastLoad;
+          weight = this.round(lastLoad, e);
           reps = Math.min(range[1], Math.max(range[0], minReps + 1));
           reasons.push(`Same weight: aim for ${reps} reps on every set`);
         }
       }
     }
 
+    // The empty bar is the lightest this lift can be loaded: say so when that's well over the plan.
+    const kind = this.loadKind(e);
+    const bar = kind ? gymBaseLoadKg(this.gym, kind) : 0;
+    const heavyBar = intended !== undefined && bar > 0 && intended < bar * 0.85;
+    if (heavyBar) reasons.push('The empty bar is heavier than planned: do fewer reps, or swap for a dumbbell version');
+
     const sets: PlannedSet[] = [];
     if (this.plan.warmUpSets && e.isCompound && weight !== null) sets.push(...this.warmups(weight, reps, e));
     for (let i = 0; i < setCount; i++) {
       sets.push({ weight, reps, isWarmup: false, isAMRAP: maxEffort && i === setCount - 1 });
     }
-    return { exercise: e, sets, restSeconds: rest, targetRIR: rir, reasons };
+    const out: PlannedExercise = { exercise: e, sets, restSeconds: rest, targetRIR: rir, reasons };
+    if (heavyBar) overBar.add(out);
+    return out;
+  }
+
+  /** A clearly lighter load for a deload: about 10% off, at least one step, never below the lightest loadable. */
+  lighter(load: number, e: Exercise): number {
+    return Math.max(this.round(0, e), Math.min(this.round(load * 0.9, e), this.round(load - this.progressionStep(e), e)));
   }
 
   /** The history array as passed in: the key for the deload-week cache, shared by Planners on the same history. */
@@ -803,23 +947,37 @@ export class Planner {
     return deloadDates(this.source).has(date);
   }
 
+  /**
+   * The kind of load that sets an exercise's step and rounding. A loaded exercise with no load
+   * equipment (a held plate, a weighted vest, a custom lift) steps like plates: 2.5 kg / 5 lb.
+   * Undefined for bodyweight work.
+   */
+  loadKind(e: Exercise): LoadKind | undefined {
+    return loadEquipment(e) ?? (isBodyweight(e) ? undefined : 'plates');
+  }
+
   /** One loadable step for double progression; lower-body barbell lifts take two (5 kg / 10 lb). */
   progressionStep(e: Exercise): number {
-    const eq = loadEquipment(e);
+    const eq = this.loadKind(e);
     if (!eq) return 0;
     const lower = ['squat', 'hinge', 'lunge'].includes(e.pattern) && (eq === 'barbell' || eq === 'trapBar');
     return gymIncrementKg(this.gym, eq) * (lower ? 2 : 1);
   }
 
   progressionBump(e: Exercise): number {
-    const eq = loadEquipment(e);
+    const eq = this.loadKind(e);
     // One loadable step in working weight is ~1.15x that step in e1RM at moderate reps.
     return eq ? gymIncrementKg(this.gym, eq) * 1.15 : 0;
   }
 
+  /**
+   * Rounds to a loadable weight. The lightest is the empty bar, or one step where there's no bar:
+   * a 0 kg dumbbell isn't a prescription, and once logged it would never progress.
+   */
   round(weight: number, e: Exercise): number {
-    const eq = loadEquipment(e);
-    return eq ? gymRound(this.gym, weight, eq) : weight;
+    const eq = this.loadKind(e) ?? 'plates';
+    const w = gymRound(this.gym, Number.isFinite(weight) ? Math.min(weight, MAX_PLAUSIBLE_KG) : 0, eq);
+    return w > 0 ? w : gymRound(this.gym, gymIncrementKg(this.gym, eq), eq);
   }
 
   /** No history for this lift: scale from a related lift you have done, else a conservative default. */
@@ -835,7 +993,7 @@ export class Planner {
   }
 
   warmups(top: number, reps: number, e: Exercise): PlannedSet[] {
-    const eq = loadEquipment(e);
+    const eq = this.loadKind(e);
     const base = eq ? gymBaseLoadKg(this.gym, eq) : 0;
     if (top < Math.max(40, base * 2)) return [];
     const steps: [number, number][] = [[0.5, 8], [0.7, 5]];

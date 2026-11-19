@@ -1,6 +1,9 @@
-import { DAY_MS, type WorkoutRecord, workingSets, roundLoad } from './models';
+import { DAY_MS, type LoggedSet, type WorkoutRecord, workingSets, roundLoad } from './models';
 
-/** Epley estimate, counting reps left in the tank as reps done. */
+/**
+ * Epley estimate, counting reps left in the tank as reps done. A missing `rir` counts as 0 here, which
+ * keeps personal records conservative; planning goes through `setRIR` first.
+ */
 export function oneRM(weight: number, reps: number, rir?: number | null): number {
   const effective = Math.min(reps + (rir ?? 0), 15);
   if (effective <= 1) return weight;
@@ -14,6 +17,25 @@ export function weightForReps(reps: number, rir: number, oneRMValue: number): nu
   return oneRMValue / (1 + effective / 30);
 }
 
+/** Reps in reserve assumed for a set nobody rated: the usual prescription (recovery assumes the same). */
+export const UNRATED_RIR = 2;
+
+/**
+ * Reps in reserve a logged set most likely had, for planning: its rating, else 0 for a set marked as
+ * taken to failure, else what was prescribed, else `UNRATED_RIR`. Rating is optional in the logger,
+ * so an unrated set mustn't read as a set to failure (that underestimates the max and drops loads).
+ */
+export function setRIR(set: Pick<LoggedSet, 'rir' | 'type'>, targetRIR?: number | null): number {
+  if (set.rir != null && Number.isFinite(set.rir)) return Math.max(0, set.rir);
+  if (set.type === 'failure') return 0;
+  if (targetRIR != null && Number.isFinite(targetRIR)) return Math.min(5, Math.max(0, targetRIR));
+  return UNRATED_RIR;
+}
+
+/** Heaviest believable logged load in kg; typos and corrupt imports (Infinity, 1e9) are ignored. */
+export const MAX_PLAUSIBLE_KG = 1000;
+export const plausibleLoad = (kg: number): boolean => Number.isFinite(kg) && kg > 0 && kg <= MAX_PLAUSIBLE_KG;
+
 /** Best recent e1RM, discounted for time away (no discount for 14 days, then 0.5%/day down to 80%). */
 export function estimatedOneRM(exerciseID: string, history: WorkoutRecord[], now: number): number | undefined {
   let best: number | undefined;
@@ -24,8 +46,8 @@ export function estimatedOneRM(exerciseID: string, history: WorkoutRecord[], now
     for (const logged of record.exercises) {
       if (logged.exerciseID !== exerciseID) continue;
       for (const set of workingSets(logged)) {
-        if (set.weight <= 0) continue;
-        const value = oneRM(set.weight, set.reps, set.rir) * factor;
+        if (!plausibleLoad(set.weight)) continue;
+        const value = oneRM(set.weight, set.reps, setRIR(set, logged.targetRIR)) * factor;
         if (value > (best ?? 0)) best = value;
       }
     }
@@ -37,13 +59,14 @@ export function estimatedOneRM(exerciseID: string, history: WorkoutRecord[], now
 export function bestReps(exerciseID: string, history: WorkoutRecord[], now: number): number | undefined {
   let best: number | undefined;
   for (const r of history) {
-    if (now - r.date > 60 * DAY_MS) continue;
+    const age = now - r.date;
+    if (age < 0 || age > 60 * DAY_MS) continue;
     for (const l of r.exercises) {
       if (l.exerciseID !== exerciseID) continue;
-      for (const s of workingSets(l)) if (best === undefined || s.reps > best) best = s.reps;
+      for (const s of workingSets(l)) if (Number.isFinite(s.reps) && (best === undefined || s.reps > best)) best = s.reps;
     }
   }
   return best;
 }
 
-export const Strength = { oneRM, weightForReps, estimatedOneRM, bestReps, round: roundLoad };
+export const Strength = { oneRM, weightForReps, estimatedOneRM, bestReps, setRIR, round: roundLoad };

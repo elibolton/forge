@@ -1,7 +1,7 @@
 import { DAY_MS, type Goal, type Level, type WorkoutRecord, workingSets } from './models';
 import { qualityOf } from './quality';
 import { Catalog } from './catalog';
-import { oneRM } from './strength';
+import { oneRM, plausibleLoad, setRIR } from './strength';
 
 /**
  * Training blocks for generated workouts (research report, spec steps 30 and 34): five loading weeks
@@ -15,7 +15,6 @@ import { oneRM } from './strength';
 
 export const LOADING_WEEKS = 5;
 export const BLOCK_WEEKS = LOADING_WEEKS + 1;
-const WEEK = 7 * DAY_MS;
 const BREAK = 14 * DAY_MS;
 
 export interface BlockStatus {
@@ -37,6 +36,19 @@ const dayStart = (t: number) => {
   return d.getTime();
 };
 
+/**
+ * The local midnight `k` weeks after `start` (itself a local midnight). Counting calendar days rather
+ * than adding 7 × 24 h keeps week boundaries at midnight across daylight-saving changes.
+ */
+const weeksAfter = (start: number, k: number) => {
+  const d = new Date(start);
+  d.setDate(d.getDate() + 7 * k);
+  return d.getTime();
+};
+
+/** Whole weeks from `start` (a local midnight) to `t`, by calendar days. */
+const weeksSince = (start: number, t: number) => Math.floor(Math.round((dayStart(t) - start) / DAY_MS) / 7);
+
 /** Best e1RM per session for each compound lift, oldest first. */
 function exposures(records: WorkoutRecord[]): Map<string, number[]> {
   const out = new Map<string, number[]>();
@@ -44,7 +56,7 @@ function exposures(records: WorkoutRecord[]): Map<string, number[]> {
     for (const l of r.exercises) {
       const e = Catalog.byID.get(l.exerciseID);
       if (!e?.isCompound || qualityOf(e).overload < 4) continue;
-      const best = Math.max(0, ...workingSets(l).filter((s) => s.weight > 0).map((s) => oneRM(s.weight, s.reps, s.rir)));
+      const best = Math.max(0, ...workingSets(l).filter((s) => plausibleLoad(s.weight)).map((s) => oneRM(s.weight, s.reps, setRIR(s, l.targetRIR))));
       if (best > 0) out.set(l.exerciseID, [...(out.get(l.exerciseID) ?? []), best]);
     }
   }
@@ -81,10 +93,10 @@ function blockWalker(records: WorkoutRecord[]) {
   const advance = (t: number) => {
     for (let guard = 0; guard < 1000 && start !== undefined; guard++) {
       // Week k starts at start + (k-1) weeks; decide early deloads at the start of weeks 3–5.
-      while (weeks === BLOCK_WEEKS && checked < LOADING_WEEKS && t >= start + checked * WEEK) {
+      while (weeks === BLOCK_WEEKS && checked < LOADING_WEEKS && t >= weeksAfter(start, checked)) {
         checked++;
         if (checked < 3) continue;
-        const boundary = start + (checked - 1) * WEEK;
+        const boundary = weeksAfter(start, checked - 1);
         // Only records already fed can be before the boundary (boundary <= t), so this is the same
         // set blockStatus would see when cut off at any later date.
         const falling = fallingLifts(records.slice(0, fed).filter((r) => r.date >= start! && r.date < boundary));
@@ -93,7 +105,7 @@ function blockWalker(records: WorkoutRecord[]) {
           earlyReason = `Estimated maxes dropped on ${falling.length} lifts`;
         }
       }
-      const end = start + weeks * WEEK;
+      const end = weeksAfter(start, weeks);
       if (t < end) return;
       start = end; number++; weeks = BLOCK_WEEKS; earlyReason = undefined; checked = 1;
     }
@@ -111,7 +123,7 @@ function blockWalker(records: WorkoutRecord[]) {
     at(now: number): BlockStatus {
       if (start === undefined || (prev !== undefined && now - prev > BREAK)) begin(now);
       else advance(now);
-      const week = Math.min(weeks, Math.floor((now - start!) / WEEK) + 1);
+      const week = Math.min(weeks, weeksSince(start!, now) + 1);
       return { number, week, weeks, isDeload: week === weeks, startedAt: start!, ...(earlyReason ? { earlyReason } : {}) };
     },
   };
