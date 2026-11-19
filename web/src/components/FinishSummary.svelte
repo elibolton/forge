@@ -19,7 +19,7 @@
     {:else}
       <div class="card stack prs" style="width:100%;text-align:left;--gap:10px">
         <div class="row bold" style="--gap:8px;color:var(--recovering)"><Trophy size={18} /> New personal records</div>
-        {#each records as r (r.exercise.id)}
+        {#each records as r, i (i)}
           <div class="row between sub"><span>{r.exercise.name}</span><span class="muted">{app.units.format(r.oneRM)} est. 1RM</span></div>
         {/each}
       </div>

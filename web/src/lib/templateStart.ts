@@ -8,7 +8,9 @@ import { normalizeGroups } from './groups';
  * history the same way a generated workout's do, with warm-ups for heavy lifts.
  */
 export function sessionFromTemplate(t: WorkoutTemplate, planner: Planner): SessionState {
-  const exercises = t.exercises.map((item) => {
+  // An exercise that no longer exists (a custom one deleted before deleting checked saved workouts)
+  // would start as a nameless placeholder that logs under a dead id; leave it out. So is a 0-set item.
+  const exercises = t.exercises.filter((item) => item.sets > 0 && Catalog.byID.has(item.exerciseID)).map((item) => {
     const e = Catalog.exercise(item.exerciseID);
     const planned = planner.prescribe(e);
     const weight = plannedWorkingSets(planned)[0]?.weight ?? null;

@@ -137,5 +137,6 @@
 </Sheet>
 
 {#if adding}
-  <ExercisePicker title="Add Exercise" exercises={Catalog.all} allowCreate onpick={add} onclose={() => (adding = false)} />
+  {@const inLog = new Set(exercises.map((x) => x.template.exerciseID))}
+  <ExercisePicker title="Add Exercise" exercises={Catalog.all.filter((e) => !inLog.has(e.id))} allowCreate onpick={add} onclose={() => (adding = false)} />
 {/if}

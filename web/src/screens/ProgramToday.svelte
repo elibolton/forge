@@ -49,11 +49,11 @@
   }
 
   function start() {
-    if (!plan) return;
+    if (!plan || !session.okToReplace()) return;
     const { state, progress } = startDayPlan(plan);
     app.setProgramProgress(progress);
     addMobility(state, focusMuscles(plan.session.day.focus), app.profile!.mobility);
-    session.startPrepared(state);
+    session.startPrepared(state, true);
   }
 
   function skipToday() {
@@ -124,7 +124,7 @@
     { label: 'Program Details', action: () => nav.push({ name: 'program', id: active.program.id }) },
     { label: 'Skip This Day', action: skipToday },
     { label: 'Use Generator Today', action: onUseGenerator },
-    { label: 'Empty Workout', action: () => session.startEmpty() },
+    { label: 'Empty Workout', action: () => { if (session.okToReplace()) session.startEmpty(true); } },
     { label: 'Log Cardio or Activity', action: () => (loggingActivity = true) },
     { label: 'Start a Saved Workout', action: () => (pickingTemplate = true) },
   ]);
@@ -250,7 +250,7 @@
 {#if loggingActivity}<ActivitySheet onclose={() => (loggingActivity = false)} />{/if}
 {#if replacing}
   {@const r = replacing}
-  <ExercisePicker title="Swap {rxExercise(r.prescription).name}" exercises={app.planner().alternatives(rxExercise(r.prescription))}
+  <ExercisePicker title="Swap {rxExercise(r.prescription).name}" exercises={app.planner().alternatives(rxExercise(r.prescription), new Set(plan?.items.map((x) => x.prescription.slot.exerciseID)))}
     onpick={(e) => swap(r, e)} onclose={() => (replacing = null)} />
 {/if}
 {#if checkInWeek !== null}

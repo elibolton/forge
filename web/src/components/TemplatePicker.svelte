@@ -15,10 +15,14 @@
   const list = $derived([...app.templates].sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt)));
 
   function start(t: WorkoutTemplate) {
+    // Starting replaces a workout in progress, so ask first.
+    if (!session.okToReplace()) return;
     app.saveTemplate({ ...t, lastUsed: Date.now() });
     const state = sessionFromTemplate(t, app.planner());
     addMobility(state, [...new Set(t.exercises.flatMap((x) => Catalog.exercise(x.exerciseID).primary))], app.profile!.mobility);
-    session.startPrepared(state);
+    session.startPrepared(state, true);
+    const skipped = t.exercises.filter((x) => !Catalog.byID.has(x.exerciseID)).length;
+    if (skipped) toasts.show(`Left out ${skipped} exercise${skipped === 1 ? '' : 's'} that no longer exist${skipped === 1 ? 's' : ''}`);
     onclose();
   }
 

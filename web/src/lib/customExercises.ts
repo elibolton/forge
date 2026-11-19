@@ -1,7 +1,8 @@
 import { CUSTOM_PREFIX, type Exercise, type Joint, type MovementPattern, uuid } from '../engine';
 import { app } from './store.svelte';
 import { toasts } from './toasts.svelte';
-import type { TodayPlan } from './plans';
+import type { ProgramDayEdits, TodayPlan } from './plans';
+import { session } from './session.svelte';
 
 export const MOVEMENTS: [MovementPattern, string][] = [
   ['isolation', 'Isolation (one joint)'], ['horizontalPush', 'Press forward'], ['verticalPush', 'Press overhead'],
@@ -26,15 +27,38 @@ export function likelyJoints(p: MovementPattern): Joint[] {
 }
 
 /**
- * Deletes an unused custom exercise (with Undo). One that appears in history is hidden from
- * recommendations instead, so past workouts keep its name.
+ * Where a custom exercise is still used: logged workouts, the workout in progress, saved workouts and
+ * this week's program-day swaps. Any of these needs its definition, or it turns into a nameless
+ * placeholder with no muscles that counts as bodyweight.
+ */
+export function customExerciseUses(id: string): { logs: number; session: boolean; templates: number; programSwap: boolean } {
+  return {
+    logs: app.derivedHistory.sessions.get(id)?.length ?? 0,
+    session: !!session.state?.exercises.some((x) => x.exerciseID === id),
+    templates: app.templates.filter((t) => t.exercises.some((x) => x.exerciseID === id)).length,
+    programSwap: Object.values(app.get<ProgramDayEdits>('programDayEdits')?.swaps ?? {}).includes(id),
+  };
+}
+
+function inUseMessage(u: ReturnType<typeof customExerciseUses>): string | null {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  if (u.session) return 'In your workout in progress';
+  if (u.logs) return `Used in ${plural(u.logs, 'workout')}`;
+  if (u.templates) return `In ${plural(u.templates, 'saved workout')}`;
+  if (u.programSwap) return "In this week's program";
+  return null;
+}
+
+/**
+ * Deletes an unused custom exercise (with Undo). One that's still used anywhere (see
+ * `customExerciseUses`) is hidden from recommendations instead, so it keeps its name and muscles.
  */
 export function removeCustomExercise(e: Exercise) {
-  const uses = app.derivedHistory.sessions.get(e.id)?.length ?? 0;
-  if (uses > 0) {
+  const inUse = inUseMessage(customExerciseUses(e.id));
+  if (inUse) {
     const previous = app.profile?.plan.preferences[e.id];
     app.updatePlan((p) => { p.preferences[e.id] = 'exclude'; });
-    toasts.show(`Used in ${uses} workout${uses === 1 ? '' : 's'}, so it's hidden instead`, () =>
+    toasts.show(`${inUse}, so it's hidden instead`, () =>
       app.updatePlan((p) => { if (previous) p.preferences[e.id] = previous; else delete p.preferences[e.id]; }));
     return;
   }

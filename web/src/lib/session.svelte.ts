@@ -10,6 +10,20 @@ import { swapInSession } from './swap';
 import { groupOf, groupRest, linkWithNext, nextInRound, normalizeGroups, unlinkFromNext } from './groups';
 import { type PersonalRecord, completesProgramDay, newRecords, workoutLog } from './finishWorkout';
 
+/** One record per exercise, the best one, for a workout that has the same exercise more than once. */
+export function bestRecordPerExercise(records: PersonalRecord[]): PersonalRecord[] {
+  const best = new Map<string, PersonalRecord>();
+  for (const r of records) {
+    const seen = best.get(r.exercise.id);
+    if (!seen || r.oneRM > seen.oneRM) best.set(r.exercise.id, r);
+  }
+  return [...best.values()];
+}
+
+/** Working sets logged so far in a workout. */
+export const loggedSetCount = (s: SessionState): number =>
+  s.exercises.reduce((n, e) => n + e.sets.filter((x) => x.done && !x.isWarmup).length, 0);
+
 export interface SessionSet {
   id: string;
   /** kg; null for bodyweight. */
@@ -92,6 +106,11 @@ export interface SessionState {
   title?: string;
   /** The last time anything in the workout changed. */
   updatedAt?: number;
+  /**
+   * The id the finished workout is saved under, fixed when the workout starts. Finishing twice (the app
+   * killed between saving the log and clearing the workout) then replaces the log instead of adding one.
+   */
+  logID?: string;
 }
 
 /** A workout untouched this long was most likely finished without tapping Finish. */
@@ -169,7 +188,8 @@ class WorkoutSession {
       return;
     }
     if (saved?.state && Array.isArray(saved.state.exercises)) {
-      this.state = saved.state;
+      // Saved before workouts had a log id: give it one now, so finishing it is safe to repeat.
+      this.state = saved.state.logID ? saved.state : { ...saved.state, logID: uuid() };
       if (saved.restEndsAt && saved.restEndsAt > Date.now()) {
         this.restEndsAt = saved.restEndsAt;
         this.restTotal = saved.restTotal ?? 0;
@@ -204,30 +224,59 @@ class WorkoutSession {
     this.update((s) => { const e = s.exercises.find((x) => x.id === id); if (e) change(e); });
   }
 
-  private begin(state: SessionState) {
+  /**
+   * Starting a workout replaces the one in progress, so it only happens with `replace` set: screens ask
+   * first (see `okToReplace`). Returns whether it started.
+   */
+  private begin(state: SessionState, replace: boolean): boolean {
+    if (this.state && !replace) return false;
+    state.logID ??= uuid();
     this.unlockAudio();
+    this.restEndsAt = null;
+    clearTimeout(this.restTimer);
     this.staleSince = null;
     this.pendingRating = null;
     this.state = state;
     this.isExpanded = true;
     this.persist();
     this.keepAwake();
+    return true;
+  }
+
+  /**
+   * Whether it's fine to start a new workout: always when none is in progress, otherwise only if you
+   * agree to throw the current one away. `ask` shows the question (a confirm dialog by default).
+   */
+  okToReplace(ask: (message: string) => boolean = (m) => confirm(m)): boolean {
+    if (!this.state) return true;
+    const sets = loggedSetCount(this.state);
+    const what = sets ? `${sets} logged set${sets === 1 ? '' : 's'}` : 'a workout in progress';
+    return ask(`You have ${what}. Discard ${sets > 1 ? 'them' : 'it'} and start a new workout?`);
   }
 
   /** `prepare` can adjust the session before it starts (adding warm-up and cool-down). */
-  start(workout: PlannedWorkout, prepare?: (s: SessionState) => void) {
+  start(workout: PlannedWorkout, prepare?: (s: SessionState) => void, replace = false): boolean {
+    if (this.state && !replace) return false;
     const state: SessionState = { startedAt: Date.now(), focus: workout.focus, exercises: workout.exercises.map(sessionExerciseFrom), currentIndex: 0 };
     prepare?.(state);
-    this.begin(state);
+    return this.begin(state, replace);
   }
 
-  /** Starts a prepared session (a program day). */
-  startPrepared(state: SessionState) { this.begin(state); }
+  /** Starts a prepared session (a program day or saved workout). */
+  startPrepared(state: SessionState, replace = false): boolean { return this.begin(state, replace); }
 
-  startEmpty() { this.begin({ startedAt: Date.now(), focus: null, exercises: [], currentIndex: 0 }); }
+  startEmpty(replace = false): boolean {
+    return this.begin({ startedAt: Date.now(), focus: null, exercises: [], currentIndex: 0 }, replace);
+  }
 
-  /** Brings back a discarded session (Undo). */
-  restore(snapshot: SessionState) { this.begin(snapshot); }
+  /**
+   * Brings back a discarded session (Undo). Does nothing if another workout has started since, so the
+   * undo can't throw that one away. Returns whether it was restored.
+   */
+  restore(snapshot: SessionState): boolean {
+    if (this.state && this.state.logID !== snapshot.logID) return false;
+    return this.begin(snapshot, true);
+  }
 
   // MARK: Exercises
 
@@ -248,14 +297,24 @@ class WorkoutSession {
 
   /** Removes an exercise. Returns an undo that puts it back where it was. */
   removeExercise(id: string): (() => void) | undefined {
-    const before = this.state && structuredClone({ exercises: this.state.exercises, currentIndex: this.state.currentIndex });
-    if (!before || !before.exercises.some((x) => x.id === id)) return undefined;
+    const index = this.state?.exercises.findIndex((x) => x.id === id) ?? -1;
+    if (!this.state || index < 0) return undefined;
+    // Undo puts back only this exercise, so sets logged on the others in the meantime stay logged.
+    const removed = structuredClone($state.snapshot(this.state.exercises[index]));
+    const wasShowing = this.state.currentIndex === index;
+    const workout = this.state.logID;
     this.update((s) => {
-      s.exercises = s.exercises.filter((x) => x.id !== id);
+      s.exercises.splice(index, 1);
       if (s.currentIndex >= s.exercises.length) s.currentIndex = Math.max(0, s.exercises.length - 1);
       normalizeGroups(s);
     });
-    return () => this.update((s) => { s.exercises = before.exercises; s.currentIndex = before.currentIndex; });
+    return () => this.update((s) => {
+      if (s.logID !== workout || s.exercises.some((x) => x.id === id)) return;
+      const at = Math.min(index, s.exercises.length);
+      s.exercises.splice(at, 0, removed);
+      if (wasShowing) s.currentIndex = at; else if (s.currentIndex >= at) s.currentIndex = Math.min(s.currentIndex + 1, s.exercises.length - 1);
+      normalizeGroups(s);
+    });
   }
 
   /** Moves exercise `id` up (-1) or down (+1); the one showing stays showing. */
@@ -281,8 +340,10 @@ class WorkoutSession {
   }
 
   /** Swaps exercise `id` for `replacement`, keeping any sets already logged (see `swapInSession`). */
-  swapExercise(id: string, replacement: Exercise, planner: Planner) {
-    this.update((s) => { swapInSession(s, id, replacement, planner); normalizeGroups(s); });
+  swapExercise(id: string, replacement: Exercise, planner: Planner): boolean {
+    let swapped = false;
+    this.update((s) => { swapped = swapInSession(s, id, replacement, planner); normalizeGroups(s); });
+    return swapped;
   }
 
   /** How many reps were left in the tank on this exercise's last set. */
@@ -471,9 +532,10 @@ class WorkoutSession {
   async finish(endedAt = Date.now()): Promise<PersonalRecord[] | null> {
     const state = this.state;
     if (!state || this.saving) return null;
-    const log = workoutLog(state, uuid(), endedAt);
+    // The same id every time, so finishing again after a crash replaces the log rather than adding one.
+    const log = workoutLog(state, state.logID ?? uuid(), endedAt);
     // Against history before this workout joins it.
-    const records = log ? newRecords(log.exercises, app.derivedHistory.bestOneRM) : [];
+    const records = log ? bestRecordPerExercise(newRecords(log.exercises, app.derivedHistory.bestOneRM)) : [];
     if (log) {
       this.saving = true;
       const saved = await app.addLog(log).finally(() => { this.saving = false; });

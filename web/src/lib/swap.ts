@@ -5,12 +5,13 @@ import { type SessionExercise, type SessionState, newSet, sessionExerciseFrom } 
  * Swaps exercise `id` for `replacement` in a workout in progress (mutates `state`).
  *
  * Sets already logged stay with the original exercise, so history stays true; the sets still to do
- * move to the replacement, inserted right after it. Nothing logged yet: the replacement takes its place.
+ * move to the replacement, inserted right after it (all of them, if every set was done). Nothing logged
+ * yet: the replacement takes its place. Returns whether anything changed.
  * Program details (rep range, RIR, rest, superset) carry over to the replacement.
  */
-export function swapInSession(state: SessionState, id: string, replacement: Exercise, planner: Planner) {
+export function swapInSession(state: SessionState, id: string, replacement: Exercise, planner: Planner): boolean {
   const i = state.exercises.findIndex((x) => x.id === id);
-  if (i < 0) return;
+  if (i < 0) return false;
   const old = state.exercises[i];
   const done = old.sets.filter((s) => s.done);
   const pending = old.sets.filter((s) => !s.done && !s.isWarmup);
@@ -26,7 +27,8 @@ export function swapInSession(state: SessionState, id: string, replacement: Exer
       : planner.warmupSets(weight, reps, replacement).map((w) => newSet(w.weight, w.reps, { isWarmup: true }));
     const working = pending.length ? pending : old.sets.filter((s) => !s.isWarmup);
     for (const s of working) sets.push(newSet(weight, s.reps, { side: s.side ?? null }));
-    next = { ...old, id: uuid(), exerciseID: replacement.id, sets, rir: null, reasons: [`Swapped in for ${old.exerciseID}`] };
+    // Its own copy of the program details, so regrouping one doesn't regroup the other.
+    next = { ...old, program: structuredClone(old.program), id: uuid(), exerciseID: replacement.id, sets, rir: null, reasons: [`Swapped in for ${old.exerciseID}`] };
   } else {
     next = sessionExerciseFrom(planned);
     // Stay in the same superset, with the same rest, as the exercise it replaces.
@@ -40,9 +42,12 @@ export function swapInSession(state: SessionState, id: string, replacement: Exer
 
   if (!done.length) {
     state.exercises[i] = next;
-  } else if (pending.length) {
-    old.sets = done;
+  } else {
+    // Sets already logged stay with the original. With nothing left to do on it, the replacement comes
+    // after it with a full set of sets.
+    if (pending.length) old.sets = done;
     state.exercises.splice(i + 1, 0, next);
     state.currentIndex = i + 1;
   }
+  return true;
 }

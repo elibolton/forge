@@ -20,7 +20,7 @@
   import ActivitySheet from '../components/ActivitySheet.svelte';
   import { dayTitle, focusTitle, goalTitle, swappableFocuses } from '../lib/labels';
   import { nav } from '../lib/nav.svelte';
-  import { type TodayPlan, buildToday, isTodayPlanCurrent, planBasis } from '../lib/plans';
+  import { type TodayPlan, buildToday, isTodayPlanCurrent, planBasis, withoutDuplicateExercises } from '../lib/plans';
   import { session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
@@ -33,11 +33,16 @@
   let adding = $state(false);
 
   const profile = $derived(app.profile!);
-  const today = $derived(app.get<TodayPlan>('todayPlan'));
+  const saved = $derived(app.get<TodayPlan>('todayPlan'));
+  // A plan saved with an exercise twice would crash the list; show it once, and save it that way.
+  const today = $derived(saved && withoutDuplicateExercises(saved));
   const trainedToday = $derived(app.logs[0] && isSameDay(app.logs[0].date, Date.now()) ? app.logs[0] : undefined);
   const chosenMinutes = $derived(today?.minutes ?? profile.plan.sessionMinutes);
   const planner = $derived(app.planner(today?.minutes));
 
+  $effect(() => {
+    if (saved && today && today !== saved) app.set('todayPlan', $state.snapshot(today));
+  });
   // Keeps the saved plan if it's still today's and nothing was logged since; otherwise builds the next one.
   $effect(() => {
     if (!today || !isTodayPlanCurrent(today, app.logs.length)) rebuild(null, null, null);
@@ -89,7 +94,12 @@
     });
   }
 
-  function add(e: Exercise) { edit((t) => { t.workout.exercises.push(planner.prescribe(e)); }); }
+  function add(e: Exercise) {
+    edit((t) => { if (!t.workout.exercises.some((x) => x.exercise.id === e.id)) t.workout.exercises.push(planner.prescribe(e)); });
+  }
+
+  /** Starting a workout replaces one in progress, so ask first. */
+  function startEmpty() { if (session.okToReplace()) session.startEmpty(true); }
 
   function setPreference(pref: ExercisePreference, p: PlannedExercise) {
     const e = p.exercise;
@@ -128,7 +138,7 @@
   const optionsMenu = $derived<MenuItem[]>([
     { label: 'New Variation', action: () => rebuild(today?.focus ?? null, today?.minutes ?? null, (today?.seed ?? 0) + 1) },
     { label: 'Add Exercise', action: () => (adding = true) },
-    { label: 'Empty Workout', action: () => session.startEmpty() },
+    { label: 'Empty Workout', action: startEmpty },
     { label: 'Log Cardio or Activity', action: () => (loggingActivity = true) },
     { label: 'Start a Saved Workout', action: () => (pickingTemplate = true) },
     { label: 'Save This Workout', action: () => (savingTemplate = true) },
@@ -283,7 +293,8 @@
     onpick={(e) => replace(r, e)} onclose={() => (replacing = null)} />
 {/if}
 {#if adding}
-  <ExercisePicker title="Add Exercise" exercises={Catalog.all.filter((e) => planner.isEligible(e))} allowCreate onpick={add} onclose={() => (adding = false)} />
+  {@const inPlan = new Set(today?.workout.exercises.map((x) => x.exercise.id))}
+  <ExercisePicker title="Add Exercise" exercises={Catalog.all.filter((e) => planner.isEligible(e) && !inPlan.has(e.id))} allowCreate onpick={add} onclose={() => (adding = false)} />
 {/if}
 
 <style>

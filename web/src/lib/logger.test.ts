@@ -69,9 +69,29 @@ describe('Swap mid-workout', () => {
     expect(next.sets.filter((x) => !x.isWarmup).length).toBe(3);
     expect(next.sets.every((x) => !x.done)).toBe(true);
   });
-  test('all sets done: nothing to swap', () => {
+  test('all sets done: the replacement comes after it with a full set of sets (L6)', () => {
     const s = state('bb-bench', 3, 3);
+    expect(swapInSession(s, 'a', ex('db-bench'), planner)).toBe(true);
+    expect(s.exercises.map((x) => x.exerciseID)).toEqual(['bb-bench', 'db-bench']);
+    expect(s.exercises[0].sets.every((x) => x.done)).toBe(true);
+    expect(s.exercises[1].sets.filter((x) => !x.isWarmup && !x.done).length).toBeGreaterThan(0);
+    expect(s.currentIndex).toBe(1);
+  });
+  test('all sets of a program exercise done: the replacement gets the same number of sets', () => {
+    const s = state('bb-bench', 3, 3, true);
     swapInSession(s, 'a', ex('db-bench'), planner);
-    expect(s.exercises.map((x) => x.exerciseID)).toEqual(['bb-bench']);
+    expect(s.exercises[1].sets.filter((x) => !x.isWarmup && !x.done).length).toBe(3);
+  });
+  test('an unknown exercise reports nothing swapped', () => {
+    expect(swapInSession(state('bb-bench', 0, 3), 'nope', ex('db-bench'), planner)).toBe(false);
+  });
+  test('a program swap gives the replacement its own program details (L7)', () => {
+    const s = state('bb-bench', 1, 3, true);
+    s.exercises[0].program!.supersetGroup = 'A';
+    swapInSession(s, 'a', ex('db-bench'), planner);
+    const [old, next] = s.exercises;
+    expect(next.program).not.toBe(old.program);
+    next.program!.supersetGroup = 'B';
+    expect(old.program!.supersetGroup).toBe('A');
   });
 });

@@ -24,6 +24,17 @@ export interface TodayPlan {
   workout: PlannedWorkout;
 }
 
+/**
+ * Today's plan with each exercise at most once (the first copy kept). A plan saved before the Add picker
+ * left out exercises already in it can hold one twice, which the keyed list on Today can't show.
+ * Returns the same object when there's nothing to drop.
+ */
+export function withoutDuplicateExercises(t: TodayPlan): TodayPlan {
+  const seen = new Set<string>();
+  const exercises = t.workout.exercises.filter((p) => !seen.has(p.exercise.id) && !!seen.add(p.exercise.id));
+  return exercises.length === t.workout.exercises.length ? t : { ...t, workout: { ...t.workout, exercises } };
+}
+
 export const isTodayPlanCurrent = (t: TodayPlan, logCount: number, now = Date.now()) =>
   isSameDay(t.generatedAt, now) && t.logCount === logCount;
 

@@ -42,7 +42,7 @@
     {#each series as s, i (s.name)}
       {#if s.points.length > 1}<path d="{path(s.points)}L{sx(Math.max(...s.points.map((p) => p.x)))},{height - PAD_B}L{sx(Math.min(...s.points.map((p) => p.x)))},{height - PAD_B}Z" fill="url(#area-{i})" />{/if}
       <path d={path(s.points)} fill="none" stroke={COLORS[i % COLORS.length]} stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" />
-      {#each s.points as p (p.x)}<circle cx={sx(p.x)} cy={sy(p.y)} r="3.2" fill="#0b0b0d" stroke={COLORS[i % COLORS.length]} stroke-width="2"><title>{s.name}: {p.y} {unit}, {dateLabel(p.x)}</title></circle>{/each}
+      {#each s.points as p, j (j)}<circle cx={sx(p.x)} cy={sy(p.y)} r="3.2" fill="#0b0b0d" stroke={COLORS[i % COLORS.length]} stroke-width="2"><title>{s.name}: {p.y} {unit}, {dateLabel(p.x)}</title></circle>{/each}
     {/each}
   </svg>
   {#if series.length > 1}

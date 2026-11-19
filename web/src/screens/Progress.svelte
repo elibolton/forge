@@ -149,7 +149,7 @@
     <section class="stack" style="--gap:12px">
       <div class="row between head-row"><h2 class="eyebrow">Recent records</h2><span class="caption faint">{app.prEvents.length} all time</span></div>
       <div class="card stack" style="--gap:0">
-        {#each recentPRs as pr (pr.logID + pr.exerciseID)}
+        {#each recentPRs as pr, i (i)}
           <button class="lift row" onclick={() => nav.push({ name: 'log', id: pr.logID })}>
             <span class="trophy"><Trophy size={16} /></span>
             <span class="grow stack" style="--gap:2px;text-align:left">

@@ -67,7 +67,7 @@
 
   function discard() {
     const snapshot = session.discard();
-    if (snapshot) toasts.show('Workout discarded', () => session.restore(snapshot));
+    if (snapshot) toasts.show('Workout discarded', () => { if (!session.restore(snapshot)) toasts.show("Can't undo: another workout has started"); });
   }
 
   const add = (e: ReturnType<typeof Catalog.exercise>) => session.addExercise(app.planner().prescribe(e));
@@ -278,11 +278,12 @@
 {#if swapping && current}
   {@const c = current}
   <ExercisePicker title="Swap {exerciseOf(c).name}" exercises={app.planner().alternatives(exerciseOf(c), new Set(ws.exercises.map((x) => x.exerciseID)))}
-    onpick={(e) => { session.swapExercise(c.id, e, app.planner()); toasts.show(`Swapped in ${e.name}`); }}
+    onpick={(e) => { if (session.swapExercise(c.id, e, app.planner())) toasts.show(`Swapped in ${e.name}`); }}
     onclose={() => (swapping = false)} />
 {/if}
 {#if adding}
-  <ExercisePicker title="Add Exercise" exercises={Catalog.all.filter((e) => app.planner().isEligible(e))} allowCreate onpick={add} onclose={() => (adding = false)} />
+  {@const inWorkout = new Set(ws.exercises.map((x) => x.exerciseID))}
+  <ExercisePicker title="Add Exercise" exercises={Catalog.all.filter((e) => app.planner().isEligible(e) && !inWorkout.has(e.id))} allowCreate onpick={add} onclose={() => (adding = false)} />
 {/if}
 
 <style>
