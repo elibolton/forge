@@ -35,7 +35,7 @@
 
   function discard() {
     const snapshot = session.discard();
-    if (snapshot) toasts.show('Workout discarded', () => session.restore(snapshot));
+    if (snapshot) toasts.show('Workout discarded', () => { if (!session.restore(snapshot)) toasts.show("Can't undo: another workout has started"); });
   }
 </script>
 

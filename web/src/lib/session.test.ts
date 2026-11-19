@@ -8,7 +8,10 @@ vi.mock('./db', () => ({
 
 const { Gyms, Programs, defaultPlan, newProgress } = await import('../engine');
 const { app } = await import('./store.svelte');
-const { session, newSet, supersetOf, numberedSets } = await import('./session.svelte');
+const { session, newSet, supersetOf, numberedSets, bestRecordPerExercise } = await import('./session.svelte');
+const { withoutDuplicateExercises } = await import('./plans');
+const { removeCustomExercise, customExerciseUses } = await import('./customExercises');
+const { Catalog } = await import('../engine');
 const { setLabels } = await import('./labels');
 const { groupLabel } = await import('./groups');
 const { templateFromSession, readTemplate } = await import('./templates');
@@ -175,6 +178,34 @@ describe('Finishing', async () => {
     expect(saving.error).toBeNull();
   });
 
+  test('finishing again after a crash replaces the saved workout instead of adding a second (L4)', async () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const snapshot = structuredClone(session.state!);
+    expect(snapshot.logID).toBeTruthy();
+    await session.finish();
+    // The app is killed before the workout is cleared: it comes back on the next launch.
+    session.restore(snapshot);
+    await session.finish();
+    expect(app.logs.length).toBe(1);
+    expect(app.logs[0].id).toBe(snapshot.logID);
+  });
+
+  test('a workout saved before log ids gets one on load', async () => {
+    vi.mocked(db.get).mockResolvedValueOnce({ state: { startedAt: 1, focus: null, currentIndex: 0, exercises: [] } });
+    await session.load();
+    expect(session.state!.logID).toBeTruthy();
+  });
+
+  test('the same exercise twice with a record on each gives one record, the best (L5)', async () => {
+    start([exercise('a', [newSet(80, 5, { done: true })], { rir: 2 })]);
+    await session.finish();
+    start([exercise('a', [newSet(90, 5, { done: true })], { rir: 2 }), exercise('b', [newSet(95, 5, { done: true })], { rir: 2 })]);
+    const records = (await session.finish())!;
+    expect(records.length).toBe(1);
+    expect(records[0].oneRM).toBe(Math.max(...bestRecordPerExercise(records).map((r) => r.oneRM)));
+    expect(records[0].oneRM).toBeGreaterThan(oneRM(90, 5, 2));
+  });
+
   test('a second tap while saving logs the workout once', async () => {
     start([exercise('a', [newSet(80, 8, { done: true })])]);
     const [first, second] = await Promise.all([session.finish(), session.finish()]);
@@ -197,6 +228,26 @@ describe('Changing a workout in progress', () => {
     expect(ids()).toEqual(['a', 'b', 'c']);
     expect(session.state!.currentIndex).toBe(2);
     expect(session.removeExercise('nope')).toBeUndefined();
+  });
+
+  test('undoing a removal keeps sets logged since on other exercises (L1)', () => {
+    const b1 = newSet(20, 12);
+    start([exercise('a', [newSet(80, 8)]), exercise('b', [b1]), exercise('c', [newSet(30, 10)])]);
+    const undoA = session.removeExercise('a')!;
+    session.logSet(b1.id, 'b');
+    session.removeExercise('c');
+    undoA();
+    expect(ids()).toEqual(['a', 'b']); // c stays removed
+    expect(session.state!.exercises[1].sets[0].done).toBe(true);
+  });
+
+  test('undoing a removal after the workout changed hands does nothing', () => {
+    start([exercise('a', [newSet(80, 8)]), exercise('b', [newSet(20, 12)])]);
+    const undo = session.removeExercise('a')!;
+    session.discard();
+    start([exercise('x', [newSet(80, 8)])]);
+    undo();
+    expect(ids()).toEqual(['x']);
   });
 
   test('moving keeps the showing exercise showing; moves past the ends do nothing', () => {
@@ -256,6 +307,81 @@ describe('Changing a workout in progress', () => {
     expect(session.state!.exercises[0].sets[0].done).toBe(true);
     expect(session.discard()).not.toBeNull();
     expect(session.discard()).toBeNull();
+  });
+
+  test('undoing a discard does not replace a workout started since (L3)', () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const snapshot = session.discard()!;
+    session.startEmpty();
+    session.addExercise(app.planner().prescribe(Catalog.exercise('db-fly')));
+    expect(session.restore(snapshot)).toBe(false);
+    expect(session.state!.exercises.map((x) => x.exerciseID)).toEqual(['db-fly']);
+  });
+
+  test('starting a workout never silently replaces the one in progress (U3)', () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const before = session.state;
+    expect(session.startEmpty()).toBe(false);
+    expect(session.startPrepared({ startedAt: 1, focus: null, exercises: [], currentIndex: 0 })).toBe(false);
+    expect(session.state).toBe(before);
+
+    const asked: string[] = [];
+    expect(session.okToReplace((m) => { asked.push(m); return false; })).toBe(false);
+    expect(asked[0]).toMatch(/1 logged set/);
+    expect(session.okToReplace(() => true)).toBe(true);
+    expect(session.startEmpty(true)).toBe(true);
+    expect(session.state!.exercises).toEqual([]);
+    session.discard();
+    expect(session.okToReplace(() => { throw new Error('asked with nothing to lose'); })).toBe(true);
+  });
+});
+
+describe('Duplicate exercises', () => {
+  test("a saved Today plan with an exercise twice keeps the first copy (U1)", () => {
+    const p = app.planner();
+    const bench = p.prescribe(Catalog.exercise('bb-bench')), fly = p.prescribe(Catalog.exercise('db-fly'));
+    const plan = { generatedAt: 0, basis: '', logCount: 0, seed: 0, focus: null, minutes: null,
+      workout: { focus: 'push', exercises: [bench, fly, { ...bench }], targetMuscles: [], recovery: {} } } as unknown as import('./plans').TodayPlan;
+    const fixed = withoutDuplicateExercises(plan);
+    expect(fixed.workout.exercises.map((x) => x.exercise.id)).toEqual(['bb-bench', 'db-fly']);
+    expect(withoutDuplicateExercises(fixed)).toBe(fixed);
+  });
+});
+
+describe('Deleting a custom exercise', () => {
+  const custom = { ...Catalog.exercise('db-fly'), id: 'custom-landmine-press-abc123', name: 'Landmine Press' };
+  const create = () => app.updateProfile((p) => { p.customExercises = [custom]; });
+  const exists = () => Catalog.byID.has(custom.id);
+
+  test('one in the workout in progress keeps its definition (U5)', () => {
+    create();
+    start([exercise('a', [newSet(20, 10)], { exerciseID: custom.id })]);
+    expect(customExerciseUses(custom.id).session).toBe(true);
+    removeCustomExercise(custom);
+    expect(exists()).toBe(true);
+    expect(Catalog.exercise(custom.id).name).toBe('Landmine Press');
+    expect(app.profile!.plan.preferences[custom.id]).toBe('exclude');
+  });
+
+  test('one in a saved workout keeps its definition (S11)', () => {
+    create();
+    app.saveTemplate({ id: 't', name: 'Push', createdAt: 0, exercises: [{ exerciseID: custom.id, sets: 3, reps: 10 }] });
+    removeCustomExercise(custom);
+    expect(exists()).toBe(true);
+    app.removeTemplate('t');
+  });
+
+  test('an unused one is deleted', () => {
+    create();
+    removeCustomExercise(custom);
+    expect(exists()).toBe(false);
+  });
+
+  test('a saved workout leaves out an exercise that no longer exists instead of a placeholder', () => {
+    const s = sessionFromTemplate({ id: 't', name: 'Push', createdAt: 0, exercises: [
+      { exerciseID: 'custom-gone-000000', sets: 3, reps: 10 }, { exerciseID: 'bb-bench', sets: 3, reps: 8 }, { exerciseID: 'db-fly', sets: 0, reps: 8 },
+    ] }, app.planner());
+    expect(s.exercises.map((x) => x.exerciseID)).toEqual(['bb-bench']);
   });
 });
 
