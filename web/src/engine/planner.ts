@@ -1,11 +1,13 @@
 import { Catalog } from './catalog';
 import {
   type DayFocus, type Exercise, type ExternalActivity, type Goal, type Gym, type Level, type LoggedExercise,
-  type MovementPattern, type Muscle, type MuscleMap, type RecoveryOverride, type UserPlan, type WorkoutRecord,
+  type Muscle, type MuscleMap, type RecoveryOverride, type UserPlan, type WorkoutRecord,
   DAY_MS, focusMuscles, gymBaseLoadKg, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
   straightSets, workingSets,
 } from './models';
+import { qualityOf, qualityScore, tierKey } from './quality';
 import { computeRecovery } from './recovery';
+import { type Slot, templateFor } from './templates';
 import { bestReps, estimatedOneRM, oneRM as epley, weightForReps } from './strength';
 
 // MARK: - Output
@@ -39,6 +41,8 @@ export interface PlannedWorkout {
   exercises: PlannedExercise[];
   estimatedMinutes: number;
   recovery: MuscleMap;
+  /** Shown with the plan, e.g. why it's shorter than the time you set. */
+  note?: string;
 }
 
 // MARK: - Goal schemes
@@ -51,35 +55,50 @@ export interface Scheme {
   rir: number;
   restCompound: number;
   restIsolation: number;
+  /** Default fractional sets per muscle per week (synergist sets count half). */
   weeklySetTarget: number;
-  sessionSetCap: number;
-  compoundBias: number;
+  /** Direct sets every muscle the day trains gets, even in a short session. */
+  sessionMin: number;
+  /** Fractional sets per muscle per session past which extra sets add no detectable growth. */
+  sessionSoftCap: number;
+  /** Most working sets planned for one exercise. */
+  maxSetsPerExercise: number;
 }
 
+/**
+ * Prescriptions and volume by goal and level. Ranges come from the research report
+ * (reports/Evidence based workout building.md); the exact defaults inside them are design choices.
+ */
 export function makeScheme(goal: Goal, experience: Level): Scheme {
+  const lvl = levelRank(experience);
+  // [weekly target, session minimum, session soft cap] for beginner, intermediate, advanced.
+  const volume = (rows: [number, number, number][]) => rows[lvl];
   const s = ((): Scheme => {
     const mk = (compoundReps: [number, number], isolationReps: [number, number], sets: number, compoundExtraSets: number,
-                rir: number, restCompound: number, restIsolation: number, weeklySetTarget: number, sessionSetCap: number,
-                compoundBias: number): Scheme => ({
-      compoundReps, isolationReps, sets, compoundExtraSets, rir, restCompound, restIsolation, weeklySetTarget,
-      sessionSetCap, compoundBias,
+                rir: number, restCompound: number, restIsolation: number, v: [number, number, number]): Scheme => ({
+      compoundReps, isolationReps, sets, compoundExtraSets, rir, restCompound, restIsolation,
+      weeklySetTarget: v[0], sessionMin: v[1], sessionSoftCap: v[2], maxSetsPerExercise: 4,
     });
     switch (goal) {
-      case 'getStronger': return mk([3, 6], [8, 12], 3, 1, 2, 180, 90, 10, 6, 0.8);
-      case 'powerlifting': return mk([1, 5], [8, 12], 3, 2, 2, 240, 90, 10, 7, 0.9);
-      case 'buildMuscle': return mk([6, 10], [10, 15], 3, 1, 2, 120, 75, 14, 8, 0.4);
-      case 'getLean': return mk([8, 12], [12, 15], 3, 0, 2, 75, 60, 12, 7, 0.3);
-      case 'improveFitness': return mk([8, 12], [12, 15], 3, 0, 3, 60, 45, 9, 6, 0.3);
-      case 'reduceBodyweight': return mk([12, 15], [15, 20], 3, 0, 3, 45, 30, 9, 6, 0.3);
+      case 'buildMuscle': return mk([6, 10], [10, 15], 3, 1, 2, 120, 75, volume([[10, 2, 8], [15, 3, 11], [20, 3, 12]]));
+      case 'getStronger': return mk([3, 6], [8, 12], 3, 1, 2, 180, 90, volume([[9, 2, 8], [12, 2, 10], [13, 2, 11]]));
+      case 'powerlifting': return mk([1, 5], [8, 12], 3, 2, 2, 240, 90, volume([[9, 2, 8], [10, 2, 10], [12, 2, 11]]));
+      case 'getLean': return mk([6, 10], [10, 15], 3, 0, 2, 90, 60, volume([[8, 2, 6], [12, 2, 9], [14, 3, 10]]));
+      case 'improveFitness': return mk([8, 12], [10, 15], 3, 0, 3, 90, 60, volume([[6, 2, 6], [9, 2, 8], [10, 2, 10]]));
+      case 'reduceBodyweight': return mk([8, 12], [12, 15], 3, 0, 3, 90, 60, volume([[8, 2, 6], [12, 2, 9], [14, 3, 10]]));
     }
   })();
   if (experience === 'beginner') {
     s.sets = Math.max(2, s.sets - 1);
     s.compoundExtraSets = Math.min(s.compoundExtraSets, 1);
     s.rir += 1;
+    // Beginners learn lifts faster with moderate loads, whatever the goal.
+    s.compoundReps = [8, 12];
+    s.maxSetsPerExercise = 3;
   } else if (experience === 'advanced') {
     s.compoundExtraSets += 1;
   }
+  if (goal === 'getStronger' || goal === 'powerlifting') s.maxSetsPerExercise = 5;
   return s;
 }
 
@@ -111,8 +130,6 @@ export function dayNumber(t: number): number {
   return Math.floor((t - new Date(t).getTimezoneOffset() * 60_000) / DAY_MS);
 }
 
-const MINOR_MUSCLES: Muscle[] = ['forearms', 'calves', 'adductors', 'abductors', 'lowerBack', 'abs'];
-
 /** Muscle groups the "Fresh Muscles" split chooses between. */
 const FRESH_GROUPS: Muscle[][] = [
   ['chest'], ['lats', 'upperBack'], ['shoulders'], ['biceps', 'triceps'], ['quads', 'glutes'], ['hamstrings', 'glutes'],
@@ -120,8 +137,6 @@ const FRESH_GROUPS: Muscle[][] = [
 
 const avg = (recovery: MuscleMap, muscles: Muscle[]) =>
   muscles.reduce((t, m) => t + (recovery[m] ?? 1), 0) / Math.max(1, muscles.length);
-
-const setKey = (ms: Muscle[]) => [...new Set(ms)].sort().join(',');
 
 const ANTAGONISTS: [string, string][] = [
   ['horizontalPush', 'horizontalPull'], ['verticalPush', 'verticalPull'], ['biceps', 'triceps'], ['quads', 'hamstrings'], ['chest', 'upperBack'],
@@ -178,16 +193,70 @@ function unpair(list: PlannedExercise[], group: string): PlannedExercise[] {
   });
 }
 
+/**
+ * Time model (research report, spec steps 12–13): about 3 s per rep plus 10 s to set up each set,
+ * 70 s per warm-up set and 90 s to move to the next exercise. Rest after the last set is replaced by
+ * that move. Timed sets count their seconds.
+ */
+export const SECONDS_PER_REP = 3;
+export const SET_SETUP_SECONDS = 10;
+export const WARMUP_SET_SECONDS = 70;
+export const TRANSITION_SECONDS = 90;
+
 /** Seconds a planned exercise takes, including rest and warm-ups. */
 export function plannedSeconds(p: PlannedExercise): number {
-  const working = plannedWorkingSets(p).length;
-  return working * (40 + p.restSeconds) + (p.sets.length - working) * 75 + 60;
+  const working = plannedWorkingSets(p);
+  const work = working.reduce((t, s) => t + (p.exercise.isTimed ? s.reps : s.reps * SECONDS_PER_REP) + SET_SETUP_SECONDS, 0);
+  const rests = Math.max(0, working.length - 1) * p.restSeconds;
+  return work + rests + (p.sets.length - working.length) * WARMUP_SET_SECONDS + TRANSITION_SECONDS;
 }
 
 /** Minutes a list of exercises takes, including rest and warm-ups. Recompute after edits. */
 export function estimatedMinutes(exercises: PlannedExercise[]): number {
   return Math.round(exercises.reduce((t, p) => t + plannedSeconds(p), 0) / 60);
 }
+
+/** Fractional sets per muscle per session past which the research has no data (spec step 9). */
+const SESSION_HARD_CAP = 14;
+
+/** Muscles with no weekly target: covered by compound lifts unless you add them yourself. */
+const OPTIONAL_MUSCLES: Muscle[] = ['forearms', 'adductors', 'abductors', 'lowerBack'];
+/** Smaller muscles that need less direct work. */
+const SMALL_MUSCLES: Muscle[] = ['calves', 'abs'];
+const BIG_MUSCLES: Muscle[] = ['chest', 'lats', 'upperBack', 'shoulders', 'quads', 'hamstrings', 'glutes'];
+
+/** Fractional sets an exercise gives each muscle: 1 per primary set, 0.5 per synergist set. */
+function credit(p: PlannedExercise): MuscleMap {
+  const n = plannedWorkingSets(p).length;
+  const out: MuscleMap = {};
+  for (const m of p.exercise.secondary) out[m] = n * 0.5;
+  for (const m of p.exercise.primary) out[m] = n;
+  return out;
+}
+
+/** Adds one working set, keeping a max-effort set last. */
+function withSetAdded(p: PlannedExercise): PlannedExercise {
+  const sets = [...p.sets];
+  let last = -1;
+  for (let k = sets.length - 1; k >= 0; k--) if (!sets[k].isWarmup) { last = k; break; }
+  if (last < 0) return p;
+  sets.splice(last, 0, { ...sets[last], isAMRAP: false });
+  return { ...p, sets };
+}
+
+function withSetRemoved(p: PlannedExercise): PlannedExercise {
+  const sets = p.sets;
+  let last = -1, firstWorking = -1;
+  for (let k = sets.length - 1; k >= 0; k--) if (!sets[k].isWarmup) { last = k; break; }
+  for (let k = 0; k < sets.length; k++) if (!sets[k].isWarmup) { firstWorking = k; break; }
+  if (last < 0) return p;
+  // Drop the second-to-last set so a max-effort last set survives.
+  const drop = sets[last].isAMRAP && last > firstWorking ? last - 1 : last;
+  return { ...p, sets: sets.filter((_, k) => k !== drop) };
+}
+
+/** An exercise picked for a slot, in the order it was added. */
+interface Pick { slot: number; planned: PlannedExercise; order: number }
 
 export class Planner {
   plan: UserPlan;
@@ -217,7 +286,13 @@ export class Planner {
   get scheme(): Scheme { return makeScheme(this.plan.goal, this.plan.experience); }
   get weeklySetTarget(): number { return this.scheme.weeklySetTarget; }
 
-  /** Builds today's workout. Pass a different `seed` to regenerate; `focus` forces a day (swap menu). */
+  /**
+   * Builds today's workout (spec steps 17–25). The day's template lists slots in order; required
+   * slots are filled first, then each muscle's sets grow toward its per-session target while time
+   * allows, then muscles the day doesn't train (rear delts, abs, calves) fill any time left. The
+   * session ends early rather than pile sets onto muscles that are already done.
+   * Pass a different `seed` to regenerate; `focus` forces a day (swap menu).
+   */
   generate(opts: { now?: number; seed?: number; focus?: DayFocus | null } = {}): PlannedWorkout {
     const now = opts.now ?? Date.now();
     const byID = this.byID();
@@ -227,92 +302,172 @@ export class Planner {
     const [focus, targets] = opts.focus ? [opts.focus, this.targetMuscles(opts.focus, recovery)] as const : this.nextFocus(recovery);
     const weekly = this.weeklySetsBy(byID, now);
     const scheme = this.scheme;
+    const level = this.plan.experience;
 
-    const priority: MuscleMap = {};
+    // Per-muscle budgets (spec steps 8–11). Base: half the weekly target, more if the week is behind.
+    const base: MuscleMap = {}, soft: MuscleMap = {}, priority: MuscleMap = {};
     for (const m of targets) {
-      const deficit = Math.max(0, 1 - (weekly[m] ?? 0) / scheme.weeklySetTarget);
-      const size = m === 'adductors' || m === 'abductors' ? 0.4 : MINOR_MUSCLES.includes(m) ? 0.6 : 1.0;
+      if (OPTIONAL_MUSCLES.includes(m)) continue;
+      const size = SMALL_MUSCLES.includes(m) ? 0.6 : 1;
+      const target = scheme.weeklySetTarget * size;
+      const behind = Math.max(target / 2, target - (weekly[m] ?? 0));
+      const fresh = (recovery[m] ?? 1) >= 0.4 ? 1 : 0.5;
+      soft[m] = scheme.sessionSoftCap * size * fresh;
+      base[m] = Math.min(soft[m], Math.max(scheme.sessionMin, Math.ceil(behind)) * fresh);
+      const deficit = Math.max(0, 1 - (weekly[m] ?? 0) / target);
       priority[m] = (recovery[m] ?? 1) * (0.5 + deficit) * size;
     }
 
+    const slots = templateFor(focus, targets);
     const rng = new SeededRandom(opts.seed ?? dayNumber(now));
-    const eligible = this.catalog.filter((e) => this.isEligible(e) && e.pattern !== 'mobility');
-    let chosen: PlannedExercise[] = [];
-    const plannedSets: MuscleMap = {};
-    const usedPatterns = new Set<MovementPattern>();
-    const hitsPerMuscle: MuscleMap = {};
-    let seconds = 0;
     const budget = this.plan.sessionMinutes * 60;
     const supersets = this.plan.supersets;
     // Pairing saves rest, so with supersets on there's room for more work in the same time.
     const selectBudget = supersets ? budget * 1.4 : budget;
-    const maxExercises = Math.min(supersets ? 10 : 8, Math.max(3, Math.floor(this.plan.sessionMinutes / (supersets ? 7 : 9))));
-    const targetSet = new Set(targets);
+    const perMuscle = (m: Muscle) => (BIG_MUSCLES.includes(m) ? 3 : 2) - (level === 'beginner' ? 1 : 0);
 
-    while (chosen.length < maxExercises) {
-      const slot = chosen.length;
-      const isolationTargets = new Set(chosen.filter((c) => !c.exercise.isCompound).map((c) => setKey(c.exercise.primary)));
-      let best: { exercise: Exercise; score: number; reasons: string[] } | undefined;
-      for (const exercise of eligible) {
-        if (chosen.some((c) => c.exercise.id === exercise.id)) continue;
-        const r = this.score(exercise, slot, targetSet, priority, plannedSets, hitsPerMuscle, isolationTargets,
-          usedPatterns, recovery, weekly, scheme, now, rng);
-        if (!r) continue;
-        if (r[0] > (best?.score ?? -Infinity)) best = { exercise, score: r[0], reasons: r[1] };
+    let picks: Pick[] = [];
+    let order = 0;
+    const filled = new Set<number>();
+    const planned = (): MuscleMap => {
+      const t: MuscleMap = {};
+      for (const p of picks) for (const [m, v] of Object.entries(credit(p.planned))) t[m as Muscle] = (t[m as Muscle] ?? 0) + v;
+      return t;
+    };
+    const seconds = () => picks.reduce((t, p) => t + plannedSeconds(p.planned), 0);
+    const maxSets = (p: Pick) => scheme.maxSetsPerExercise - (slots[p.slot].main ? 0 : scheme.maxSetsPerExercise > 4 ? 1 : 0);
+    const countFor = (m: Muscle) => picks.filter((p) => p.planned.exercise.primary.includes(m)).length;
+
+    const fill = (i: number, exclude: Set<string> = new Set()): PlannedExercise | undefined => {
+      const choice = this.pickFor(slots, i, picks, recovery, weekly, scheme, now, rng, exclude);
+      if (!choice) { filled.add(i); return undefined; }
+      return this.prescribeWith(choice.exercise, scheme, now, choice.reasons);
+    };
+    /** Whether a muscle couldn't grow because the session ran out of time (not out of options). */
+    let outOfTime = false;
+    const tryAdd = (i: number, force: boolean, exclude?: Set<string>): boolean => {
+      const p = fill(i, exclude);
+      if (!p) return false;
+      if (!force && seconds() + plannedSeconds(p) > selectBudget) { outOfTime = true; return false; }
+      picks.push({ slot: i, planned: p, order: order++ });
+      filled.add(i);
+      return true;
+    };
+
+    // 1. The first required slot for each muscle, so every muscle is covered even when time is short.
+    const covered = new Set<Muscle>();
+    slots.forEach((s, i) => {
+      if (!s.required || s.extra || covered.has(s.muscle) || soft[s.muscle] === undefined) return;
+      covered.add(s.muscle);
+      tryAdd(i, picks.length < 3);
+    });
+
+    // 2. Grow each muscle toward its base, then its soft cap, while time allows.
+    for (const goal of [base, soft]) {
+      const blocked = new Set<Muscle>();
+      outOfTime = false;
+      for (let guard = 0; guard < 200; guard++) {
+        const have = planned();
+        let m: Muscle | undefined, worst = 0;
+        for (const [k, g] of Object.entries(goal) as [Muscle, number][]) {
+          const gap = (g - (have[k] ?? 0)) * (priority[k] ?? 0.5);
+          if (!blocked.has(k) && g - (have[k] ?? 0) >= 0.5 && gap > worst) { m = k; worst = gap; }
+        }
+        if (!m) break;
+        const open = slots.map((s, i) => i).filter((i) => !filled.has(i) && !slots[i].extra && slots[i].muscle === m);
+        const requiredOpen = open.filter((i) => slots[i].required);
+        const mine = picks.filter((p) => p.planned.exercise.primary.includes(m!) && plannedWorkingSets(p.planned).length < maxSets(p));
+        const roomForAnother = countFor(m) < perMuscle(m) && picks.filter((p) => p.planned.exercise.primary.includes(m!))
+          .every((p) => plannedWorkingSets(p.planned).length >= 3);
+        // Growing one muscle mustn't push another (e.g. upper back from a second row) well past its cap.
+        const overflows = (e: Exercise) => {
+          const have = planned();
+          return e.primary.some((k) => k !== m && soft[k] !== undefined && (have[k] ?? 0) > soft[k]! + 1);
+        };
+        let done = false;
+        if (requiredOpen.length) done = tryAdd(requiredOpen[0], false);
+        else if (open.length && (roomForAnother || !mine.length) && countFor(m) < perMuscle(m)) {
+          // Try the next-best exercise if the best one would overload another muscle.
+          const tried = new Set<string>();
+          for (let attempt = 0; attempt < 4 && !done; attempt++) {
+            filled.delete(open[0]);
+            if (!tryAdd(open[0], false, tried)) break;
+            const added = picks[picks.length - 1].planned.exercise;
+            if (overflows(added)) { picks.pop(); filled.delete(open[0]); tried.add(added.id); } else done = true;
+          }
+          if (!done) filled.add(open[0]);
+        }
+        if (!done && mine.length && !requiredOpen.length) {
+          const p = mine.sort((a, b) => plannedWorkingSets(a.planned).length - plannedWorkingSets(b.planned).length)[0];
+          const bigger = withSetAdded(p.planned);
+          const before = p.planned;
+          if (seconds() - plannedSeconds(p.planned) + plannedSeconds(bigger) <= selectBudget) {
+            p.planned = bigger;
+            done = true;
+            if (overflows(bigger.exercise)) { p.planned = before; done = false; }
+          } else outOfTime = true;
+        }
+        if (!done) blocked.add(m);
       }
-      if (!best || !(best.score > -0.4 || chosen.length < 3)) break;
+    }
+    // Done: every muscle reached its cap or has nothing useful left to add (not merely out of time).
+    const done = !outOfTime;
 
-      const planned = this.prescribeWith(best.exercise, scheme, now, best.reasons);
-      const cost = plannedSeconds(planned);
-      if (seconds + cost > selectBudget && chosen.length >= 3) break;
-
-      chosen.push(planned);
-      seconds += cost;
-      const setCount = plannedWorkingSets(planned).length;
-      for (const m of best.exercise.primary) {
-        plannedSets[m] = (plannedSets[m] ?? 0) + setCount;
-        hitsPerMuscle[m] = (hitsPerMuscle[m] ?? 0) + 1;
-      }
-      for (const m of best.exercise.secondary) plannedSets[m] = (plannedSets[m] ?? 0) + setCount * 0.5;
-      if (best.exercise.pattern !== 'isolation' && best.exercise.pattern !== 'core') usedPatterns.add(best.exercise.pattern);
+    // 3. Time left over: muscles the day doesn't otherwise train.
+    // Rear delts count toward "shoulders", so skip an extra that would push a muscle past the hard ceiling.
+    if (done) {
+      slots.forEach((s, i) => {
+        if (!s.extra || filled.has(i)) return;
+        const before = picks.length;
+        if (!tryAdd(i, false) || picks.length === before) return;
+        const have = planned();
+        if (picks[picks.length - 1].planned.exercise.primary.some((m) => (have[m] ?? 0) > SESSION_HARD_CAP)) picks.pop();
+      });
     }
 
-    // Loaded compounds first, then bodyweight compounds, isolations, core.
-    const rank = (e: Exercise) => (e.pattern === 'core' ? 3 : !e.isCompound ? 2 : isBodyweight(e) ? 1 : 0);
-    chosen = [...chosen].sort((a, b) => rank(a.exercise) - rank(b.exercise));
+    // Make sure there's a workout at all.
+    for (let i = 0; i < slots.length && picks.length < 3; i++) if (!filled.has(i)) tryAdd(i, true);
+
+    // Template order, with extras last.
+    picks.sort((a, b) => a.slot - b.slot);
+    let chosen = picks.map((p) => p.planned);
+    const addedOrder = new Map(picks.map((p) => [p.planned.exercise.id, p.order]));
+    const lastAdded = (list: PlannedExercise[]) => list.reduce((best, p, i) =>
+      (i > 0 && (best < 0 || (addedOrder.get(p.exercise.id) ?? 0) > (addedOrder.get(list[best].exercise.id) ?? 0)) ? i : best), -1);
+    const total = (list: PlannedExercise[]) => list.reduce((t, p) => t + plannedSeconds(p), 0);
 
     if (supersets) {
       chosen = pairSupersets(chosen);
-      seconds = chosen.reduce((t, p) => t + plannedSeconds(p), 0);
-      // Selected against a looser budget: drop from the end until it fits.
-      while (seconds > budget && chosen.length > 3) {
-        const dropped = chosen.pop()!;
+      // Selected against a looser budget: drop the most recently added until it fits.
+      while (total(chosen) > budget && chosen.length > 3) {
+        const i = lastAdded(chosen);
+        if (i < 0) break;
+        const [dropped] = chosen.splice(i, 1);
         if (dropped.supersetGroup) chosen = unpair(chosen, dropped.supersetGroup);
-        seconds = chosen.reduce((t, p) => t + plannedSeconds(p), 0);
       }
     }
 
     // The 3-exercise minimum can overrun short sessions with long rests: trim sets until it fits.
-    while (seconds > budget) {
+    while (total(chosen) > budget) {
       let i = -1;
       for (let j = 0; j < chosen.length; j++) {
         if (i < 0 || plannedWorkingSets(chosen[j]).length > plannedWorkingSets(chosen[i]).length) i = j;
       }
       if (i < 0 || plannedWorkingSets(chosen[i]).length <= 2) break;
-      const sets = chosen[i].sets;
-      let last = -1;
-      for (let k = sets.length - 1; k >= 0; k--) if (!sets[k].isWarmup) { last = k; break; }
-      if (last < 0) break;
-      chosen[i] = { ...chosen[i], sets: sets.filter((_, k) => k !== last) };
-      seconds = chosen.reduce((t, p) => t + plannedSeconds(p), 0);
+      chosen[i] = withSetRemoved(chosen[i]);
     }
 
+    const minutes = Math.round(total(chosen) / 60);
+    const note = done && minutes < this.plan.sessionMinutes - 10
+      ? `Every muscle today has all the sets that help, so this runs about ${minutes} minutes instead of ${this.plan.sessionMinutes}.`
+      : undefined;
     return {
       focus,
       targetMuscles: [...targets].sort((a, b) => (priority[b] ?? 0) - (priority[a] ?? 0)),
       exercises: chosen,
-      estimatedMinutes: Math.round(seconds / 60),
+      estimatedMinutes: minutes,
       recovery,
+      ...(note ? { note } : {}),
     };
   }
 
@@ -331,7 +486,9 @@ export class Planner {
       .filter((x) => x.id !== e.id && !excluding.has(x.id) && this.isEligible(x) && x.primary.some((m) => e.primary.includes(m)))
       // Don't offer a stretch as a swap for a lift, or the other way round.
       .filter((x) => (x.pattern === 'mobility') === (e.pattern === 'mobility'))
-      .sort((a, b) => match(b) - match(a) || a.name.localeCompare(b.name));
+      .sort((a, b) => match(b) - match(a)
+        || qualityScore(b, this.plan.goal, this.plan.experience, false) - qualityScore(a, this.plan.goal, this.plan.experience, false)
+        || a.name.localeCompare(b.name));
   }
 
   /** Working sets per muscle over the last 7 days (secondary muscles count half). */
@@ -395,64 +552,73 @@ export class Planner {
     return levelRank(e.level) <= levelRank(this.plan.experience) + 1;
   }
 
-  private score(e: Exercise, slot: number, targets: Set<Muscle>, priority: MuscleMap, plannedSets: MuscleMap,
-                hitsPerMuscle: MuscleMap, isolationTargets: Set<string>, usedPatterns: Set<MovementPattern>,
-                recovery: MuscleMap, weekly: MuscleMap, scheme: Scheme, now: number,
-                rng: SeededRandom): [number, string[]] | undefined {
-    const primaryTargets = e.primary.filter((m) => targets.has(m));
-    if (!primaryTargets.length) return undefined;
-    // Don't let one day's focus drag in exercises that mostly hit other muscles.
-    if (primaryTargets.length * 2 < e.primary.length) return undefined;
+  /** The best exercise for slot `i` (spec steps 18–21), or undefined if nothing fits. */
+  private pickFor(slots: Slot[], i: number, picks: Pick[], recovery: MuscleMap, weekly: MuscleMap, scheme: Scheme,
+                  now: number, rng: SeededRandom, exclude: Set<string> = new Set()): { exercise: Exercise; reasons: string[] } | undefined {
+    const slot = slots[i];
+    const goal = this.plan.goal;
+    const strengthGoal = goal === 'getStronger' || goal === 'powerlifting';
+    const key = tierKey(goal, !!slot.main);
+    const taken = new Set(picks.map((p) => p.planned.exercise.id));
+    const avoid = slot.differentFrom !== undefined
+      ? picks.find((p) => p.slot === slot.differentFrom)?.planned.exercise : undefined;
+    const avoidRole = avoid ? qualityOf(avoid).roles[0] : undefined;
+    const heavy = picks.some((p) => qualityOf(p.planned.exercise).fatigue >= 4);
 
-    const remaining = (m: Muscle) => Math.max(0, 1 - (plannedSets[m] ?? 0) / scheme.sessionSetCap);
-    let score = 0;
-    for (const m of primaryTargets) score += (priority[m] ?? 0) * remaining(m);
-    for (const m of e.secondary) if (targets.has(m)) score += 0.3 * (priority[m] ?? 0) * remaining(m);
+    const candidates = this.catalog.filter((e) => {
+      if (taken.has(e.id) || exclude.has(e.id) || e.pattern === 'mobility' || !this.isEligible(e)) return false;
+      const qv = qualityOf(e);
+      return qv.roles.some((r) => slot.roles.includes(r)) && qv.roles[0] !== avoidRole;
+    });
+    // C-tier only when it's all there is for a required slot, or you asked for it.
+    const good = candidates.filter((e) => qualityOf(e).tiers[key] !== 'C' || this.plan.preferences[e.id] === 'more');
+    const pool = good.length ? good : slot.required ? candidates : [];
 
-    if (e.isCompound) score += scheme.compoundBias * (slot < 2 ? 1 : 0.4);
-    else score += slot >= 2 ? 0.2 : -0.3;
-    if (e.pattern !== 'isolation' && e.pattern !== 'core' && usedPatterns.has(e.pattern)) score -= 0.6;
-    if (e.pattern === 'core' && (plannedSets.abs ?? 0) > 0) score -= 0.5;
-    // Spread the session across muscles instead of stacking variations of one.
-    const repeats = Math.max(0, ...e.primary.map((m) => hitsPerMuscle[m] ?? 0));
-    // A second isolation for the same muscle is rarely worth a slot; a second compound often is.
-    const repeatCost = e.isCompound ? 0.3 : e.primary.every((m) => MINOR_MUSCLES.includes(m)) ? 0.8 : 0.5;
-    score -= repeatCost * repeats;
-    // Never two isolations working exactly the same muscles (e.g. two calf raises).
-    if (!e.isCompound && isolationTargets.has(setKey(e.primary))) return undefined;
-    if (levelRank(e.level) > levelRank(this.plan.experience)) score -= 0.3;
-    // Loaded lifts are easier to progress; prefer them when the gym has gear.
-    if (isBodyweight(e) && this.gym.equipment.length && this.plan.goal !== 'reduceBodyweight') score -= 0.5;
+    let best: { exercise: Exercise; score: number } | undefined;
+    for (const e of pool) {
+      const qv = qualityOf(e);
+      let score = qualityScore(e, goal, this.plan.experience, !!slot.main);
+      // Prefer roles in the order the slot lists them (e.g. a long-length curl before any curl).
+      score -= 6 * Math.max(0, slot.roles.indexOf(qv.roles.find((r) => slot.roles.includes(r))!));
+      if (levelRank(e.level) > levelRank(this.plan.experience)) score -= 10;
+      if (e.primary.some((m) => (recovery[m] ?? 1) < 0.4)) score -= 20;
+      // Size goals: one very fatiguing lift per session is plenty.
+      if (!strengthGoal && heavy && qv.fatigue >= 4) score -= 40;
 
-    const reasons: string[] = [];
-    const lead = primaryTargets.reduce((a, b) => ((priority[b] ?? 0) > (priority[a] ?? 0) ? b : a));
-    reasons.push(`${muscleName(lead)} ${Math.round((recovery[lead] ?? 1) * 100)}% recovered · `
-      + `${Math.round(weekly[lead] ?? 0)}/${Math.trunc(scheme.weeklySetTarget)} sets this week`);
+      const pref = this.plan.preferences[e.id];
+      if (pref === 'more') score += 25;
+      else if (pref === 'less') score -= 25;
 
-    if (e.primary.some((m) => (recovery[m] ?? 1) < 0.4)) score -= 0.5;
-
-    const pref = this.plan.preferences[e.id];
-    if (pref === 'more') { score += 0.4; reasons.push('You asked to see this more'); }
-    else if (pref === 'less') score -= 0.4;
-
-    const lastDone = this.history.find((r) => r.exercises.some((x) => x.exerciseID === e.id));
-    const daysSince = lastDone ? (now - lastDone.date) / DAY_MS : undefined;
-    switch (this.plan.variability) {
-      case 'consistent':
-        if (daysSince !== undefined && daysSince < 21) score += 0.4;
-        break;
-      case 'balanced':
-        if (daysSince !== undefined) score += daysSince < 3 ? -0.25 : daysSince < 21 ? 0.15 : 0;
-        break;
-      case 'variable':
-        if (daysSince !== undefined && daysSince < 7) score -= 0.4;
-        else if (daysSince === undefined) score += 0.2;
-        break;
+      const lastDone = this.history.find((r) => r.exercises.some((x) => x.exerciseID === e.id));
+      const daysSince = lastDone ? (now - lastDone.date) / DAY_MS : undefined;
+      // Keep main lifts stable so they can progress.
+      if (slot.main && daysSince !== undefined && daysSince < 21) score += 15;
+      switch (this.plan.variability) {
+        case 'consistent': if (daysSince !== undefined && daysSince < 21) score += 12; break;
+        case 'balanced': if (daysSince !== undefined) score += daysSince < 3 ? -8 : daysSince < 21 ? 5 : 0; break;
+        case 'variable':
+          if (daysSince !== undefined && daysSince < 7) score -= 15;
+          else if (daysSince === undefined) score += 6;
+          break;
+      }
+      const noise = this.plan.variability === 'consistent' ? 2 : this.plan.variability === 'balanced' ? 6 : 12;
+      score += rng.next(-noise, noise);
+      if (score > (best?.score ?? -Infinity)) best = { exercise: e, score };
     }
+    if (!best) return undefined;
 
-    const noise = this.plan.variability === 'consistent' ? 0.05 : this.plan.variability === 'balanced' ? 0.12 : 0.25;
-    score += rng.next(-noise, noise);
-    return [score, reasons];
+    const e = best.exercise;
+    const reasons: string[] = [];
+    const lead = e.primary.includes(slot.muscle) ? slot.muscle : e.primary[0];
+    if (lead) {
+      reasons.push(`${muscleName(lead)} ${Math.round((recovery[lead] ?? 1) * 100)}% recovered · `
+        + `${Math.round(weekly[lead] ?? 0)}/${Math.trunc(scheme.weeklySetTarget)} sets this week`);
+    }
+    if (slot.extra) reasons.push('Time to spare: a muscle today\'s plan doesn\'t otherwise train');
+    else if (slot.main && strengthGoal) reasons.push('Main lift for your strength goal');
+    else if (qualityOf(e).longLength >= 5 && !strengthGoal) reasons.push('Works the muscle in a stretched position, which builds more size');
+    if (this.plan.preferences[e.id] === 'more') reasons.push('You asked to see this more');
+    return { exercise: e, reasons };
   }
 
   // MARK: Prescription
