@@ -5,7 +5,7 @@ import {
   type Need, DAY_MS, focusMuscles, gymBaseLoadKg, provides, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
   straightSets, workingSets,
 } from './models';
-import { type BlockStatus, blockRIR, blockStatus, deloadDates } from './block';
+import { type BlockCheckIns, type BlockStatus, blockRIR, blockStatus, deloadDates } from './block';
 import { qualityOf, qualityScore, tierKey } from './quality';
 import { computeRecovery } from './recovery';
 import { type Slot, templateFor } from './templates';
@@ -313,12 +313,15 @@ export class Planner {
   external: ExternalActivity[];
   overrides: RecoveryOverride[];
   catalog: Exercise[];
+  /** End-of-block check-in answers, which can stretch a block or bring its deload forward. */
+  checkIns?: BlockCheckIns;
 
   constructor(args: {
     plan: UserPlan; gym: Gym; history: WorkoutRecord[]; external?: ExternalActivity[];
-    overrides?: RecoveryOverride[]; catalog?: Exercise[];
+    overrides?: RecoveryOverride[]; catalog?: Exercise[]; checkIns?: BlockCheckIns;
   }) {
     this.plan = args.plan;
+    this.checkIns = args.checkIns;
     this.gym = args.gym;
     this.source = args.history;
     this.history = [...args.history].sort((a, b) => b.date - a.date);
@@ -370,7 +373,7 @@ export class Planner {
     const weekly = this.weeklySetsBy(byID, now);
     const scheme = this.scheme;
     const level = this.plan.experience;
-    const block = blockStatus(this.history, now);
+    const block = blockStatus(this.history, now, this.checkIns);
     // Deload (spec step 34): about 40% fewer sets, same exercises, easy effort.
     const volume = block.isDeload ? 0.6 : 1;
 
@@ -606,7 +609,7 @@ export class Planner {
 
   /** Sets, reps and weight for one exercise (swaps, or adding mid-workout). */
   prescribe(e: Exercise, now = Date.now()): PlannedExercise {
-    return this.asOf(now, () => this.prescribeWith(e, this.scheme, now, [], { block: blockStatus(this.history, now) }));
+    return this.asOf(now, () => this.prescribeWith(e, this.scheme, now, [], { block: blockStatus(this.history, now, this.checkIns) }));
   }
 
   /** Eligible exercises that hit the same primary muscles, closest matches first. */
@@ -799,7 +802,7 @@ export class Planner {
   prescribeWith(e: Exercise, scheme: Scheme, now: number, baseReasons: string[],
                 ctx: { main?: boolean; block?: BlockStatus } = {}): PlannedExercise {
     const reasons = [...baseReasons];
-    const block = ctx.block ?? blockStatus(this.history, now);
+    const block = ctx.block ?? blockStatus(this.history, now, this.checkIns);
     const strengthGoal = this.plan.goal === 'getStronger' || this.plan.goal === 'powerlifting';
     const main = ctx.main ?? (e.isCompound && qualityOf(e).strengthTransfer >= 4);
     const loadFromMax = strengthGoal && main;
@@ -951,7 +954,7 @@ export class Planner {
 
   /** Whether a past workout fell in a deload week. Worked out for the whole history in one pass and cached. */
   wasDeload(date: number): boolean {
-    return deloadDates(this.source).has(date);
+    return deloadDates(this.source, this.checkIns).has(date);
   }
 
   /**

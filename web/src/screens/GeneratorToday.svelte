@@ -4,10 +4,14 @@
   import { templateFromPlanned } from '../lib/templates';
   import { addMobility } from '../lib/mobility';
   import {
-    Catalog, type DayFocus, type Exercise, type ExercisePreference, type PlannedExercise, Programs, estimatedMinutes,
-    isBodyweight, muscleName, plannedWorkingSets,
+    Catalog, type BlockCheckIn, type DayFocus, type Exercise, type ExercisePreference, type PlannedExercise, Programs, blockCheckInDue,
+    blockStatus, estimatedMinutes, isBodyweight, muscleName, plannedWorkingSets,
   } from '../engine';
-  import { ArrowLeftRight, BadgeCheck, BatteryCharging, ChevronRight, Clock, Ellipsis, MapPin, Plus, RefreshCw, SlidersHorizontal, TimerOff, Wand } from '@lucide/svelte';
+  import {
+    ArrowLeftRight, BadgeCheck, BatteryCharging, ChevronRight, Clock, Ellipsis, HeartPulse, MapPin, Plus, RefreshCw, SlidersHorizontal,
+    TimerOff, TrendingUp, Wand,
+  } from '@lucide/svelte';
+  import BlockCheckInSheet from '../components/BlockCheckInSheet.svelte';
   import ActionMenu, { type MenuItem } from '../components/ActionMenu.svelte';
   import ExercisePicker from '../components/ExercisePicker.svelte';
   import ExerciseCard from '../components/ExerciseCard.svelte';
@@ -43,6 +47,23 @@
   const trainedToday = $derived(app.logs[0] && isSameDay(app.logs[0].date, currentTime()) ? app.logs[0] : undefined);
   const chosenMinutes = $derived(today?.minutes ?? profile.plan.sessionMinutes);
   const planner = $derived(app.planner(today?.minutes));
+  /** Where today sits in the block now (the saved plan's copy can predate a check-in). */
+  const block = $derived.by(() => { void clock.today; return blockStatus(app.records, currentTime(), profile.blockCheckIns); });
+  const checkInWeek = $derived(blockCheckInDue(block, profile.blockCheckIns));
+  let checkingIn = $state(false);
+
+  /** Saves a block check-in (or a skip) and rebuilds today's workout, which it can change. */
+  function saveBlockCheckIn(answer: BlockCheckIn) {
+    const week = checkInWeek;
+    if (week === undefined) return;
+    // `block` re-derives once the answer is saved, so keep the one it was answered in.
+    const before = block;
+    app.saveBlockCheckIn(before.startedAt, week, answer);
+    rebuild(today?.focus ?? null, today?.minutes ?? null, today?.seed);
+    if (answer.skipped) return;
+    const after = blockStatus(app.records, currentTime(), app.profile!.blockCheckIns);
+    toasts.show(after.isDeload ? 'Deload starts now' : after.weeks > before.weeks ? `Block extended to ${after.weeks - 1} training weeks` : 'Check-in saved');
+  }
 
   $effect(() => {
     if (saved && today && today !== saved) app.set('todayPlan', $state.snapshot(today));
@@ -209,6 +230,27 @@
       </button>
     {/if}
 
+    {#if checkInWeek !== undefined}
+      <div class="card stack notice" style="--gap:10px">
+        <div class="row sub bold" style="--gap:8px"><HeartPulse size={18} color="var(--ember-2)" /> Week {checkInWeek} check-in</div>
+        <p class="caption muted">Four quick questions near the end of the block. Recovering well stretches it a week; joint pain or two flags bring the deload forward.</p>
+        <div class="row" style="--gap:8px">
+          <button class="btn primary" onclick={() => (checkingIn = true)}>Check in</button>
+          <button class="btn" onclick={() => saveBlockCheckIn({ jointPain: false, stillSore: false, poorSleepOrMotivation: false, stalled: false, answeredAt: Date.now(), skipped: true })}>Skip</button>
+        </div>
+      </div>
+    {/if}
+
+    {#if workout.block?.checkInNote && !workout.block.isDeload}
+      <div class="card tight row" style="align-items:flex-start">
+        <TrendingUp size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
+        <div class="stack grow" style="--gap:6px">
+          <div class="sub bold">{workout.block.checkInNote}</div>
+          <p class="caption muted">This block now runs {workout.block.weeks - 1} training weeks, then a deload.</p>
+        </div>
+      </div>
+    {/if}
+
     {@const blockLabel = workout.block ? (workout.block.isDeload ? ' · Deload week' : ` · Week ${workout.block.week} of ${workout.block.weeks}`) : ''}
     <HeroCard eyebrow={trainedToday ? `Next up${blockLabel}` : `Today · ${goalTitle[profile.plan.goal]}${blockLabel}`} title={dayTitle(workout.focus)}
       stats={[{ value: `${estimate}`, label: 'Minutes' }, { value: `${workout.exercises.length}`, label: 'Exercises' }, { value: `${totalSets}`, label: 'Sets' }]}
@@ -254,7 +296,8 @@
       <div class="card tight row" style="align-items:flex-start">
         <BatteryCharging size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
         <div class="stack grow" style="--gap:6px">
-          <div class="sub bold">Deload week</div>
+          <!-- A check-in that brought the deload forward says so; an extended block's deload is just the deload. -->
+          <div class="sub bold">{workout.block.earlyReason && workout.block.checkInNote ? workout.block.checkInNote : 'Deload week'}</div>
           <p class="caption muted">Fewer sets, lighter weights and easy effort, so you recover and come back stronger.{workout.block.earlyReason ? ` ${workout.block.earlyReason}, so it came early.` : ''} Next week starts block {workout.block.number + 1}.</p>
         </div>
       </div>
@@ -312,6 +355,9 @@
   <SaveTemplateSheet suggested={dayTitle(w.focus)} make={(n) => templateFromPlanned(n, w.exercises)} onclose={() => (savingTemplate = false)} />
 {/if}
 {#if loggingActivity}<ActivitySheet onclose={() => (loggingActivity = false)} />{/if}
+{#if checkingIn && checkInWeek !== undefined}
+  <BlockCheckInSheet {block} week={checkInWeek} onsave={saveBlockCheckIn} onclose={() => (checkingIn = false)} />
+{/if}
 {#if replacing}
   {@const r = replacing}
   <ExercisePicker title="Swap {r.exercise.name}"

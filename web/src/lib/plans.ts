@@ -53,7 +53,21 @@ export function planBasis(p: Profile, activities: { id: string }[] = app.activit
     plan.goal, plan.experience, plan.split, plan.sessionMinutes, plan.variability, plan.warmUpSets, plan.supersets,
     [...plan.injuries].sort().join(','), gym?.id, [...(gym?.equipment ?? [])].sort().join(','), gym?.usesPounds,
     increments.join(','), overrides.join(','), activities.map((a) => a.id).sort().join(','),
+    // Only when there are some, so plans saved before check-ins existed don't all offer a rebuild.
+    ...(checkInBasis(p) ? [checkInBasis(p)] : []),
   ].join('|');
+}
+
+/** Block check-ins as a stable string: they can stretch a block or bring its deload forward. */
+export function checkInBasis(p: Pick<Profile, 'blockCheckIns'>): string {
+  const out: string[] = [];
+  for (const [start, weeks] of Object.entries(p.blockCheckIns ?? {})) {
+    for (const [week, a] of Object.entries(weeks)) {
+      const answers = a.skipped ? 'skip' : [a.jointPain, a.stillSore, a.poorSleepOrMotivation, a.stalled].map(Number).join('');
+      out.push(`${start}/${week}=${answers}@${Math.trunc(a.answeredAt / 1000)}`);
+    }
+  }
+  return out.sort().join(',');
 }
 
 export function buildToday(focus: DayFocus | null, minutes: number | null, seed?: number | null): TodayPlan {
