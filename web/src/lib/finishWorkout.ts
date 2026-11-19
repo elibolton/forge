@@ -22,7 +22,9 @@ export function loggedExercises(state: SessionState): LoggedExercise[] {
     if (!sets.length) continue;
     logged.push({
       exerciseID: ex.exerciseID, sets, targetReps: ex.targetReps, slotID: ex.program?.slotID ?? null,
-      repRange: ex.program?.range ?? null, targetRIR: ex.program ? effortRIR(ex.program.effort)?.low ?? null : null,
+      repRange: ex.program?.range ?? null,
+      // Generated workouts save their target too, so progression can tell a hit from a grind.
+      targetRIR: ex.program ? effortRIR(ex.program.effort)?.low ?? null : ex.targetRIR ?? null,
     });
   }
   return logged;

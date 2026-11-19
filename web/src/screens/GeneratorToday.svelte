@@ -7,7 +7,7 @@
     Catalog, type DayFocus, type Exercise, type ExercisePreference, type PlannedExercise, Programs, estimatedMinutes,
     isBodyweight, plannedWorkingSets,
   } from '../engine';
-  import { ArrowLeftRight, BadgeCheck, ChevronRight, Clock, Ellipsis, MapPin, Plus, RefreshCw, SlidersHorizontal, TimerOff, Wand } from '@lucide/svelte';
+  import { ArrowLeftRight, BadgeCheck, BatteryCharging, ChevronRight, Clock, Ellipsis, MapPin, Plus, RefreshCw, SlidersHorizontal, TimerOff, Wand } from '@lucide/svelte';
   import ActionMenu, { type MenuItem } from '../components/ActionMenu.svelte';
   import ExercisePicker from '../components/ExercisePicker.svelte';
   import ExerciseCard from '../components/ExerciseCard.svelte';
@@ -185,7 +185,8 @@
       </button>
     {/if}
 
-    <HeroCard eyebrow={trainedToday ? 'Next up' : `Today · ${goalTitle[profile.plan.goal]}`} title={dayTitle(workout.focus)}
+    {@const blockLabel = workout.block ? (workout.block.isDeload ? ' · Deload week' : ` · Week ${workout.block.week} of ${workout.block.weeks}`) : ''}
+    <HeroCard eyebrow={trainedToday ? `Next up${blockLabel}` : `Today · ${goalTitle[profile.plan.goal]}${blockLabel}`} title={dayTitle(workout.focus)}
       stats={[{ value: `${estimate}`, label: 'Minutes' }, { value: `${workout.exercises.length}`, label: 'Exercises' }, { value: `${totalSets}`, label: 'Sets' }]}
       startLabel={trainedToday ? 'Start next workout' : 'Start workout'} showStart={!session.isActive} onstart={() => session.start(workout, (st) => addMobility(st, workout.targetMuscles, profile.mobility))}>
       {#snippet controls()}
@@ -206,7 +207,15 @@
       </div>
     {/if}
 
-    {#if chosenMinutes - estimate >= 10 && estimate < chosenMinutes * 0.8}
+    {#if workout.block?.isDeload}
+      <div class="card tight row" style="align-items:flex-start">
+        <BatteryCharging size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
+        <div class="stack grow" style="--gap:6px">
+          <div class="sub bold">Deload week</div>
+          <p class="caption muted">Fewer sets, lighter weights and easy effort, so you recover and come back stronger.{workout.block.earlyReason ? ` ${workout.block.earlyReason}, so it came early.` : ''} Next week starts block {workout.block.number + 1}.</p>
+        </div>
+      </div>
+    {:else if chosenMinutes - estimate >= 10 && estimate < chosenMinutes * 0.8}
       <div class="card tight row" style="align-items:flex-start">
         {#if workout.note}
           <BadgeCheck size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />

@@ -11,3 +11,4 @@ export * from './historyImport';
 export * from './decode';
 export * from './quality';
 export * from './templates';
+export * from './block';
