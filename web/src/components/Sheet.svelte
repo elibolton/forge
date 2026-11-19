@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { portal } from '../lib/portal';
 
   let { title = '', onclose, children, trailing, leading, full = false }: {
     title?: string; onclose: () => void; children: Snippet; trailing?: Snippet; leading?: Snippet; full?: boolean;
@@ -80,8 +81,8 @@
   });
 </script>
 
-<div class="scrim" onclick={onclose} role="presentation" bind:this={scrim}></div>
-<div class="sheet" class:full role="dialog" aria-modal="true" aria-label={title} tabindex="-1" bind:this={panel}>
+<div class="scrim" use:portal onclick={onclose} role="presentation" bind:this={scrim}></div>
+<div class="sheet" use:portal class:full role="dialog" aria-modal="true" aria-label={title} tabindex="-1" bind:this={panel}>
   <div class="grabber" aria-hidden="true"></div>
   <header class="topbar">
     <div class="side">

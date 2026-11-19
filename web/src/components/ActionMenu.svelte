@@ -12,6 +12,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { Check } from '@lucide/svelte';
+  import { portal } from '../lib/portal';
 
   let { items, label, children, class: cls = 'icon-btn plain' }: {
     items: MenuItem[]; label: string; children: Snippet; class?: string;
@@ -38,8 +39,8 @@
 </button>
 
 {#if open}
-  <div class="scrim" onclick={() => (open = false)} role="presentation"></div>
-  <div class="menu" role="menu" aria-label={label} bind:this={list}>
+  <div class="scrim" use:portal onclick={() => (open = false)} role="presentation"></div>
+  <div class="menu" use:portal role="menu" aria-label={label} bind:this={list}>
     {#each items as item, i (i)}
       {#if item.section}<div class="section-head">{item.section}</div>{/if}
       <button role="menuitem" class:danger={item.danger} onclick={() => pick(item)}>
