@@ -5,6 +5,7 @@ import {
   DAY_MS, focusMuscles, gymBaseLoadKg, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
   straightSets, workingSets,
 } from './models';
+import { type BlockStatus, blockRIR, blockStatus } from './block';
 import { qualityOf, qualityScore, tierKey } from './quality';
 import { computeRecovery } from './recovery';
 import { type Slot, templateFor } from './templates';
@@ -43,6 +44,8 @@ export interface PlannedWorkout {
   recovery: MuscleMap;
   /** Shown with the plan, e.g. why it's shorter than the time you set. */
   note?: string;
+  /** Where this workout sits in the current training block. */
+  block?: BlockStatus;
 }
 
 // MARK: - Goal schemes
@@ -258,6 +261,13 @@ function withSetRemoved(p: PlannedExercise): PlannedExercise {
   return { ...p, sets: sets.filter((_, k) => k !== drop) };
 }
 
+/** Whether an accessory makes way for another at the start of block `n` (about one in four). */
+function rotates(id: string, n: number): boolean {
+  let h = n * 2654435761;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 4) === 0;
+}
+
 /** An exercise picked for a slot, in the order it was added. */
 interface Pick { slot: number; planned: PlannedExercise; order: number }
 
@@ -306,6 +316,9 @@ export class Planner {
     const weekly = this.weeklySetsBy(byID, now);
     const scheme = this.scheme;
     const level = this.plan.experience;
+    const block = blockStatus(this.history, now);
+    // Deload (spec step 34): about 40% fewer sets, same exercises, easy effort.
+    const volume = block.isDeload ? 0.6 : 1;
 
     // Per-muscle budgets (spec steps 8–11). Base: half the weekly target, more if the week is behind.
     const base: MuscleMap = {}, soft: MuscleMap = {}, priority: MuscleMap = {};
@@ -315,8 +328,8 @@ export class Planner {
       const target = scheme.weeklySetTarget * size;
       const behind = Math.max(target / 2, target - (weekly[m] ?? 0));
       const fresh = (recovery[m] ?? 1) >= 0.4 ? 1 : 0.5;
-      soft[m] = scheme.sessionSoftCap * size * fresh;
-      base[m] = Math.min(soft[m], Math.max(scheme.sessionMin, Math.ceil(behind)) * fresh);
+      soft[m] = scheme.sessionSoftCap * size * fresh * volume;
+      base[m] = Math.min(soft[m], Math.max(scheme.sessionMin, Math.ceil(behind * volume)) * fresh);
       const deficit = Math.max(0, 1 - (weekly[m] ?? 0) / target);
       priority[m] = (recovery[m] ?? 1) * (0.5 + deficit) * size;
     }
@@ -338,13 +351,14 @@ export class Planner {
       return t;
     };
     const seconds = () => picks.reduce((t, p) => t + plannedSeconds(p.planned), 0);
-    const maxSets = (p: Pick) => scheme.maxSetsPerExercise - (slots[p.slot].main ? 0 : scheme.maxSetsPerExercise > 4 ? 1 : 0);
+    const maxSets = (p: Pick) => block.isDeload ? 3
+      : scheme.maxSetsPerExercise - (slots[p.slot].main ? 0 : scheme.maxSetsPerExercise > 4 ? 1 : 0);
     const countFor = (m: Muscle) => picks.filter((p) => p.planned.exercise.primary.includes(m)).length;
 
     const fill = (i: number, exclude: Set<string> = new Set()): PlannedExercise | undefined => {
-      const choice = this.pickFor(slots, i, picks, recovery, weekly, scheme, now, rng, exclude);
+      const choice = this.pickFor(slots, i, picks, recovery, weekly, scheme, now, rng, block, exclude);
       if (!choice) { filled.add(i); return undefined; }
-      return this.prescribeWith(choice.exercise, scheme, now, choice.reasons);
+      return this.prescribeWith(choice.exercise, scheme, now, choice.reasons, { main: !!slots[i].main, block });
     };
     /** Whether a muscle couldn't grow because the session ran out of time (not out of options). */
     let outOfTime = false;
@@ -416,9 +430,9 @@ export class Planner {
     // Done: every muscle reached its cap or has nothing useful left to add (not merely out of time).
     const done = !outOfTime;
 
-    // 3. Time left over: muscles the day doesn't otherwise train.
+    // 3. Time left over: muscles the day doesn't otherwise train (not on a deload).
     // Skip an extra that would push a muscle past the hard ceiling.
-    if (done) {
+    if (done && !block.isDeload) {
       slots.forEach((s, i) => {
         if (!s.extra || filled.has(i)) return;
         const before = picks.length;
@@ -461,15 +475,18 @@ export class Planner {
     }
 
     const minutes = Math.round(total(chosen) / 60);
-    const note = done && minutes < this.plan.sessionMinutes - 10
-      ? `Every muscle today has all the sets that help, so this runs about ${minutes} minutes instead of ${this.plan.sessionMinutes}.`
-      : undefined;
+    const note = block.isDeload
+      ? `Deload week: fewer sets and easier effort so you recover. ${block.earlyReason ? `${block.earlyReason}, so it came early. ` : ''}Next week starts a new block.`
+      : done && minutes < this.plan.sessionMinutes - 10
+        ? `Every muscle today has all the sets that help, so this runs about ${minutes} minutes instead of ${this.plan.sessionMinutes}.`
+        : undefined;
     return {
       focus,
       targetMuscles: [...targets].sort((a, b) => (priority[b] ?? 0) - (priority[a] ?? 0)),
       exercises: chosen,
       estimatedMinutes: minutes,
       recovery,
+      block,
       ...(note ? { note } : {}),
     };
   }
@@ -478,7 +495,7 @@ export class Planner {
 
   /** Sets, reps and weight for one exercise (swaps, or adding mid-workout). */
   prescribe(e: Exercise, now = Date.now()): PlannedExercise {
-    return this.prescribeWith(e, this.scheme, now, []);
+    return this.prescribeWith(e, this.scheme, now, [], { block: blockStatus(this.history, now) });
   }
 
   /** Eligible exercises that hit the same primary muscles, closest matches first. */
@@ -557,7 +574,8 @@ export class Planner {
 
   /** The best exercise for slot `i` (spec steps 18–21), or undefined if nothing fits. */
   private pickFor(slots: Slot[], i: number, picks: Pick[], recovery: MuscleMap, weekly: MuscleMap, scheme: Scheme,
-                  now: number, rng: SeededRandom, exclude: Set<string> = new Set()): { exercise: Exercise; reasons: string[] } | undefined {
+                  now: number, rng: SeededRandom, block: BlockStatus,
+                  exclude: Set<string> = new Set()): { exercise: Exercise; reasons: string[] } | undefined {
     const slot = slots[i];
     const goal = this.plan.goal;
     const strengthGoal = goal === 'getStronger' || goal === 'powerlifting';
@@ -594,11 +612,19 @@ export class Planner {
 
       const lastDone = this.history.find((r) => r.exercises.some((x) => x.exerciseID === e.id));
       const daysSince = lastDone ? (now - lastDone.date) / DAY_MS : undefined;
-      // Keep main lifts stable so they can progress.
-      if (slot.main && daysSince !== undefined && daysSince < 21) score += 15;
+      // Spec step 35: keep exercises steady within a block so they can progress, and rotate some
+      // accessories when a new block starts. Main lifts stay put whatever your variety setting.
+      const inBlock = !!lastDone && lastDone.date >= block.startedAt;
+      const lastBlock = !inBlock && daysSince !== undefined && daysSince < 56;
+      if (slot.main && (inBlock || lastBlock)) score += 30;
       switch (this.plan.variability) {
-        case 'consistent': if (daysSince !== undefined && daysSince < 21) score += 12; break;
-        case 'balanced': if (daysSince !== undefined) score += daysSince < 3 ? -8 : daysSince < 21 ? 5 : 0; break;
+        case 'consistent': if (inBlock || lastBlock) score += 25; break;
+        case 'balanced':
+          if (inBlock) score += 20;
+          // About a quarter of last block's accessories make way for something new.
+          else if (lastBlock && !slot.main && rotates(e.id, block.number)) score -= 25;
+          else if (lastBlock) score += 10;
+          break;
         case 'variable':
           if (daysSince !== undefined && daysSince < 7) score -= 15;
           else if (daysSince === undefined) score += 6;
@@ -621,74 +647,135 @@ export class Planner {
     else if (slot.main && strengthGoal) reasons.push('Main lift for your strength goal');
     else if (qualityOf(e).longLength >= 5 && !strengthGoal) reasons.push('Works the muscle in a stretched position, which builds more size');
     if (this.plan.preferences[e.id] === 'more') reasons.push('You asked to see this more');
+    const usedBefore = this.history.some((r) => r.date < block.startedAt && r.exercises.some((x) => x.exerciseID === e.id));
+    const usedInBlock = this.history.some((r) => r.date >= block.startedAt && r.exercises.some((x) => x.exerciseID === e.id));
+    if (!usedInBlock && !usedBefore && this.history.length && block.week === 1 && !slot.main
+        && this.plan.variability === 'balanced') reasons.push('New block: a fresh exercise for this muscle');
     return { exercise: e, reasons };
   }
 
   // MARK: Prescription
 
-  prescribeWith(e: Exercise, scheme: Scheme, now: number, baseReasons: string[]): PlannedExercise {
+  /**
+   * Sets, reps, load and effort for one exercise (spec steps 29–32):
+   * - Effort follows the training block: reps in reserve drop week by week, and deloads stay easy.
+   * - Main lifts for strength goals load from your estimated max, waving heavy → medium → light across
+   *   sessions (beginners stay heavy and add weight each time).
+   * - Everything else uses double progression: same weight until every set reaches the top of the rep
+   *   range, then add one step and start again at the bottom.
+   */
+  prescribeWith(e: Exercise, scheme: Scheme, now: number, baseReasons: string[],
+                ctx: { main?: boolean; block?: BlockStatus } = {}): PlannedExercise {
     const reasons = [...baseReasons];
+    const block = ctx.block ?? blockStatus(this.history, now);
+    const strengthGoal = this.plan.goal === 'getStronger' || this.plan.goal === 'powerlifting';
+    const main = ctx.main ?? (e.isCompound && qualityOf(e).strengthTransfer >= 4);
+    const loadFromMax = strengthGoal && main;
+    const rir = blockRIR(this.plan.goal, this.plan.experience, block, e.isCompound);
     const past: LoggedExercise[] = [];
+    /** Sessions outside deload weeks: a deload's lighter loads aren't something to progress from. */
+    const training: LoggedExercise[] = [];
     for (const r of this.history) {
       const l = r.exercises.find((x) => x.exerciseID === e.id);
-      if (l) past.push(l);
+      if (!l) continue;
+      past.push(l);
+      if (!this.wasDeload(r.date)) training.push(l);
     }
     const sessions = past.length;
     const range = e.isCompound ? scheme.compoundReps : scheme.isolationReps;
-    // Undulate heavy → medium → light across sessions of the same exercise.
-    const wave = [0, 0.5, 1][sessions % 3];
-    let reps = range[0] + Math.round((range[1] - range[0]) * wave);
-    const setCount = scheme.sets + (e.isCompound ? scheme.compoundExtraSets : 0);
+    let reps = range[0];
+    const fullSets = scheme.sets + (e.isCompound ? scheme.compoundExtraSets : 0);
+    const setCount = block.isDeload ? Math.max(2, Math.round(fullSets * 0.6)) : fullSets;
     const rest = e.isCompound ? scheme.restCompound : scheme.restIsolation;
-    const maxEffort = e.isCompound && !e.isTimed && sessions > 0 && (sessions + 1) % 6 === 0;
+    const maxEffort = loadFromMax && !block.isDeload && !e.isTimed && sessions > 0 && (sessions + 1) % 6 === 0;
     if (maxEffort) reasons.push('Max effort: go to failure on the last set');
+    if (block.isDeload) reasons.push('Deload: lighter and easier, stop well short of failure');
 
     if (e.isTimed) {
       const best = bestReps(e.id, this.history, now);
-      const seconds = best !== undefined ? Math.min(best + 5, 120) : 30;
+      const seconds = best !== undefined ? Math.min(best + (block.isDeload ? -5 : 5), 120) : 30;
       // Loaded holds and carries: reuse the last weight, else a moderate share of the starter 1RM.
       const lastWeights = past[0] ? workingSets(past[0]).map((s) => s.weight) : [];
       const lastWeight = lastWeights.length ? Math.max(...lastWeights) : undefined;
       const weight = isBodyweight(e) ? null : this.round(lastWeight ?? this.startingOneRM(e, now) * 0.6, e);
       const n = Math.max(2, setCount - 1);
-      const sets = Array.from({ length: n }, () => ({ weight, reps: seconds, isWarmup: false, isAMRAP: false }));
-      return { exercise: e, sets, restSeconds: 60, targetRIR: scheme.rir, reasons };
+      const sets = Array.from({ length: n }, () => ({ weight, reps: Math.max(10, seconds), isWarmup: false, isAMRAP: false }));
+      return { exercise: e, sets, restSeconds: 60, targetRIR: rir, reasons };
     }
 
     let weight: number | null = null;
+    const lastDate = this.history.find((r) => r.exercises.some((x) => x.exerciseID === e.id))?.date;
+    const away = lastDate !== undefined && now - lastDate > 14 * DAY_MS;
     if (isBodyweight(e)) {
       const best = bestReps(e.id, this.history, now);
       if (best !== undefined) {
-        reps = Math.min(best + 1, 30);
+        reps = block.isDeload ? Math.max(5, Math.round(best * 0.7)) : Math.min(best + 1, 30);
         reasons.push(`Best set lately: ${best} reps`);
       } else {
         reps = Math.max(range[0], 8);
       }
-    } else {
+    } else if (loadFromMax) {
+      // Daily undulation for trained lifters; beginners progress the same rep target every session.
+      const wave = this.plan.experience === 'beginner' ? 0 : [0, 0.5, 1][sessions % 3];
+      reps = range[0] + Math.round((range[1] - range[0]) * wave);
       let oneRM: number;
       const known = estimatedOneRM(e.id, this.history, now);
       if (known !== undefined) {
         oneRM = known;
-        const last = past[0];
+        const last = training[0];
         const target = last?.targetReps;
-        if (last && target != null && straightSets(last).length) {
-          const hit = straightSets(last).every((s) => s.reps >= target && (s.rir ?? scheme.rir) >= scheme.rir);
+        if (last && target != null && straightSets(last).length && !block.isDeload) {
+          const hit = straightSets(last).every((s) => s.reps >= target && (s.rir ?? 0) >= (last.targetRIR ?? 0));
           const missed = (l: LoggedExercise) => straightSets(l).some((s) => s.reps < target - 1);
           if (hit) {
             oneRM += this.progressionBump(e);
             reasons.push('Hit every rep last time, adding weight');
-          } else if (past.length >= 2 && missed(past[0]) && missed(past[1])) {
+          } else if (training.length >= 2 && missed(training[0]) && missed(training[1])) {
             oneRM *= 0.95;
             reasons.push('Missed reps twice, backing off 5%');
           }
         }
-        const lastDate = this.history.find((r) => r.exercises.some((x) => x.exerciseID === e.id))?.date;
-        if (lastDate !== undefined && now - lastDate > 14 * DAY_MS) reasons.push('Easing back in after time off');
+        if (away) reasons.push('Easing back in after time off');
       } else {
         oneRM = this.startingOneRM(e, now);
         reasons.push('New exercise: starting light, adjust to feel');
       }
-      weight = this.round(weightForReps(reps, scheme.rir, oneRM), e);
+      weight = this.round(weightForReps(reps, rir, oneRM), e);
+    } else {
+      const last = training[0];
+      const working = last ? straightSets(last).filter((s) => s.weight > 0) : [];
+      if (!working.length || away) {
+        const known = estimatedOneRM(e.id, this.history, now);
+        weight = this.round(weightForReps(reps, rir, known ?? this.startingOneRM(e, now)), e);
+        reasons.push(known === undefined ? 'New exercise: starting light, adjust to feel'
+          : away ? 'Easing back in after time off' : 'From your recent sets');
+      } else {
+        const lastLoad = Math.max(...working.map((s) => s.weight));
+        const minReps = Math.min(...working.map((s) => s.reps));
+        const step = this.progressionStep(e);
+        const missed = (l: LoggedExercise) => straightSets(l).some((s) => s.weight >= lastLoad - 0.01 && s.reps < range[0]);
+        if (block.isDeload) {
+          weight = this.round(lastLoad * 0.9, e);
+        } else if (training.length >= 2 && missed(training[0]) && missed(training[1])) {
+          weight = this.round(lastLoad * 0.95, e);
+          reasons.push('Missed reps twice, backing off 5%');
+        } else if (minReps >= range[1]) {
+          // A step over ~7.5% of the load (light dumbbells, cable pins) is too big: add reps first.
+          const extendedTop = range[1] + 3;
+          if (step > lastLoad * 0.075 && minReps < extendedTop) {
+            weight = lastLoad;
+            reps = extendedTop;
+            reasons.push(`The next weight is a big jump: build to ${extendedTop} reps first`);
+          } else {
+            weight = this.round(lastLoad + step, e);
+            reasons.push('Hit the top of the range on every set, adding weight');
+          }
+        } else {
+          weight = lastLoad;
+          reps = Math.min(range[1], Math.max(range[0], minReps + 1));
+          reasons.push(`Same weight: aim for ${reps} reps on every set`);
+        }
+      }
     }
 
     const sets: PlannedSet[] = [];
@@ -696,7 +783,27 @@ export class Planner {
     for (let i = 0; i < setCount; i++) {
       sets.push({ weight, reps, isWarmup: false, isAMRAP: maxEffort && i === setCount - 1 });
     }
-    return { exercise: e, sets, restSeconds: rest, targetRIR: scheme.rir, reasons };
+    return { exercise: e, sets, restSeconds: rest, targetRIR: rir, reasons };
+  }
+
+  private deloadDays = new Map<number, boolean>();
+
+  /** Whether a past workout fell in a deload week (cached; history doesn't change during a Planner's life). */
+  wasDeload(date: number): boolean {
+    let v = this.deloadDays.get(date);
+    if (v === undefined) {
+      v = blockStatus(this.history, date).isDeload;
+      this.deloadDays.set(date, v);
+    }
+    return v;
+  }
+
+  /** One loadable step for double progression; lower-body barbell lifts take two (5 kg / 10 lb). */
+  progressionStep(e: Exercise): number {
+    const eq = loadEquipment(e);
+    if (!eq) return 0;
+    const lower = ['squat', 'hinge', 'lunge'].includes(e.pattern) && (eq === 'barbell' || eq === 'trapBar');
+    return gymIncrementKg(this.gym, eq) * (lower ? 2 : 1);
   }
 
   progressionBump(e: Exercise): number {

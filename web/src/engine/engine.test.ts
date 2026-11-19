@@ -126,12 +126,21 @@ describe('Planner', () => {
     expect(a).toEqual(b);
   });
 
-  test('adds weight after hitting reps', () => {
-    const p = planner(defaultPlan(), Gyms.commercial(), [{ date: daysAgo(3), focus: 'push', exercises: [session('bb-bench', 80, 8, 3, 2, 8)] }]);
-    const next = p.prescribeWith(byID('bb-bench'), makeScheme('buildMuscle', 'intermediate'), now, []);
-    const first = plannedWorkingSets(next)[0];
-    const sameReps = weightForReps(first.reps, 2, oneRM(80, 8, 2));
-    expect(first.weight!).toBeGreaterThan(roundLoad(sameReps, 2.5, 20) - 0.01);
+  test('double progression: adds reps, then weight at the top of the range', () => {
+    const at = (reps: number) => planner(defaultPlan(), Gyms.commercial(), [{ date: daysAgo(3), focus: 'push', exercises: [session('bb-bench', 80, reps, 3, 2, reps)] }])
+      .prescribeWith(byID('bb-bench'), makeScheme('buildMuscle', 'intermediate'), now, []);
+    const short = at(8);
+    expect(plannedWorkingSets(short)[0].weight).toBe(80);
+    expect(plannedWorkingSets(short)[0].reps).toBe(9);
+    const top = at(10);
+    expect(plannedWorkingSets(top)[0].weight).toBe(82.5);
+    expect(plannedWorkingSets(top)[0].reps).toBe(6);
+    expect(top.reasons.some((r) => r.includes('adding weight'))).toBe(true);
+  });
+
+  test('strength main lifts add weight from the estimated max after hitting reps', () => {
+    const p = planner(defaultPlan({ goal: 'getStronger' }), Gyms.commercial(), [{ date: daysAgo(3), focus: 'push', exercises: [session('bb-bench', 80, 5, 3, 2, 5)] }]);
+    const next = p.prescribe(byID('bb-bench'), now);
     expect(next.reasons.some((r) => r.includes('adding weight'))).toBe(true);
   });
 
