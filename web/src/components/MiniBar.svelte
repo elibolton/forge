@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ChevronUp } from '@lucide/svelte';
-  import { exerciseOf, session } from '../lib/session.svelte';
+  import { exerciseOf, numberedSets, session } from '../lib/session.svelte';
   import { minSec } from '../lib/units';
   import ExerciseThumb from './ExerciseThumb.svelte';
 
@@ -15,7 +15,7 @@
     if (resting) return `Resting · ${minSec(Math.ceil((session.restEndsAt! - now) / 1000))}`;
     const elapsed = minSec((now - ws.startedAt) / 1000);
     if (!current) return elapsed;
-    const working = current.sets.filter((s) => !s.isWarmup);
+    const working = numberedSets(current.sets);
     const next = Math.min(working.filter((s) => s.done).length + 1, working.length);
     return `Set ${next} of ${working.length} · ${elapsed}`;
   });

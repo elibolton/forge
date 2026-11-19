@@ -1,5 +1,5 @@
 // Display names for engine enums.
-import type { DayFocus, Equipment, ExercisePreference, Goal, Joint, Level, Split, Variability } from '../engine';
+import type { DayFocus, Equipment, ExercisePreference, Goal, Joint, Level, LoggedSet, Split, Variability } from '../engine';
 
 export const goalTitle: Record<Goal, string> = {
   buildMuscle: 'Build Muscle', getLean: 'Get Lean', getStronger: 'Get Stronger',
@@ -57,3 +57,9 @@ export const jointTitle = (j: Joint) => (j === 'lowerBack' ? 'Lower Back' : j.ch
 export const preferenceTitle: Record<ExercisePreference, string> = {
   more: 'Recommend More', less: 'Recommend Less', exclude: 'Never Recommend',
 };
+
+/** Badges for a logged exercise's sets: W for warm-ups, D for drop sets, and numbers for the rest. */
+export function setLabels(sets: Pick<LoggedSet, 'isWarmup' | 'type'>[]): string[] {
+  let n = 0;
+  return sets.map((s) => (s.isWarmup ? 'W' : s.type === 'drop' ? 'D' : String(++n)));
+}

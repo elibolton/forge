@@ -11,7 +11,7 @@
   import RatePrompt from '../components/RatePrompt.svelte';
   import Sheet from '../components/Sheet.svelte';
   import { dayTitle } from '../lib/labels';
-  import { type SessionExercise, exerciseOf, isComplete, session, supersetOf } from '../lib/session.svelte';
+  import { type SessionExercise, exerciseOf, isComplete, numberedSets, session, supersetOf } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { minSec } from '../lib/units';
@@ -173,7 +173,7 @@
         {@const g = supersetOf(current)}
         {@const m = g ? members(ws, g) : []}
         {@const step = nextInRound(ws, index)}
-        {@const working = (x: typeof current) => x.sets.filter((s) => !s.isWarmup)}
+        {@const working = (x: typeof current) => numberedSets(x.sets)}
         {@const rounds = Math.max(...m.map((i) => working(ws.exercises[i]).length), 0)}
         <ExercisePage exercise={current} nextName={ws.exercises[index + 1] ? exerciseOf(ws.exercises[index + 1]).name : undefined}
           onswap={() => (swapping = true)}

@@ -17,6 +17,7 @@ export function loggedExercises(state: SessionState): LoggedExercise[] {
     const eccentric = ex.program?.effort.type === 'eccentricOnly';
     const sets = ex.sets.filter((s) => s.done).map((s) => ({
       weight: s.weight ?? 0, reps: s.reps, rir: s.isWarmup || eccentric ? null : (s.rir ?? ex.rir), isWarmup: s.isWarmup, side: s.side ?? null,
+      ...(s.type && !s.isWarmup ? { type: s.type } : {}),
     }));
     if (!sets.length) continue;
     logged.push({

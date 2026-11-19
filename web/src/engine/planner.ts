@@ -3,7 +3,7 @@ import {
   type DayFocus, type Exercise, type ExternalActivity, type Goal, type Gym, type Level, type LoggedExercise,
   type MovementPattern, type Muscle, type MuscleMap, type RecoveryOverride, type UserPlan, type WorkoutRecord,
   DAY_MS, focusMuscles, gymBaseLoadKg, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
-  workingSets,
+  straightSets, workingSets,
 } from './models';
 import { computeRecovery } from './recovery';
 import { bestReps, estimatedOneRM, oneRM as epley, weightForReps } from './strength';
@@ -502,9 +502,9 @@ export class Planner {
         oneRM = known;
         const last = past[0];
         const target = last?.targetReps;
-        if (last && target != null && workingSets(last).length) {
-          const hit = workingSets(last).every((s) => s.reps >= target && (s.rir ?? scheme.rir) >= scheme.rir);
-          const missed = (l: LoggedExercise) => workingSets(l).some((s) => s.reps < target - 1);
+        if (last && target != null && straightSets(last).length) {
+          const hit = straightSets(last).every((s) => s.reps >= target && (s.rir ?? scheme.rir) >= scheme.rir);
+          const missed = (l: LoggedExercise) => straightSets(l).some((s) => s.reps < target - 1);
           if (hit) {
             oneRM += this.progressionBump(e);
             reasons.push('Hit every rep last time, adding weight');

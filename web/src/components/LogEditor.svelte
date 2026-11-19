@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { setLabels } from '../lib/labels';
   import { Catalog, type Exercise, type LoggedExercise, type LoggedSet, isBodyweight, plannedWorkingSets, uuid } from '../engine';
   import { Plus, Trash2 } from '@lucide/svelte';
   import { type WorkoutLog, app } from '../lib/store.svelte';
@@ -32,9 +33,7 @@
   const hasChanges = $derived(newDate !== original.date || JSON.stringify(edited) !== JSON.stringify(original.exercises));
 
   function label(x: DraftExercise, id: string) {
-    const s = x.sets.find((y) => y.id === id)!;
-    if (s.set.isWarmup) return 'W';
-    return `${x.sets.filter((y) => !y.set.isWarmup).findIndex((y) => y.id === id) + 1}`;
+    return setLabels(x.sets.map((y) => y.set))[x.sets.findIndex((y) => y.id === id)];
   }
 
   function addSet(x: DraftExercise) {
@@ -101,7 +100,18 @@
                 <ValueStepper title={e.isTimed ? 'Time' : 'Reps'} value={s.set.reps} step={e.isTimed ? 5 : 1} unit={e.isTimed ? 'sec' : 'reps'} decimals={false}
                   onchange={(v) => (s.set.reps = Math.max(0, Math.round(v)))} />
               </div>
-              {#if !s.set.isWarmup && !e.isTimed}
+              {#if !s.set.isWarmup}
+                <div class="stack" style="--gap:6px">
+                  <span class="kicker muted">SET TYPE</span>
+                  <div class="segmented" role="radiogroup" aria-label="Set type">
+                    {#each [[null, 'Straight'], ['drop', 'Drop'], ['failure', 'Failure']] as const as [t, name] (name)}
+                      <button role="radio" aria-checked={(s.set.type ?? null) === t} class:on={(s.set.type ?? null) === t}
+                        onclick={() => { if (t) s.set.type = t; else delete s.set.type; if (t === 'failure') s.set.rir = 0; }}>{name}</button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+              {#if !s.set.isWarmup && !e.isTimed && s.set.type !== 'failure'}
                 <div class="stack" style="--gap:6px">
                   <span class="kicker muted">REPS IN RESERVE</span>
                   <div class="segmented" role="radiogroup" aria-label="Reps in reserve">

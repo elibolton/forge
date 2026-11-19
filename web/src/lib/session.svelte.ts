@@ -1,6 +1,6 @@
 import {
   Catalog, type DayFocus, type Effort, type Exercise, type Laterality, type PlannedExercise, type PlannedWorkout, type Planner,
-  type ProgramRef, type RepRange, type Side, plannedWorkingSets, uuid, isPerSide,
+  type ProgramRef, type RepRange, type SetType, type Side, plannedWorkingSets, uuid, isPerSide,
 } from '../engine';
 import { db } from './db';
 import { saving } from './saving.svelte';
@@ -22,7 +22,18 @@ export interface SessionSet {
   side?: Side | null;
   /** Reps left in reserve, rated after the set; null or absent when not rated. */
   rir?: number | null;
+  /** Drop or failure set; absent for a straight set. */
+  type?: SetType | null;
 }
+
+/** Sets that get a number: drop sets belong to the set before them. */
+/** The straight or failure set a drop set at index `i` came from. */
+export function parentOf(sets: SessionSet[], i: number): SessionSet | undefined {
+  for (let j = i - 1; j >= 0; j--) if (!sets[j].isWarmup && sets[j].type !== 'drop') return sets[j];
+  return undefined;
+}
+
+export const numberedSets = (sets: SessionSet[]) => sets.filter((s) => !s.isWarmup && s.type !== 'drop');
 
 /** The program prescription behind a session exercise. */
 export interface ProgramSlotInfo {
@@ -315,6 +326,30 @@ class WorkoutSession {
     this.updateExercise(exerciseID, (e) => { const set = e.sets.find((x) => x.id === setID); if (set) set.done = done; });
   }
 
+  /** Makes a working set a drop or failure set, or a straight set again with null. */
+  setType(exerciseID: string, setID: string, type: SetType | null) {
+    this.updateExercise(exerciseID, (e) => {
+      const set = e.sets.find((x) => x.id === setID);
+      if (!set || set.isWarmup) return;
+      if (type) set.type = type; else delete set.type;
+      if (type === 'failure' && set.done) set.rir = 0;
+    });
+  }
+
+  /**
+   * Adds a drop set after set `afterID` (and any drops already after it), at `weight` kg and the same
+   * reps. Logging the set before it then goes straight on to it with no rest.
+   */
+  addDropSet(exerciseID: string, afterID: string, weight: number | null) {
+    this.updateExercise(exerciseID, (e) => {
+      let i = e.sets.findIndex((x) => x.id === afterID);
+      if (i < 0 || e.sets[i].isWarmup) return;
+      const reps = e.sets[i].reps;
+      while (e.sets[i + 1]?.type === 'drop') i++;
+      e.sets.splice(i + 1, 0, newSet(weight, reps, { type: 'drop', side: e.sets[i].side ?? null }));
+    });
+  }
+
   removeSet(exerciseID: string, setID: string) {
     this.updateExercise(exerciseID, (e) => { e.sets = e.sets.filter((x) => x.id !== setID); });
   }
@@ -322,8 +357,8 @@ class WorkoutSession {
   /** Adds a working set like the last one; per-side work gets a left and a right. */
   addSet(exerciseID: string) {
     this.updateExercise(exerciseID, (e) => {
-      const working = e.sets.filter((x) => !x.isWarmup);
-      const last = working[working.length - 1];
+      const straight = numberedSets(e.sets);
+      const last = straight[straight.length - 1];
       const weight = last?.weight ?? null, reps = last?.reps ?? 10;
       if (e.program && isPerSide(e.program.laterality)) {
         e.sets.push(newSet(weight, reps, { side: 'left' }), newSet(weight, reps, { side: 'right' }));
@@ -346,21 +381,33 @@ class WorkoutSession {
 
     this.update((s) => {
       const e = s.exercises[ei];
-      e.sets[si].done = true;
-      if (!e.sets[si].isWarmup) {
+      const logged = e.sets[si];
+      logged.done = true;
+      // To failure means nothing left in reserve.
+      if (logged.type === 'failure' && logged.rir == null) logged.rir = 0;
+      // The weight carries on to the straight sets still to do; drop sets keep their lighter weight.
+      if (!logged.isWarmup && logged.type !== 'drop') {
         for (let j = si + 1; j < e.sets.length; j++) {
-          if (!e.sets[j].isWarmup && !e.sets[j].done) e.sets[j].weight = e.sets[si].weight;
+          if (!e.sets[j].isWarmup && !e.sets[j].done && e.sets[j].type !== 'drop') e.sets[j].weight = logged.weight;
         }
       }
     });
     const after = this.state!.exercises[ei];
     const set = after.sets[si];
     if (wasDone || set.isWarmup) return;
+    const dropNext = after.sets[si + 1];
+    if (dropNext && dropNext.type === 'drop' && !dropNext.done) {
+      // Straight on to the drop set: no rest, same exercise. Rate the set once the drops are done.
+      this.pendingRating = null;
+      return;
+    }
     const info = after.program;
     const group = supersetOf(after);
     const firstSide = !!info && isPerSide(info.laterality) && set.side === 'left' && after.sets.some((x) => x.side === 'right' && !x.done && !x.isWarmup);
     // Ask once per round: after the right side when per-side.
-    this.pendingRating = !firstSide && isRated(after) ? { exerciseID: after.id, setID: set.id } : null;
+    // A failure set is already rated (0 left); a drop set is rated with the set it came from.
+    const rate = set.type === 'drop' ? parentOf(after.sets, si) : set;
+    this.pendingRating = !firstSide && isRated(after) && rate && rate.type !== 'failure' ? { exerciseID: after.id, setID: rate.id } : null;
     if (firstSide) {
       // First side of a per-side set: short (or no) rest, then the other side.
       if (info.sideRest) restFor = info.sideRest;
