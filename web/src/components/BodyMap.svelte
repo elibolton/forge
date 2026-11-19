@@ -33,7 +33,8 @@
 
   const front: Part[] = [
     ...body,
-    ...both((s, x) => ({ m: 'shoulders', k: 'e', cx: x(68), cy: 38, rx: 6.4, ry: 6.6 })),
+    ...both((s, x) => ({ m: 'sideDelts', k: 'e', cx: x(70.4), cy: 38.6, rx: 4.4, ry: 6.4, r: -12 * s })),
+    ...both((s, x) => ({ m: 'frontDelts', k: 'e', cx: x(66), cy: 38, rx: 4, ry: 6 })),
     ...both((s, x) => ({ m: 'chest', k: 'p', d: `M${x(50.6)},36 Q${x(62)},33 ${x(63.5)},40 Q${x(63)},50 ${x(52)},51 Q${x(50.6)},50 ${x(50.6)},47 Z` })),
     ...both((s, x) => ({ m: 'biceps', k: 'e', cx: x(73.4), cy: 50.5, rx: 3.9, ry: 9.5, r: -10 * s })),
     ...both((s, x) => ({ m: 'forearms', k: 'e', cx: x(77.4), cy: 77, rx: 3.5, ry: 11, r: -7 * s })),
@@ -46,7 +47,8 @@
   const back: Part[] = [
     ...body,
     { m: 'upperBack', k: 'p', d: 'M40,33 Q50,29 60,33 L63,40 Q57,50 50,55 Q43,50 37,40 Z' },
-    ...both((s, x) => ({ m: 'shoulders', k: 'e', cx: x(68), cy: 38, rx: 6.4, ry: 6.6 })),
+    ...both((s, x) => ({ m: 'sideDelts', k: 'e', cx: x(70.4), cy: 38.6, rx: 4.4, ry: 6.4, r: -12 * s })),
+    ...both((s, x) => ({ m: 'rearDelts', k: 'e', cx: x(66), cy: 38, rx: 4, ry: 6 })),
     ...both((s, x) => ({ m: 'lats', k: 'p', d: `M${x(52)},55 Q${x(62)},44 ${x(64.5)},48 Q${x(64)},63 ${x(56)},77 Q${x(53)},66 ${x(52)},55 Z` })),
     ...both((s, x) => ({ m: 'triceps', k: 'e', cx: x(73.4), cy: 50.5, rx: 3.9, ry: 9.5, r: -10 * s })),
     ...both((s, x) => ({ m: 'forearms', k: 'e', cx: x(77.4), cy: 77, rx: 3.5, ry: 11, r: -7 * s })),

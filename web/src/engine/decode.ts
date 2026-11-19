@@ -3,7 +3,7 @@
 
 import { placeholderName } from './catalog';
 import {
-  type DayFocus, type Exercise, type Gym, type LoggedExercise, type LoggedSet, type RecoveryOverride, type RepRange,
+  type DayFocus, type Exercise, type MovementPattern, type Muscle, type Gym, type LoggedExercise, type LoggedSet, type RecoveryOverride, type RepRange,
   type UserPlan, type WorkoutRecord, DAY_FOCUSES, EQUIPMENT, GOALS, JOINTS, LEVELS, MUSCLES, PATTERNS, PREFERENCES,
   SPLITS, VARIABILITIES, defaultPlan, uuid,
 } from './models';
@@ -100,16 +100,38 @@ export function readRecord(v: unknown): WorkoutRecord | undefined {
   };
 }
 
+/** Before Forge split the shoulders into three heads, they were one muscle called "shoulders". */
+const DELTS: Muscle[] = ['frontDelts', 'sideDelts', 'rearDelts'];
+
 export function readOverride(v: unknown): RecoveryOverride | undefined {
   if (!isObj(v) || !(MUSCLES as readonly unknown[]).includes(v.muscle)) return undefined;
   return { muscle: v.muscle as never, recovery: num(v.recovery, 1), date: num(v.date, 0) };
 }
 
+/** Recovery overrides; an old "shoulders" override applies to all three heads. */
+export function readOverrides(v: unknown): RecoveryOverride[] {
+  return lossy(v, (x) => {
+    if (isObj(x) && x.muscle === 'shoulders') return DELTS.map((m) => readOverride({ ...x, muscle: m })!);
+    const one = readOverride(x);
+    return one ? [one] : undefined;
+  }).flat();
+}
+
+/** Muscle lists, mapping an old "shoulders" to the head the movement mostly trains. */
+function readMuscles(v: unknown, pattern: MovementPattern, secondary: boolean): Muscle[] {
+  if (!Array.isArray(v)) return [];
+  const head: Muscle = secondary || pattern === 'verticalPush' || pattern === 'horizontalPush' ? 'frontDelts'
+    : pattern === 'horizontalPull' || pattern === 'verticalPull' ? 'rearDelts' : 'sideDelts';
+  return known(MUSCLES, v.flatMap((m) => (m === 'shoulders' ? [head] : [m])));
+}
+
 export function readExercise(v: unknown): Exercise | undefined {
   if (!isObj(v) || typeof v.id !== 'string') return undefined;
+  const pattern = oneOf(PATTERNS, v.pattern, 'isolation');
   return {
-    id: v.id, name: str(v.name, placeholderName(v.id)), primary: known(MUSCLES, v.primary), secondary: known(MUSCLES, v.secondary),
-    equipment: known(EQUIPMENT, v.equipment), pattern: oneOf(PATTERNS, v.pattern, 'isolation'),
+    id: v.id, name: str(v.name, placeholderName(v.id)),
+    primary: readMuscles(v.primary, pattern, false), secondary: readMuscles(v.secondary, pattern, true),
+    equipment: known(EQUIPMENT, v.equipment), pattern,
     isCompound: bool(v.isCompound, false), level: oneOf(LEVELS, v.level, 'beginner'), starterOneRM: num(v.starterOneRM, 0),
     jointsStressed: known(JOINTS, v.jointsStressed), isTimed: bool(v.isTimed, false),
     notes: typeof v.notes === 'string' ? v.notes : undefined,

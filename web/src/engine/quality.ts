@@ -279,7 +279,8 @@ function inferred(e: Exercise): Quality {
     case 'core': role = 'abs'; break;
     case 'carry': role = 'carry'; break;
     case 'isolation':
-      role = has('chest') ? 'chestFly' : has('shoulders') ? 'sideRaise' : has('biceps') ? 'curl'
+      role = has('chest') ? 'chestFly' : has('sideDelts') ? 'sideRaise' : has('rearDelts') ? 'rearDelt'
+        : has('frontDelts') ? 'frontRaise' : has('biceps') ? 'curl'
         : has('triceps') ? 'tricepsOther' : has('lats') ? 'latIso' : has('upperBack') ? 'shrug'
         : has('quads') ? 'kneeExt' : has('hamstrings') ? 'legCurl' : has('calves') ? 'calf'
         : has('glutes') ? 'hipThrust' : has('abs') ? 'abs' : has('forearms') ? 'forearm' : 'other';

@@ -23,8 +23,8 @@
   /** Push warm, pull cool, legs violet, core teal. */
   const tint = $derived.by(() => {
     switch (exercise.primary[0] ?? 'chest') {
-      case 'chest': case 'shoulders': case 'triceps': return '255, 112, 52';
-      case 'lats': case 'upperBack': case 'biceps': case 'forearms': return '92, 150, 255';
+      case 'chest': case 'frontDelts': case 'sideDelts': case 'triceps': return '255, 112, 52';
+      case 'lats': case 'upperBack': case 'rearDelts': case 'biceps': case 'forearms': return '92, 150, 255';
       case 'abs': case 'lowerBack': return '60, 220, 200';
       default: return '170, 120, 255';
     }

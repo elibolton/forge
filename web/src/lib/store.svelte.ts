@@ -1,7 +1,7 @@
 import {
   Catalog, type DayFocus, type Exercise, type Gym, Gyms, type LoggedExercise, type LoggedSet, Planner, Programs,
   type ProgramProgress, type ProgramRef, type RecoveryOverride, type UserPlan, type WorkoutProgram, type WorkoutRecord,
-  completeDay, defaultPlan, lossy, oneRM, readExercise, readGym, readLogged, readOverride, readPlan, readProgramRef,
+  completeDay, defaultPlan, lossy, oneRM, readExercise, readGym, readLogged, readOverrides, readPlan, readProgramRef,
   readProgress, uuid, workingSets, loadEquipment, POUNDS_PER_KG, gymIncrement,
 } from '../engine';
 import { db, requestPersistence } from './db';
@@ -91,7 +91,7 @@ function readProfile(v: unknown): Profile | null {
   return {
     plan: readPlan(v.plan),
     gyms: safeGyms,
-    overrides: lossy(v.overrides, readOverride),
+    overrides: readOverrides(v.overrides),
     activeGymID: typeof v.activeGymID === 'string' ? v.activeGymID : safeGyms[0].id,
     usesPounds: typeof v.usesPounds === 'boolean' ? v.usesPounds : false,
     createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now(),

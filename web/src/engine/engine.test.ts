@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import {
   Catalog, DAY_MS, type DayFocus, type Exercise, Gyms, type LoggedExercise, NameMatcher, Planner, type WorkoutRecord,
   computeRecovery, defaultPlan, estimatedOneRM, focusMuscles, guideFor, lossy, makeScheme, oneRM, parseHistory,
-  plannedWorkingSets, qualityOf, QUALITY, plannedSeconds, readExercise, readGym, readLogged, readPlan, roundLoad, weightForReps, workingSets,
+  plannedWorkingSets, qualityOf, QUALITY, plannedSeconds, readExercise, readOverrides, readGym, readLogged, readPlan, roundLoad, weightForReps, workingSets,
 } from './index';
 
 export const now = 1_800_000_000_000;
@@ -240,6 +240,18 @@ describe('Import', () => {
 });
 
 describe('Storage compatibility', () => {
+  test('old "shoulders" data maps onto the three delt heads', () => {
+    const press = readExercise({ id: 'custom-press', name: 'Press', primary: ['shoulders'], secondary: ['triceps'], pattern: 'verticalPush' })!;
+    expect(press.primary).toEqual(['frontDelts']);
+    const raise = readExercise({ id: 'custom-raise', name: 'Raise', primary: ['shoulders'], secondary: [], pattern: 'isolation' })!;
+    expect(raise.primary).toEqual(['sideDelts']);
+    const row = readExercise({ id: 'custom-row', name: 'Row', primary: ['upperBack'], secondary: ['shoulders'], pattern: 'horizontalPull' })!;
+    expect(row.secondary).toEqual(['frontDelts']);
+    const overrides = readOverrides([{ muscle: 'shoulders', recovery: 0.3, date: 5 }, { muscle: 'chest', recovery: 0.5, date: 5 }, { muscle: 'nope' }]);
+    expect(overrides.map((o) => o.muscle).sort()).toEqual(['chest', 'frontDelts', 'rearDelts', 'sideDelts']);
+    expect(overrides.find((o) => o.muscle === 'rearDelts')?.recovery).toBe(0.3);
+  });
+
   test('reads plan saved by earlier version', () => {
     const plan = readPlan(JSON.parse('{"experience":"intermediate","goal":"reduceBodyweight","injuries":["knee"],"preferences":{"bb-bench":"more"},"sessionMinutes":60,"split":"pushPullLegs","variability":"consistent","warmUpSets":false}'));
     expect(plan.goal).toBe('reduceBodyweight');
@@ -287,7 +299,7 @@ describe('Storage compatibility', () => {
 
 describe('Custom exercises', () => {
   const custom: Exercise = {
-    id: 'custom-landmine-press', name: 'Landmine Press', primary: ['shoulders'], secondary: ['chest', 'triceps'],
+    id: 'custom-landmine-press', name: 'Landmine Press', primary: ['frontDelts'], secondary: ['chest', 'triceps'],
     equipment: ['barbell'], pattern: 'verticalPush', isCompound: true, level: 'beginner', starterOneRM: 40, jointsStressed: [],
     isTimed: false, notes: 'Wedge the bar in a corner.\nPress up and forward.',
   };
@@ -328,7 +340,7 @@ describe('Custom exercises', () => {
     expect(Catalog.builtIn.filter((e) => !guideFor(e)).map((e) => e.id)).toEqual([]);
   });
   test('starter suggestion uses similar exercises', () => {
-    const s = Catalog.suggestedStarterOneRM(['shoulders'], ['dumbbell'], false);
+    const s = Catalog.suggestedStarterOneRM(['sideDelts'], ['dumbbell'], false);
     expect(s).toBeGreaterThan(5);
     expect(s).toBeLessThan(20);
     expect(Catalog.suggestedStarterOneRM(['quads'], ['barbell', 'squatRack'], true)).toBeGreaterThan(50);
