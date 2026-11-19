@@ -36,6 +36,8 @@ export function workoutLog(state: SessionState, id: string, endedAt: number): Wo
   if (!exercises.length) return null;
   return {
     id, date: state.startedAt, focus: state.focus, exercises, program: state.program ?? null,
+    // A saved workout's name (or a program day's title), so History calls it what the logger did.
+    ...(state.title?.trim() ? { title: state.title.trim() } : {}),
     durationSeconds: Math.round((Math.max(endedAt, state.startedAt) - state.startedAt) / 1000),
   };
 }

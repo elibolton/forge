@@ -1,6 +1,6 @@
 <script lang="ts">
   import { TriangleAlert } from '@lucide/svelte';
-  import { exportRawBackup } from '../lib/backup';
+  import { exportRawBackup, rawBackupFile, saveFile } from '../lib/backup';
   import { app } from '../lib/store.svelte';
 
   /**
@@ -11,8 +11,20 @@
   let { title, message, detail, recover = false }: { title: string; message: string; detail?: string | null; recover?: boolean } = $props();
 
   let exported = $state(false);
+  // Read the data as soon as the screen shows, so the tap can go straight to the share sheet: waiting on
+  // the database inside the tap can use up the permission to open it, and then nothing is saved.
+  let file: File | undefined;
+  let readError: string | undefined;
+  $effect(() => {
+    if (!recover) return;
+    rawBackupFile().then((f) => (file = f), (e) => (readError = (e as Error).message));
+  });
   async function exportCopy() {
-    try { exported = await exportRawBackup(); } catch (e) { alert(`Couldn't read the data to export it: ${(e as Error).message}`); }
+    try {
+      exported = file ? await saveFile(file) : await exportRawBackup();
+    } catch (e) {
+      alert(`Couldn't read the data to export it: ${readError ?? (e as Error).message}`);
+    }
   }
 
   /** The way out when the profile itself is damaged. Logged workouts live apart and are kept. */

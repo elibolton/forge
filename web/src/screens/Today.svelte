@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { currentTime } from '../lib/clock.svelte';
   import { app } from '../lib/store.svelte';
   import { dayKey } from '../lib/units';
   import GeneratorToday from './GeneratorToday.svelte';
   import ProgramToday from './ProgramToday.svelte';
 
   /** The day the user chose a generated workout over their program. */
-  const usingGenerator = $derived(app.get<string>('generatorDay') === dayKey());
+  const usingGenerator = $derived(app.get<string>('generatorDay') === dayKey(currentTime()));
 </script>
 
 {#if app.activeProgram && !usingGenerator}

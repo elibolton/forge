@@ -767,7 +767,14 @@ export class Planner {
       reasons.push(`${muscleName(lead)} ${Math.round((recovery[lead] ?? 1) * 100)}% recovered · `
         + `${Math.round(weekly[lead] ?? 0)}/${Math.trunc(scheme.weeklySetTarget)} sets this week`);
     }
-    if (fallback) reasons.push(`Nothing usual for ${muscleName(slot.muscle).toLowerCase()} fits your equipment: this works it with what you have`);
+    if (fallback) {
+      const muscle = muscleName(slot.muscle).toLowerCase();
+      // Another exercise already trains this muscle (the main lift fit), so "nothing fits" would be wrong.
+      const covered = picks.some((p) => p.planned.exercise.primary.includes(slot.muscle));
+      reasons.push(covered
+        ? `More ${muscle} work with the equipment you have`
+        : `Nothing usual for ${muscle} fits your equipment: this works it with what you have`);
+    }
     if (slot.extra) reasons.push('Time to spare: a muscle today\'s plan doesn\'t otherwise train');
     else if (slot.main && strengthGoal) reasons.push('Main lift for your strength goal');
     else if (qualityOf(e).longLength >= 5 && !strengthGoal) reasons.push('Works the muscle in a stretched position, which builds more size');

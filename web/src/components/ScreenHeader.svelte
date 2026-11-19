@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { currentTime } from '../lib/clock.svelte';
 
   /** Date eyebrow over a greeting, with actions on the right. */
   let { actions, title }: { actions?: Snippet; title?: string } = $props();
-  const now = new Date();
-  const date = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
-  const hour = now.getHours();
-  const greeting = hour < 5 ? 'Late session' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const now = $derived(new Date(currentTime()));
+  const date = $derived(now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' }));
+  const hour = $derived(now.getHours());
+  const greeting = $derived(hour < 5 ? 'Late session' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
 </script>
 
 <header class="row between">

@@ -2,6 +2,7 @@
   import { ChevronLeft, ChevronRight, Dumbbell, HeartPulse } from '@lucide/svelte';
   import ActionMenu from './ActionMenu.svelte';
   import { deleteLog, logSummary, logTitle } from '../lib/logs';
+  import { clock, currentTime } from '../lib/clock.svelte';
   import { nav } from '../lib/nav.svelte';
   import { type WorkoutLog, app } from '../lib/store.svelte';
   import { dayKey } from '../lib/units';
@@ -33,8 +34,8 @@
   // Weeks start on Monday.
   const leading = $derived((monthDate.getDay() + 6) % 7);
   const count = $derived(days.reduce((t, d) => t + (byDay.get(dayKey(d))?.length ?? 0), 0));
-  const isCurrentMonth = $derived(month === startOfMonth(Date.now()));
-  const today = startOfDay(Date.now());
+  const isCurrentMonth = $derived(month === startOfMonth(currentTime()));
+  const today = $derived(clock.today);
   const selectedLogs = $derived(byDay.get(dayKey(selected)) ?? []);
   const selectedActivities = $derived(activitiesByDay.get(dayKey(selected)) ?? []);
 
@@ -66,7 +67,7 @@
     {#each days as d (d)}
       {@const trained = byDay.has(dayKey(d))}
       {@const cardio = activitiesByDay.has(dayKey(d))}
-      <button class="day mono" class:trained class:cardio class:today={d === today} class:sel={d === selected} disabled={d > Date.now()}
+      <button class="day mono" class:trained class:cardio class:today={d === today} class:sel={d === selected} disabled={d > currentTime()}
         aria-label="{new Date(d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}{trained ? ', trained' : ''}{cardio ? ', cardio' : ''}"
         aria-pressed={d === selected} onclick={() => (selected = d)}>{new Date(d).getDate()}</button>
     {/each}

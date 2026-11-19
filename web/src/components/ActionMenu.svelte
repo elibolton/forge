@@ -12,6 +12,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { Check } from '@lucide/svelte';
+  import { openOverlay } from '../lib/overlays';
   import { portal } from '../lib/portal';
 
   let { items, label, children, class: cls = 'icon-btn plain' }: {
@@ -20,21 +21,29 @@
   let open = $state(false);
   let list = $state<HTMLDivElement>();
 
+  let trigger = $state<HTMLButtonElement>();
+  /** False when an item has already moved focus on (e.g. to a sheet it opened), so closing mustn't pull it back. */
+  let restoreFocus = true;
+
+  // Escape closes only this menu (not a sheet under it), and focus goes back to the button that opened it.
   $effect(() => {
     if (!open) return;
+    restoreFocus = true;
+    const close = openOverlay(() => (open = false), { returnFocus: trigger ?? null });
     list?.querySelector('button')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') open = false; };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => close(restoreFocus);
   });
 
   function pick(item: MenuItem) {
+    // Focus the trigger first, so a sheet the item opens records it as the place to return to.
+    trigger?.focus();
+    restoreFocus = false;
     open = false;
     item.action();
   }
 </script>
 
-<button class={cls} aria-label={label} aria-haspopup="menu" aria-expanded={open} onclick={() => (open = true)}>
+<button class={cls} aria-label={label} aria-haspopup="menu" aria-expanded={open} bind:this={trigger} onclick={() => (open = true)}>
   {@render children()}
 </button>
 
@@ -43,9 +52,11 @@
   <div class="menu" use:portal role="menu" aria-label={label} bind:this={list}>
     {#each items as item, i (i)}
       {#if item.section}<div class="section-head">{item.section}</div>{/if}
-      <button role="menuitem" class:danger={item.danger} onclick={() => pick(item)}>
+      <!-- A choice among options (Duration, Gym…) is announced as selected or not. -->
+      <button role={item.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={item.checked === undefined ? undefined : item.checked}
+        class:danger={item.danger} onclick={() => pick(item)}>
         <span>{item.label}</span>
-        {#if item.checked}<Check size={18} />{/if}
+        {#if item.checked}<Check size={18} aria-hidden="true" />{/if}
       </button>
     {/each}
     <button class="cancel" onclick={() => (open = false)}>Cancel</button>

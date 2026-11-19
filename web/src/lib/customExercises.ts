@@ -62,7 +62,9 @@ export function removeCustomExercise(e: Exercise) {
       app.updatePlan((p) => { if (previous) p.preferences[e.id] = previous; else delete p.preferences[e.id]; }));
     return;
   }
-  const before = structuredClone(app.profile!);
+  const index = app.profile!.customExercises.findIndex((x) => x.id === e.id);
+  const saved = index === -1 ? undefined : structuredClone(app.profile!.customExercises[index]);
+  const preference = app.profile!.plan.preferences[e.id];
   const todayBefore = app.get<TodayPlan>('todayPlan');
   app.updateProfile((p) => {
     p.customExercises = p.customExercises.filter((x) => x.id !== e.id);
@@ -75,7 +77,12 @@ export function removeCustomExercise(e: Exercise) {
     app.set('todayPlan', today);
   }
   toasts.show(`Deleted ${e.name}`, () => {
-    app.setProfile(before);
+    // Put back just this exercise (and its preference): restoring the whole profile would undo anything
+    // else changed since, like program progress.
+    app.updateProfile((p) => {
+      if (saved && !p.customExercises.some((x) => x.id === e.id)) p.customExercises.splice(Math.min(index, p.customExercises.length), 0, saved);
+      if (preference) p.plan.preferences[e.id] = preference;
+    });
     if (todayBefore) app.set('todayPlan', todayBefore);
   });
 }

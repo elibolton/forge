@@ -10,6 +10,7 @@
   import Sheet from '../components/Sheet.svelte';
   import WorkoutCalendar from '../components/WorkoutCalendar.svelte';
   import { nav } from '../lib/nav.svelte';
+  import { currentTime } from '../lib/clock.svelte';
   import { app } from '../lib/store.svelte';
   import { goalStreak, weeklyCounts } from '../lib/weeks';
 
@@ -28,8 +29,8 @@
   /** Monday 00:00 of the week containing t. */
   const weekStart = (t: number) => { const d = new Date(startOfDay(t)); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
 
-  const daysSinceLast = $derived(app.logs[0] ? Math.round((startOfDay(Date.now()) - startOfDay(app.logs[0].date)) / DAY) : null);
-  const thisWeek = $derived(app.logs.filter((l) => l.date >= weekStart(Date.now())).length);
+  const daysSinceLast = $derived(app.logs[0] ? Math.round((startOfDay(currentTime()) - startOfDay(app.logs[0].date)) / DAY) : null);
+  const thisWeek = $derived(app.logs.filter((l) => l.date >= weekStart(currentTime())).length);
   const goal = $derived(app.profile!.weeklyGoal);
   const dates = $derived(app.logs.map((l) => l.date));
   /** Consecutive weeks that hit the weekly goal. */

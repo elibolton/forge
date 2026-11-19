@@ -1,19 +1,20 @@
 <script lang="ts">
   import { Plus } from '@lucide/svelte';
+  import { currentTime } from '../lib/clock.svelte';
   import { app } from '../lib/store.svelte';
   import { countInWeek, goalStreak, trainedDays, weekStart } from '../lib/weeks';
   import ActivitySheet from './ActivitySheet.svelte';
 
   /** This week at a glance: lifting days against your goal, cardio days, and a quick way to log cardio. */
   let logging = $state(false);
-  const now = Date.now();
+  const now = $derived(currentTime());
   const dates = $derived(app.logs.map((l) => l.date));
   const lifted = $derived(trainedDays(dates, now));
   const cardio = $derived(trainedDays(app.activities.map((a) => a.date), now));
   const done = $derived(countInWeek(dates, weekStart(now)));
   const goal = $derived(app.profile?.weeklyGoal ?? 3);
   const streak = $derived(goalStreak(dates, goal, now));
-  const today = (new Date(now).getDay() + 6) % 7;
+  const today = $derived((new Date(now).getDay() + 6) % 7);
 </script>
 
 <section class="week">

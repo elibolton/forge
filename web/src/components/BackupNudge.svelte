@@ -1,11 +1,12 @@
 <script lang="ts">
   import { ShieldCheck } from '@lucide/svelte';
-  import { backupDue, exportBackup, lastBackupAt, snoozeBackup } from '../lib/backup';
+  import { backupDue, exportBackup, lastBackupAt, snoozeBackup, unsavedCount } from '../lib/backup';
+  import { count } from '../lib/labels';
   import { app } from '../lib/store.svelte';
 
   /** A gentle reminder that history lives only on this phone. Re-evaluates whenever the data changes. */
   const due = $derived.by(() => { void app.kv; void app.logs; return backupDue(); });
-  const unsaved = $derived(app.logs.length - (app.get<number>('backupLogCount') ?? 0));
+  const unsaved = $derived.by(() => { void app.kv; void app.logs; return unsavedCount(); });
 </script>
 
 {#if due}
@@ -14,7 +15,9 @@
     <div class="grow stack" style="--gap:3px">
       <span class="sub bold">Back up your training</span>
       <span class="caption muted">
-        {lastBackupAt() === undefined ? `${app.logs.length} workouts live only on this phone.` : `${unsaved} new workouts since your last backup.`}
+        {lastBackupAt() === undefined
+          ? `${count(app.logs.length, 'workout')} ${app.logs.length === 1 ? 'lives' : 'live'} only on this phone.`
+          : `${count(unsaved, 'new workout')} since your last backup.`}
         Save a copy to Files or iCloud Drive.
       </span>
       <div class="row" style="--gap:8px;margin-top:8px">

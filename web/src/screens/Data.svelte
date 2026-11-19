@@ -115,9 +115,9 @@
       <div class="item sub muted">Export your history from Fitbod (Settings → Export Workout Data), Strong or Hevy, then pick the CSV file here.</div>
       <div class="item">
         <span class="grow">Weights in file</span>
-        <div class="segmented" style="width:180px">
-          <button class:on={pounds} onclick={() => { pounds = true; reparse(); }}>Pounds</button>
-          <button class:on={!pounds} onclick={() => { pounds = false; reparse(); }}>Kilograms</button>
+        <div class="segmented" style="width:180px" role="radiogroup" aria-label="Weights in file">
+          <button role="radio" aria-checked={pounds} class:on={pounds} onclick={() => { pounds = true; reparse(); }}>Pounds</button>
+          <button role="radio" aria-checked={!pounds} class:on={!pounds} onclick={() => { pounds = false; reparse(); }}>Kilograms</button>
         </div>
       </div>
       <button class="item link" onclick={() => csvInput?.click()}><FileUp size={18} /> Choose CSV File</button>

@@ -43,7 +43,9 @@ export function parseHistory(text: string, defaultPounds: boolean, manualMatches
   const date = column((c) => c === 'date' || c === 'start_time' || c === 'start time' || c === 'workout date');
   const name = column((c) => c === 'exercise' || c === 'exercise name' || c === 'exercise_title' || c === 'exercise title');
   const reps = column((c) => c === 'reps');
-  const weight = column((c) => c.startsWith('weight'));
+  // The number, not a "Weight Unit" column that may come before it (which would read every weight as 0).
+  const weight = column((c) => c.startsWith('weight') && !c.includes('unit'));
+  const weightUnit = column((c) => c === 'weight unit' || c === 'weight_unit' || c === 'unit');
   const seconds = column((c) => c.startsWith('duration(s') || c === 'seconds' || c === 'duration_seconds');
   const warmup = column((c) => c === 'iswarmup' || c === 'set_type' || c === 'set order');
   const rpe = column((c) => c === 'rpe');
@@ -98,7 +100,9 @@ export function parseHistory(text: string, defaultPounds: boolean, manualMatches
     if ((rawWeight !== '' && readNumber(rawWeight) === undefined) || kg < 0) { badWeights++; kg = 0; }
     // An assisted set's weight is help, not load: keep the reps, never the weight.
     if (isAssisted(rawName)) kg = 0;
-    if (pounds) kg /= POUNDS_PER_KG;
+    const unit = value(weightUnit).toLowerCase();
+    const rowPounds = /^(lb|pound)/.test(unit) ? true : /^(kg|kilo)/.test(unit) ? false : pounds;
+    if (rowPounds) kg /= POUNDS_PER_KG;
     const flag = value(warmup).toLowerCase();
     const isWarmup = warmupHeader === 'set order' ? flag === 'w'   // Strong: set number, or W for warm-up
       : warmupHeader === 'set_type' ? flag === 'warmup'             // Hevy
@@ -263,7 +267,8 @@ export class NameMatcher {
 
 /** RFC 4180-ish: quoted fields, doubled quotes, commas or semicolons as separators. */
 export function parseCSV(input: string): string[][] {
-  let text = input.replace(/\r\n/g, '\n');
+  // Old Mac files end lines with a bare CR.
+  let text = input.replace(/\r\n?/g, '\n');
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   const firstLine = text.split('\n', 1)[0];
   const count = (c: string) => firstLine.split(c).length - 1;
