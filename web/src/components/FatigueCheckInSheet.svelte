@@ -13,8 +13,9 @@
   let poorSleepOrMotivation = $state(false);
 
   const dropped = $derived.by(() => {
-    const id = app.profile?.programProgress?.programID;
-    return id ? repsDropped(app.records, id, week) : [];
+    const progress = app.profile?.programProgress;
+    // Only this run: an earlier run of the same program has its own week numbers.
+    return progress ? repsDropped(app.records, progress.programID, week, progress.startedAt) : [];
   });
   const resolved = $derived({ jointPain, stillSore, poorSleepOrMotivation, repsDropped: dropped.length >= 2 });
   const total = $derived(checkInFlags(resolved));

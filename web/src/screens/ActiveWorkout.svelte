@@ -195,7 +195,7 @@
     {#snippet leading()}<button class="link" onclick={() => (reviewing = false)}>Keep Going</button>{/snippet}
     <div class="stack" style="--gap:18px">
       <div class="card tight row stats">
-        <div><b class="num">{Math.floor((Date.now() - ws.startedAt) / 60000)} min</b><span class="caption muted">duration</span></div>
+        <div><b class="num">{Math.floor((session.endedAt(tick) - ws.startedAt) / 60000)} min</b><span class="caption muted">duration</span></div>
         <div><b class="num">{done.length}</b><span class="caption muted">sets logged</span></div>
         <div><b class="num">{volume > 0 ? app.units.format(volume) : '–'}</b><span class="caption muted">volume</span></div>
       </div>

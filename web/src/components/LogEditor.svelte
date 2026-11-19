@@ -4,6 +4,7 @@
   import { Plus, Trash2 } from '@lucide/svelte';
   import { type WorkoutLog, app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
+  import { maxReps, maxWeight } from '../lib/units';
   import ActionMenu from './ActionMenu.svelte';
   import ExercisePicker from './ExercisePicker.svelte';
   import SetLine from './SetLine.svelte';
@@ -95,9 +96,11 @@
               <div class="row" style="--gap:10px">
                 {#if !isBodyweight(e) || s.set.weight > 0}
                   <ValueStepper title="Weight" value={app.units.display(s.set.weight)} step={app.weightStep(e)} unit={app.units.symbol} decimals
+                    max={maxWeight(app.units.pounds)}
                     onchange={(v) => (s.set.weight = Math.max(0, app.units.kg(v)))} />
                 {/if}
                 <ValueStepper title={e.isTimed ? 'Time' : 'Reps'} value={s.set.reps} step={e.isTimed ? 5 : 1} unit={e.isTimed ? 'sec' : 'reps'} decimals={false}
+                  max={maxReps(e.isTimed)}
                   onchange={(v) => (s.set.reps = Math.max(0, Math.round(v)))} />
               </div>
               {#if !s.set.isWarmup}
@@ -106,7 +109,12 @@
                   <div class="segmented" role="radiogroup" aria-label="Set type">
                     {#each [[null, 'Straight'], ['drop', 'Drop'], ['failure', 'Failure']] as const as [t, name] (name)}
                       <button role="radio" aria-checked={(s.set.type ?? null) === t} class:on={(s.set.type ?? null) === t}
-                        onclick={() => { if (t) s.set.type = t; else delete s.set.type; if (t === 'failure') s.set.rir = 0; }}>{name}</button>
+                        onclick={() => {
+                          const was = s.set.type;
+                          if (t) s.set.type = t; else delete s.set.type;
+                          if (t === 'failure') s.set.rir = 0;
+                          else if (was === 'failure' && s.set.rir === 0) s.set.rir = null;
+                        }}>{name}</button>
                     {/each}
                   </div>
                 </div>

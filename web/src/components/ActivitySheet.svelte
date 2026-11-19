@@ -7,6 +7,7 @@
   import { DAY } from '../lib/weeks';
   import Sheet from './Sheet.svelte';
   import ValueStepper from './ValueStepper.svelte';
+  import { MAX_MINUTES } from '../lib/units';
 
   /** Log a run, ride or other session so recovery knows your legs (or back) are tired. */
   let { onclose }: { onclose: () => void } = $props();
@@ -20,8 +21,10 @@
 
   function save() {
     if (!valid) return;
-    // Ended about now, or at the same time of day on an earlier day.
-    const date = Date.now() - daysAgo * DAY - minutes * 60_000;
+    // Ended about now, or at the same time of day on an earlier day, and never started the day before.
+    const ended = Date.now() - daysAgo * DAY;
+    const midnight = new Date(ended).setHours(0, 0, 0, 0);
+    const date = Math.max(midnight, ended - minutes * 60_000);
     const a = { id: uuid(), kind, date, minutes };
     app.addActivity(a);
     toasts.show(`${activityTitle[kind]} logged · ${minutes} min`, () => app.removeActivity(a.id));
@@ -42,7 +45,7 @@
       {/each}
     </div>
 
-    <ValueStepper title="Duration" value={minutes} step={5} unit="minutes" decimals={false} onchange={(v) => (minutes = v)} />
+    <ValueStepper title="Duration" value={minutes} step={5} unit="minutes" decimals={false} max={MAX_MINUTES} onchange={(v) => (minutes = v)} />
     {#if !valid}<p class="caption warn" role="alert">Enter a duration of at least 1 minute.</p>{/if}
 
     <div class="stack" style="--gap:8px">

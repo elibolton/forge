@@ -1,7 +1,7 @@
 <script lang="ts">
   import TemplatePicker from '../components/TemplatePicker.svelte';
   import { addMobility } from '../lib/mobility';
-  import { focusMuscles, gymHas } from '../engine';
+  import { focusMuscles, gymFitsProgramExercise } from '../engine';
   import {
     type Exercise, type FatigueCheckIn, type WeekRule, Programs, checkInDue, nextDayID, programDay, rirText, rxExercise,
     scheduledOn, setsText, effortText, restText, skipDay, dayOrder, isDone, ruleFor,
@@ -50,8 +50,7 @@
 
   function start() {
     if (!plan || !session.okToReplace()) return;
-    const { state, progress } = startDayPlan(plan);
-    app.setProgramProgress(progress);
+    const { state } = startDayPlan(plan);
     addMobility(state, focusMuscles(plan.session.day.focus), app.profile!.mobility);
     session.startPrepared(state, true);
   }
@@ -166,7 +165,7 @@
             <span class="caption semibold one-line">{plan.program.name}</span>
             <span class="weeks" aria-label="Week {plan.session.week} of {plan.program.weeks}">
               {#each Array(plan.program.weeks) as _, w (w)}
-                <i class:done={w + 1 < plan.session.week} class:now={w + 1 === plan.session.week} class:deload={ruleFor(plan.program, w + 1).isDeload}></i>
+                <i class:done={w + 1 !== plan.session.week && (active.progress.completed[w + 1] ?? []).length > 0} class:now={w + 1 === plan.session.week} class:deload={ruleFor(plan.program, w + 1).isDeload}></i>
               {/each}
             </span>
           </span>
@@ -174,9 +173,10 @@
         </button>
         <div class="days" aria-label="This week">
           {#each dayOrder(plan.program) as d (d)}
-            {@const done = isDone(active.progress, d)}
+            {@const skipped = (active.progress.skipped[active.progress.week] ?? []).includes(d)}
+            {@const done = !skipped && isDone(active.progress, d)}
             {@const now = d === plan.session.day.id}
-            <span class="day" class:done class:now><i aria-hidden="true"></i>{programDay(plan.program, d)?.title}</span>
+            <span class="day" class:done class:skip={skipped} class:now><i aria-hidden="true"></i>{programDay(plan.program, d)?.title}{#if skipped}<span class="sr-only">, skipped</span>{/if}</span>
           {/each}
         </div>
       {/snippet}
@@ -227,7 +227,7 @@
                 <span class="caption muted">{s.reason}</span>
                 {#if p.lastSetNote}<span class="caption row" style="--gap:6px;color:var(--recovering)"><Flame size={13} /> {p.lastSetNote}</span>{/if}
                 {#each [...p.slot.notes, ...(p.weekNote ? [p.weekNote] : [])] as n (n)}<span class="caption faint">• {n}</span>{/each}
-                {#if !gymHas(app.activeGym, e)}
+                {#if !gymFitsProgramExercise(app.activeGym, e)}
                   <span class="caption row" style="--gap:6px;color:var(--recovering)"><TriangleAlert size={13} /> {app.activeGym.name} doesn't list all the equipment</span>
                 {/if}
                 {#if item.isSwapped}<span class="caption faint">Swapped for today</span>{/if}
@@ -273,6 +273,8 @@
   .day i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); }
   .day.done { color: var(--text-2); }
   .day.done i { background: var(--fresh); box-shadow: 0 0 8px rgba(60, 239, 176, 0.6); }
+  .day.skip { color: var(--text-3); text-decoration: line-through; }
+  .day.skip i { background: transparent; outline: 1px dashed rgba(255, 255, 255, 0.35); outline-offset: -1px; }
   .day.now { color: #fff; background: var(--ember-soft); border-color: rgba(255, 106, 46, 0.55); }
   .day.now i { background: var(--ember-2); box-shadow: 0 0 10px var(--ember-glow); }
   .target .num { font-size: 1.05rem; }

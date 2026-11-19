@@ -2,7 +2,7 @@
 // only the user's place in it (`ProgramProgress`) is stored.
 
 import { Catalog } from './catalog';
-import { type DayFocus, type Exercise, type RepRange, repRangeText } from './models';
+import { type DayFocus, type Exercise, type Gym, type RepRange, gymHas, isBodyweight, loadEquipment, repRangeText } from './models';
 
 /** Reps in reserve as a range, e.g. 1–2. A single value has `low === high`. */
 export interface RIRTarget { low: number; high: number }
@@ -151,6 +151,56 @@ export interface ResolvedPrescription {
 }
 
 export const rxExercise = (p: ResolvedPrescription): Exercise => Catalog.exercise(p.slot.exerciseID);
+
+/**
+ * Whether a gym can do a program exercise. Programs load dips with a dumbbell held between the feet when
+ * there's no dip belt, so dumbbells count as one here (the generator still asks for the belt).
+ */
+export function gymFitsProgramExercise(g: Gym, e: Exercise): boolean {
+  if (gymHas(g, e)) return true;
+  return e.equipment.includes('dipBelt') && g.equipment.includes('dumbbell')
+    && gymHas({ ...g, equipment: [...g.equipment, 'dipBelt'] }, e);
+}
+
+// MARK: - Swaps
+
+/** Done one arm or one leg at a time. */
+export function isOneSided(e: Exercise): boolean {
+  return e.pattern === 'lunge' || /single|one[- ](arm|leg)|unilateral|split|step up|kickback|concentration/i.test(e.name);
+}
+
+/** How load goes up on an exercise, from its own equipment. `was` breaks the barbell tie (lower or upper body). */
+export function loadStepFor(e: Exercise, was?: LoadStep): LoadStep {
+  if (isBodyweight(e)) return 'bodyweight';
+  const kind = loadEquipment(e);
+  switch (kind) {
+    case 'barbell': case 'trapBar': case 'ezBar': case 'smithMachine': case 'plates': case undefined: {
+      if (was === 'lowerBodyBarbell' || was === 'upperBarbell') return was;
+      const lower = e.primary.some((m) => m === 'quads' || m === 'hamstrings' || m === 'glutes');
+      return lower && kind !== undefined ? 'lowerBodyBarbell' : 'upperBarbell';
+    }
+    case 'dumbbell': case 'kettlebell': return 'dumbbell';
+    default: return 'cablePin';
+  }
+}
+
+/**
+ * A program slot with its exercise swapped for `exerciseID`. The load step, effort and laterality come
+ * from the new exercise, not the old one: a Nordic curl's lowering-only effort and bodyweight step mean
+ * nothing on a dumbbell leg curl, and a per-leg slot swapped to a two-legged exercise isn't per leg. The
+ * old exercise's setup notes and its lowering-only week overrides go too.
+ */
+export function swappedSlot(slot: ExercisePrescription, exerciseID: string): ExercisePrescription {
+  if (exerciseID === slot.exerciseID) return slot;
+  const e = Catalog.exercise(exerciseID);
+  const effort: Effort = slot.effort.type === 'eccentricOnly' ? { type: 'rir', rir: rirTarget(1, 2) } : slot.effort;
+  const laterality: Laterality = isPerSide(slot.laterality) && isOneSided(e) ? slot.laterality : 'bilateral';
+  const weekOverrides = effort === slot.effort ? slot.weekOverrides : {};
+  return {
+    ...slot, exerciseID, loadStep: loadStepFor(e, slot.loadStep), effort, laterality,
+    sideRest: isPerSide(laterality) ? slot.sideRest : undefined, notes: [], weekOverrides,
+  };
+}
 
 /** "3 × 8–12" with " per leg" or " per arm" for per-side work. */
 export function setsText(p: ResolvedPrescription): string {
@@ -360,10 +410,17 @@ export function deloadNow(p: ProgramProgress, program: WorkoutProgram) {
   p.isFinished = false;
 }
 
-/** The week just finished still needs its fatigue check-in. Not asked during or after the deload. */
+/**
+ * The most recent finished week with training logged that still needs its fatigue check-in. A week
+ * skipped entirely, or ended before the check-in was answered, carries the last trained week's check-in
+ * over rather than losing it. Not asked during or after the deload.
+ */
 export function checkInDue(p: ProgramProgress, program: WorkoutProgram): number | undefined {
   if (p.isFinished || p.deloadNext || ruleFor(program, p.week).isDeload) return undefined;
-  const candidate = p.week - 1;
-  if (candidate < 1 || p.checkIns[candidate] || !(p.completed[candidate] ?? []).length) return undefined;
-  return candidate;
+  for (let w = p.week - 1; w >= 1; w--) {
+    if (ruleFor(program, w).isDeload) return undefined;
+    if (!(p.completed[w] ?? []).length) continue; // skipped entirely: look further back
+    return p.checkIns[w] ? undefined : w;
+  }
+  return undefined;
 }

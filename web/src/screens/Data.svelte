@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Catalog, type Exercise, type ImportResult, importSetCount, parseHistory, uuid } from '../engine';
+  import { Catalog, type Exercise, type ImportResult, importSetCount, newImports, parseHistory, uuid } from '../engine';
   import { CircleCheck, Download, FileUp, TriangleAlert, Upload } from '@lucide/svelte';
   import ActionMenu from '../components/ActionMenu.svelte';
   import BackBar from '../components/BackBar.svelte';
@@ -8,7 +8,6 @@
   import { fmtDate } from '../lib/logs';
   import { type Backup, app, readBackup } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
-  import { dayKey } from '../lib/units';
   import { exportBackup, lastBackupText } from '../lib/backup';
 
   // CSV import from Fitbod, Strong or Hevy, so recommendations start from real numbers.
@@ -25,15 +24,14 @@
   let csvInput = $state<HTMLInputElement>();
   let backupInput = $state<HTMLInputElement>();
 
-  /** Imported days that aren't already in the log. */
-  const newWorkouts = $derived.by(() => {
-    const existing = new Set(app.logs.map((l) => dayKey(l.date)));
-    return (result?.workouts ?? []).filter((w) => !existing.has(dayKey(w.date)));
-  });
+  /** What importing adds: each day's exercises that aren't logged that day yet. */
+  const newWorkouts = $derived(result ? newImports(result.workouts, app.logs) : []);
+  const newSets = $derived(newWorkouts.reduce((t, w) => t + w.exercises.reduce((u, e) => u + e.sets.length, 0), 0));
 
   function reparse() {
     if (fileText === null) return;
     error = null;
+    imported = null;
     try { result = parseHistory(fileText, pounds, manualMatches, Catalog.all); } catch (e) { result = null; error = (e as Error).message; }
   }
 
@@ -141,8 +139,14 @@
         {#if result.workouts.length}
           <div class="item">Dates<span class="value">{fmtDate(result.workouts[0].date, { dateStyle: 'medium' })} – {fmtDate(result.workouts[result.workouts.length - 1].date, { dateStyle: 'medium' })}</span></div>
         {/if}
-        {#if imported === null && newWorkouts.length < result.workouts.length}
-          <div class="item">Already logged<span class="value">{result.workouts.length - newWorkouts.length} days skipped</span></div>
+        {#if imported === null && newSets < importSetCount(result)}
+          <div class="item">Already logged<span class="value">{importSetCount(result) - newSets} sets skipped</span></div>
+        {/if}
+        {#if result.badDates}
+          <div class="item" style="color:var(--recovering)">Unreadable or future dates<span class="value">{result.badDates} rows skipped</span></div>
+        {/if}
+        {#if result.badWeights}
+          <div class="item" style="color:var(--recovering)">Unreadable weights<span class="value">{result.badWeights} sets with no weight</span></div>
         {/if}
       </div>
     </div>
@@ -155,16 +159,14 @@
           {#each unmatched as [name, count] (name)}
             <div class="item">
               <span class="grow">{name}<br /><span class="caption muted">{count} sets skipped</span></span>
-              {#if imported === null}
-                <ActionMenu label="Fix {name}" class="link sub bold" items={[
-                  { label: 'Match to an Exercise…', action: () => (matching = name) },
-                  { label: 'Create as Custom Exercise', action: () => (creatingFrom = name) },
-                ]}>Fix</ActionMenu>
-              {/if}
+              <ActionMenu label="Fix {name}" class="link sub bold" items={[
+                { label: 'Match to an Exercise…', action: () => (matching = name) },
+                { label: 'Create as Custom Exercise', action: () => (creatingFrom = name) },
+              ]}>Fix</ActionMenu>
             </div>
           {/each}
         </div>
-        <div class="foot">Match each name to an exercise, or create it, to include those sets. Anything left here is skipped.</div>
+        <div class="foot">Match each name to an exercise, or create it, to include those sets. Anything left here is skipped; you can fix it and import again later, and only the new sets are added.</div>
       </div>
     {/if}
 

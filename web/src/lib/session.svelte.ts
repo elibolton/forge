@@ -1,6 +1,6 @@
 import {
   Catalog, type DayFocus, type Effort, type Exercise, type Laterality, type PlannedExercise, type PlannedWorkout, type Planner,
-  type ProgramRef, type RepRange, type SetType, type Side, plannedWorkingSets, uuid, isPerSide,
+  type ProgramRef, type RepRange, type SetType, type Side, isBodyweight, plannedWorkingSets, uuid, isPerSide,
 } from '../engine';
 import { db } from './db';
 import { saving } from './saving.svelte';
@@ -18,6 +18,17 @@ export function bestRecordPerExercise(records: PersonalRecord[]): PersonalRecord
     if (!seen || r.oneRM > seen.oneRM) best.set(r.exercise.id, r);
   }
   return [...best.values()];
+}
+
+/** Range extensions to save for a program day: only from slots with work logged. */
+export function rangeChanges(s: SessionState): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
+  for (const e of s.exercises) {
+    const p = e.program;
+    if (p?.rangeExtension === undefined || !e.sets.some((x) => x.done && !x.isWarmup && x.reps > 0)) continue;
+    out[p.slotID] = p.rangeExtension;
+  }
+  return out;
 }
 
 /** Working sets logged so far in a workout. */
@@ -47,6 +58,14 @@ export function parentOf(sets: SessionSet[], i: number): SessionSet | undefined 
   return undefined;
 }
 
+/**
+ * Whether "log as planned" may mark this set done: a working straight or failure set with reps, and a
+ * weight when the exercise is loaded. Drop sets added but not done, 0-rep sets and loaded sets with no
+ * weight are placeholders, not work.
+ */
+export const isPlannedSetUsable = (s: SessionSet, loaded: boolean): boolean =>
+  !s.isWarmup && s.type !== 'drop' && s.reps > 0 && (!loaded || (s.weight ?? 0) > 0);
+
 export const numberedSets = (sets: SessionSet[]) => sets.filter((s) => !s.isWarmup && s.type !== 'drop');
 
 /** The program prescription behind a session exercise. */
@@ -67,6 +86,11 @@ export interface ProgramSlotInfo {
   supersetRestBetween?: number;
   isOptional: boolean;
   suggestionReason?: string;
+  /**
+   * Big-jump range change to save to the program when the day is logged: extra reps on the top of the
+   * range, or null to go back to the normal range. Absent: no change.
+   */
+  rangeExtension?: number | null;
 }
 
 export interface SessionExercise {
@@ -163,15 +187,33 @@ class WorkoutSession {
   /** When the workout last changed. */
   get lastActiveAt(): number { return this.state ? (this.state.updatedAt ?? this.state.startedAt) : Date.now(); }
 
+  /** The quiet spell the user closed the "Still training?" sheet on, so it isn't asked again every minute. */
+  private staleDismissedFor: number | null = null;
+
   /** Flags a forgotten workout, so it isn't saved as a 14-hour session. */
   checkStale(now = Date.now()) {
-    this.staleSince = this.state && now - this.lastActiveAt > STALE_AFTER ? this.lastActiveAt : null;
+    const stale = this.state && now - this.lastActiveAt > STALE_AFTER && this.staleDismissedFor !== this.lastActiveAt;
+    this.staleSince = stale ? this.lastActiveAt : null;
+  }
+
+  /**
+   * When a workout finishing now really ended: now, or the last change when it has sat untouched for
+   * hours (left open overnight with the screen on), so the duration isn't 10+ hours.
+   */
+  endedAt(now = Date.now()): number {
+    return this.state && now - this.lastActiveAt > STALE_AFTER ? this.lastActiveAt : now;
   }
 
   /** "Still training": carry on, and don't ask again until it goes quiet for hours once more. */
   keepGoing() {
     this.staleSince = null;
     this.update(() => {});
+  }
+
+  /** The sheet was closed without an answer: stop asking for this quiet spell, but don't count it as activity. */
+  dismissStale() {
+    this.staleDismissedFor = this.lastActiveAt;
+    this.staleSince = null;
   }
 
   /** True while a finish is saving, so a second tap can't log the workout twice. */
@@ -211,11 +253,12 @@ class WorkoutSession {
    * Clone, change, save. The building block for the named changes below; screens use those, so the
    * rules for a workout in progress live here rather than in the UI.
    */
-  update(change: (s: SessionState) => void) {
+  update(change: (s: SessionState) => void, opts: { activity?: boolean } = {}) {
     if (!this.state) return;
     const next = structuredClone(this.state);
     change(next);
-    next.updatedAt = Date.now();
+    // Only real changes count as training; looking around (moving between exercises) doesn't.
+    if (opts.activity !== false) next.updatedAt = Date.now();
     this.state = next;
     this.persist();
   }
@@ -282,7 +325,7 @@ class WorkoutSession {
 
   /** Shows exercise `index` in the logger. */
   goTo(index: number) {
-    this.update((s) => { if (index >= 0 && index < s.exercises.length) s.currentIndex = index; });
+    this.update((s) => { if (index >= 0 && index < s.exercises.length) s.currentIndex = index; }, { activity: false });
   }
 
   /** Adds an exercise at the end and shows it. */
@@ -361,8 +404,14 @@ class WorkoutSession {
       const i = e.sets.findIndex((x) => x.id === setID);
       if (i < 0) return;
       e.sets[i].rir = value;
-      const before = e.sets[i - 1];
-      if (e.sets[i].side === 'right' && before?.side === 'left' && before.rir == null) before.rir = value;
+      if (e.sets[i].side !== 'right' || e.sets[i].type === 'drop') return;
+      // The left straight set of this round, past any drop sets added after it.
+      for (let j = i - 1; j >= 0; j--) {
+        const before = e.sets[j];
+        if (before.isWarmup || before.type === 'drop') continue;
+        if (before.side === 'left' && before.rir == null) before.rir = value;
+        break;
+      }
     });
     if (this.pendingRating?.setID === setID) this.pendingRating = null;
   }
@@ -392,8 +441,11 @@ class WorkoutSession {
     this.updateExercise(exerciseID, (e) => {
       const set = e.sets.find((x) => x.id === setID);
       if (!set || set.isWarmup) return;
+      const was = set.type;
       if (type) set.type = type; else delete set.type;
       if (type === 'failure' && set.done) set.rir = 0;
+      // The 0 came from "to failure", not a rating, so ask again.
+      else if (was === 'failure' && type !== 'failure' && set.rir === 0) set.rir = null;
     });
   }
 
@@ -486,7 +538,12 @@ class WorkoutSession {
 
   /** Logs every remaining working set as planned (from the finish review). */
   logRemainingAsPlanned() {
-    this.update((s) => { for (const e of s.exercises) for (const set of e.sets) if (!set.isWarmup) set.done = true; });
+    this.update((s) => {
+      for (const e of s.exercises) {
+        const loaded = !isBodyweight(Catalog.exercise(e.exerciseID));
+        for (const set of e.sets) if (isPlannedSetUsable(set, loaded)) set.done = true;
+      }
+    });
   }
 
   startRest(seconds: number) {
@@ -529,7 +586,7 @@ class WorkoutSession {
    * has reached the device; if it doesn't, this returns null and nothing is lost. `endedAt` sets when it
    * ended, for a workout finished hours after the last set.
    */
-  async finish(endedAt = Date.now()): Promise<PersonalRecord[] | null> {
+  async finish(endedAt = this.endedAt()): Promise<PersonalRecord[] | null> {
     const state = this.state;
     if (!state || this.saving) return null;
     // The same id every time, so finishing again after a crash replaces the log rather than adding one.
@@ -544,7 +601,7 @@ class WorkoutSession {
         return null;
       }
     }
-    if (completesProgramDay(log)) app.completeProgramDay(state.program!);
+    if (completesProgramDay(log)) app.completeProgramDay(state.program!, rangeChanges(state));
     this.discard();
     this.finished = { records };
     return records;
@@ -602,4 +659,6 @@ if (typeof document !== 'undefined') {
     session.keepAwake();
     session.checkStale();
   });
+  // The wake lock keeps the page visible, so a workout left open overnight never fires the check above.
+  setInterval(() => { if (session.isActive && session.staleSince === null) session.checkStale(); }, 60_000);
 }

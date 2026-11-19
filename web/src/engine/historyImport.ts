@@ -6,6 +6,21 @@ export interface ImportResult {
   workouts: WorkoutRecord[];
   /** Exercise names that couldn't be matched to the catalog, with how many sets were skipped. */
   unmatched: Record<string, number>;
+  /** Rows skipped for a date that isn't a real calendar date, or is in the future. */
+  badDates: number;
+  /** Rows whose weight couldn't be read (or was negative), imported with no weight. */
+  badWeights: number;
+}
+
+/** Assisted variants (the weight is help, not load) are not the plain exercise. */
+const isAssisted = (name: string) => /assist/i.test(name);
+
+/** A number from the file; a decimal comma ("62,5", as European exports write it) counts too. */
+function readNumber(s: string): number | undefined {
+  if (s === '') return undefined;
+  const t = /^-?\d+,\d{1,3}$/.test(s) && !/^-?\d{1,3},\d{3}$/.test(s) ? s.replace(',', '.') : s;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 export const importSetCount = (r: ImportResult) =>
@@ -20,7 +35,7 @@ export class ImportError extends Error {}
  * @param manualMatches exercise names from the file the user matched by hand, mapped to exercise IDs.
  */
 export function parseHistory(text: string, defaultPounds: boolean, manualMatches: Record<string, string> = {},
-                             catalog: Exercise[] = Catalog.all): ImportResult {
+                             catalog: Exercise[] = Catalog.all, now = Date.now()): ImportResult {
   const rows = parseCSV(text);
   if (rows.length < 2) throw new ImportError('The file has no workout rows.');
   const columns = rows[0].map((h) => h.toLowerCase().trim());
@@ -48,29 +63,47 @@ export function parseHistory(text: string, defaultPounds: boolean, manualMatches
   const matcher = new NameMatcher(catalog);
   const unmatched: Record<string, number> = {};
   const byDay = new Map<number, { date: number; exercises: LoggedExercise[] }>();
-
-  for (const row of rows.slice(1)) {
-    if (row.length < columns.length / 2) continue;
-    const value = (i?: number) => (i !== undefined && i < row.length ? row[i].trim() : '');
-    const when = parseDate(value(date));
-    if (when === undefined) continue;
-    const rawName = value(name);
-    if (!rawName) continue;
+  // Each distinct name is matched once: fuzzy matching every row froze the screen on big files.
+  const matched = new Map<string, Exercise | undefined>();
+  const matchName = (rawName: string): Exercise | undefined => {
+    if (matched.has(rawName)) return matched.get(rawName);
     const manualID = manualMatches[rawName];
     const manual = manualID ? catalog.find((e) => e.id === manualID) : undefined;
-    const exercise = manual ?? matcher.match(rawName);
+    const e = manual ?? (isAssisted(rawName) ? undefined : matcher.match(rawName));
+    matched.set(rawName, e);
+    return e;
+  };
+  const body = rows.slice(1);
+  // US apps write MM/DD; a file with any day over 12 in the first place is DD/MM throughout.
+  const dayFirst = date !== undefined && body.some((r) => {
+    const m = (r[date] ?? '').trim().match(/^(\d{1,2})\/(\d{1,2})\/\d{4}/);
+    return m !== null && +m[1] > 12;
+  });
+  let badDates = 0, badWeights = 0;
+
+  for (const row of body) {
+    if (row.length < columns.length / 2) continue;
+    const value = (i?: number) => (i !== undefined && i < row.length ? row[i].trim() : '');
+    const rawName = value(name);
+    if (!rawName) continue;
+    const when = parseDate(value(date), { dayFirst });
+    if (when === undefined || when > now + DAY) { if (value(date)) badDates++; continue; }
+    const exercise = matchName(rawName);
     if (!exercise) { unmatched[rawName] = (unmatched[rawName] ?? 0) + 1; continue; }
 
-    const num = (s: string) => { const n = Number(s); return s !== '' && Number.isFinite(n) ? n : undefined; };
-    const repCount = Math.trunc((exercise.isTimed ? num(value(seconds)) : num(value(reps))) ?? 0);
+    const repCount = Math.trunc((exercise.isTimed ? readNumber(value(seconds)) : readNumber(value(reps))) ?? 0);
     if (repCount <= 0) continue;
-    let kg = num(value(weight)) ?? 0;
+    const rawWeight = value(weight);
+    let kg = readNumber(rawWeight) ?? 0;
+    if ((rawWeight !== '' && readNumber(rawWeight) === undefined) || kg < 0) { badWeights++; kg = 0; }
+    // An assisted set's weight is help, not load: keep the reps, never the weight.
+    if (isAssisted(rawName)) kg = 0;
     if (pounds) kg /= POUNDS_PER_KG;
     const flag = value(warmup).toLowerCase();
     const isWarmup = warmupHeader === 'set order' ? flag === 'w'   // Strong: set number, or W for warm-up
       : warmupHeader === 'set_type' ? flag === 'warmup'             // Hevy
       : flag === 'true' || flag === '1';                            // Fitbod: isWarmup boolean
-    const rpeValue = num(value(rpe));
+    const rpeValue = readNumber(value(rpe));
     const rir = rpeValue !== undefined ? Math.max(0, Math.round(10 - rpeValue)) : null;
 
     const set: LoggedSet = { weight: kg, reps: repCount, rir, isWarmup };
@@ -87,7 +120,33 @@ export function parseHistory(text: string, defaultPounds: boolean, manualMatches
   const workouts = [...byDay.values()]
     .map((v): WorkoutRecord => ({ date: v.date, focus: null, exercises: v.exercises }))
     .sort((a, b) => a.date - b.date);
-  return { workouts, unmatched };
+  return { workouts, unmatched, badDates, badWeights };
+}
+
+const DAY = 86_400_000;
+
+const localDay = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+
+/**
+ * What an import adds to the log: per day, only the exercises not already logged that day. Importing the
+ * same file again after matching names it skipped adds just those, and a day already trained in Forge
+ * keeps its workout while the imported exercises it lacks are added alongside.
+ */
+export function newImports(workouts: WorkoutRecord[], existing: { date: number; exercises: LoggedExercise[] }[]): WorkoutRecord[] {
+  const logged = new Map<number, Set<string>>();
+  for (const l of existing) {
+    const day = localDay(l.date);
+    const ids = logged.get(day) ?? new Set<string>();
+    for (const e of l.exercises) ids.add(e.exerciseID);
+    logged.set(day, ids);
+  }
+  const out: WorkoutRecord[] = [];
+  for (const w of workouts) {
+    const have = logged.get(localDay(w.date));
+    const exercises = have ? w.exercises.filter((e) => !have.has(e.exerciseID)) : w.exercises;
+    if (exercises.length) out.push({ ...w, exercises });
+  }
+  return out;
 }
 
 /** Fuzzy exercise-name matching against the catalog. */
@@ -147,11 +206,18 @@ export class NameMatcher {
     return new Set(cleaned.split(' ').filter(Boolean).map((w) => NameMatcher.synonyms[w] ?? w));
   }
 
-  constructor(private catalog: Exercise[]) {}
+  private byID: Map<string, Exercise>;
+  /** Each catalog exercise's movement words, worked out once rather than for every name matched. */
+  private movementWords: Set<string>[];
+
+  constructor(private catalog: Exercise[]) {
+    this.byID = new Map(catalog.map((e) => [e.id, e]));
+    this.movementWords = catalog.map((e) => new Set([...NameMatcher.tokens(e.name)].filter((w) => !NameMatcher.equipmentWords.has(w))));
+  }
 
   match(name: string): Exercise | undefined {
     const words = NameMatcher.tokens(name);
-    const byID = new Map(this.catalog.map((e) => [e.id, e]));
+    const byID = this.byID;
     const exact = NameMatcher.fitbod[name.toLowerCase().trim()];
     if (exact !== undefined) return byID.get(exact);
     const without = (s: Set<string>) => [...s].filter((w) => !NameMatcher.equipmentWords.has(w));
@@ -166,9 +232,9 @@ export class NameMatcher {
     // Compare movement words only; equipment was already checked.
     const movement = new Set(without(words));
     let best: [Exercise, number] | undefined;
-    for (const e of this.catalog) {
-      const target = new Set(without(NameMatcher.tokens(e.name)));
-      if (!this.equipmentAgrees(words, e) || !movement.size) continue;
+    for (const [i, e] of this.catalog.entries()) {
+      const target = this.movementWords[i];
+      if (!movement.size || !this.equipmentAgrees(words, e)) continue;
       const inter = [...movement].filter((w) => target.has(w)).length;
       const union = new Set([...movement, ...target]).size;
       const score = inter / union;
@@ -226,12 +292,22 @@ export function parseCSV(input: string): string[][] {
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-/** The date formats the Swift importer accepted; times without a zone are local. */
-export function parseDate(s: string): number | undefined {
+/** Whether year, month (1–12), day, hour and minute name a real time, rather than one `Date` would roll over. */
+function realDate(y: number, mo: number, d: number, h = 0, mi = 0, se = 0): boolean {
+  if (mo < 1 || mo > 12 || d < 1 || h > 23 || mi > 59 || se > 59) return false;
+  return d <= new Date(Date.UTC(y, mo, 0)).getUTCDate();
+}
+
+/**
+ * The date formats the Swift importer accepted; times without a zone are local. Impossible dates
+ * (2024-02-30, 99/99/2024) are rejected rather than rolled over. `dayFirst` reads 05/01/2024 as 5 January.
+ */
+export function parseDate(s: string, o: { dayFirst?: boolean } = {}): number | undefined {
   const t = s.trim();
   let m = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?\s*(Z|[+-]\d{2}:?\d{2})?$/);
   if (m) {
     const [, y, mo, d, h = '0', mi = '0', se = '0', zone] = m;
+    if (!realDate(+y, +mo, +d, +h, +mi, +se)) return undefined;
     if (zone) {
       const offset = zone === 'Z' ? 0 : (zone[0] === '-' ? -1 : 1) * (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(-2)));
       return Date.UTC(+y, +mo - 1, +d, +h, +mi, +se) - offset * 60_000;
@@ -241,9 +317,16 @@ export function parseDate(s: string): number | undefined {
   m = t.match(/^(\d{1,2}) ([A-Za-z]{3}) (\d{4}), (\d{2}):(\d{2})$/);
   if (m) {
     const month = MONTHS.indexOf(m[2].toLowerCase());
-    if (month >= 0) return new Date(+m[3], month, +m[1], +m[4], +m[5]).getTime();
+    if (month >= 0 && realDate(+m[3], month + 1, +m[1], +m[4], +m[5])) return new Date(+m[3], month, +m[1], +m[4], +m[5]).getTime();
   }
-  m = t.match(/^(\d{2})\/(\d{2})\/(\d{4})(?: (\d{2}):(\d{2}))?$/);
-  if (m) return new Date(+m[3], +m[1] - 1, +m[2], +(m[4] ?? 0), +(m[5] ?? 0)).getTime();
+  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?: (\d{2}):(\d{2}))?$/);
+  if (m) {
+    const [a, b] = [+m[1], +m[2]];
+    // Month first unless told otherwise, or the first number can't be a month.
+    const [month, day] = o.dayFirst || a > 12 ? [b, a] : [a, b];
+    const h = +(m[4] ?? 0), mi = +(m[5] ?? 0);
+    if (!realDate(+m[3], month, day, h, mi)) return undefined;
+    return new Date(+m[3], month - 1, day, h, mi).getTime();
+  }
   return undefined;
 }

@@ -39,7 +39,7 @@
   }
 </script>
 
-<Sheet title="Still Training?" onclose={() => session.keepGoing()}>
+<Sheet title="Still Training?" onclose={() => session.dismissStale()}>
   {#snippet leading()}<span></span>{/snippet}
   <div class="stack" style="--gap:14px">
     <p class="sub muted">

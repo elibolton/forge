@@ -3,7 +3,7 @@
   import { ArrowDownRight, ArrowLeftRight, ArrowRight, Check, ChevronDown, Circle, CircleCheck, Flag, Flame, Info, Pencil, Plus, Trophy } from '@lucide/svelte';
   import { type SessionExercise, type SessionSet, exerciseOf, isRated, numberedSets, parentOf, session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
-  import { fmtNum } from '../lib/units';
+  import { fmtNum, maxReps, maxWeight } from '../lib/units';
   import ActionMenu from './ActionMenu.svelte';
   import ExerciseNote from './ExerciseNote.svelte';
   import PlateBar from './PlateBar.svelte';
@@ -89,18 +89,22 @@
     ];
   }
 
-  /** Heaviest working set ever logged for this exercise (kg). */
-  const heaviest = $derived(exerciseRecords(app.derivedHistory.sessions.get(ex.exerciseID) ?? []).heaviest?.value);
+  /** Heaviest working set (kg) and most reps ever logged for this exercise. */
+  const bests = $derived(exerciseRecords(app.derivedHistory.sessions.get(ex.exerciseID) ?? []));
+  const heaviest = $derived(bests.heaviest?.value);
   /** A set that looks like a typo, waiting for "log it anyway". */
   let checking = $state<{ id: string; weight: number; heaviest?: number } | null>(null);
+  let checkingReps = $state<{ id: string; reps: number; usual?: number } | null>(null);
 
   function log(id: string, checked = false) {
     const s = ex.sets.find((x) => x.id === id);
     if (!s) return;
     if (!checked) {
-      const problem = checkSet(isBodyweight(e) ? null : s.weight, s.reps, heaviest);
+      const problem = checkSet(isBodyweight(e) ? null : s.weight, s.reps, heaviest,
+        { targetReps: ex.targetReps, mostReps: bests.mostReps?.value, isTimed: e.isTimed });
       if (problem?.kind === 'noReps') { toasts.show(e.isTimed ? 'Set the time before logging' : 'Set your reps before logging'); return; }
       if (problem?.kind === 'heavy') { checking = { id, weight: s.weight ?? 0, heaviest: problem.heaviest }; return; }
+      if (problem?.kind === 'manyReps') { checkingReps = { id, reps: s.reps, usual: problem.usual }; return; }
     }
     session.logSet(id, ex.id);
     editingID = null;
@@ -204,10 +208,10 @@
       <div class="row steppers" style="--gap:10px">
         {#if !isBodyweight(e)}
           <ValueStepper title="Weight" value={units.display(s.weight ?? 0)} step={weightStep} unit={units.symbol} decimals
-            onchange={(v) => session.editSet(ex.id, s.id, { weight: units.kg(v) })} />
+            max={maxWeight(units.pounds)} onchange={(v) => session.editSet(ex.id, s.id, { weight: units.kg(v) })} />
         {/if}
         <ValueStepper title={e.isTimed ? 'Time' : 'Reps'} value={s.reps} step={e.isTimed ? 5 : 1} unit={e.isTimed ? 'seconds' : 'reps'} decimals={false}
-          onchange={(v) => session.editSet(ex.id, s.id, { reps: v })} />
+          max={maxReps(e.isTimed)} onchange={(v) => session.editSet(ex.id, s.id, { reps: v })} />
       </div>
       {#if bar !== undefined && (s.weight ?? 0) > 0}
         <PlateBar total={units.display(s.weight ?? 0)} {bar} pounds={units.pounds} />
@@ -300,6 +304,21 @@
       </p>
       <button class="btn primary block big" onclick={() => (checking = null)}>Fix the Weight</button>
       <button class="btn block big" onclick={() => { checking = null; log(c.id, true); }}>Log {units.format(c.weight)}</button>
+    </div>
+  </Sheet>
+{/if}
+
+{#if checkingReps}
+  {@const c = checkingReps}
+  <Sheet title="Check the Reps" onclose={() => (checkingReps = null)}>
+    {#snippet leading()}<span></span>{/snippet}
+    <div class="stack" style="--gap:14px">
+      <p class="sub muted">
+        {c.reps} reps is {c.usual ? `far more than the ${c.usual} you usually do on ${e.name}` : 'a lot of reps'}.
+        A typo here would count as a personal record and change your next workouts.
+      </p>
+      <button class="btn primary block big" onclick={() => (checkingReps = null)}>Fix the Reps</button>
+      <button class="btn block big" onclick={() => { checkingReps = null; log(c.id, true); }}>Log {c.reps} Reps</button>
     </div>
   </Sheet>
 {/if}

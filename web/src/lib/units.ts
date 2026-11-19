@@ -39,6 +39,12 @@ export function isSameDay(a: number, b: number): boolean {
   return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
 }
 
+/** Upper bounds on typed numbers, so a slipped digit (1000 for 100) can't be saved as a set or activity. */
+export const maxWeight = (pounds: boolean) => (pounds ? 1100 : 500);
+/** Reps per set, or seconds for a timed hold. */
+export const maxReps = (timed: boolean) => (timed ? 3600 : 100);
+export const MAX_MINUTES = 600;
+
 export function dayKey(t = Date.now()): string {
   const d = new Date(t);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

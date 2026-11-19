@@ -1,6 +1,7 @@
 <script lang="ts">
   import { EQUIPMENT, GOALS, type Gym, Gyms, LEVELS, SPLITS, type Split, defaultPlan, uuid } from '../engine';
-  import { Building2, ChevronLeft, ChevronRight, Circle, CircleCheck, Footprints, House, Zap, Share, SquarePlus, Download } from '@lucide/svelte';
+  import { canPull } from '../lib/gymFit';
+  import { Building2, ChevronLeft, ChevronRight, Circle, CircleCheck, Footprints, House, TriangleAlert, Zap, Share, SquarePlus, Download } from '@lucide/svelte';
   import Sheet from '../components/Sheet.svelte';
   import Toggle from '../components/Toggle.svelte';
   import { EQUIPMENT_GROUPS, equipmentTitle, goalBlurb, goalTitle, levelBlurb, levelTitle, splitBlurb, splitTitle } from '../lib/labels';
@@ -25,6 +26,8 @@
 
   const isStandalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
   const gymName = $derived(gym.name.trim() || PRESETS[preset].gym().name);
+  /** No way to pull: say so up front rather than let pull days quietly come up nearly empty. */
+  const cantPull = $derived(!canPull(gym));
   const summary = $derived(`${goalTitle[plan.goal]} · ${splitTitle[plan.split]} · ${plan.sessionMinutes} min · ${levelTitle[plan.experience]} · ${gymName}`);
 
   function finish() {
@@ -93,6 +96,12 @@
         <label class="item"><span class="muted">Name</span><input type="text" bind:value={gym.name} placeholder={PRESETS[preset].gym().name} style="text-align:right;background:transparent" /></label>
         <button class="item" onclick={() => (editingGym = true)}>Customize equipment <span class="value mono">{gym.equipment.length}</span><ChevronRight size={16} color="var(--muted)" /></button>
       </div>
+      {#if cantPull}
+        <div class="card stack pull-warn" role="note" style="margin-top:20px;--gap:6px">
+          <div class="row bold" style="--gap:8px"><TriangleAlert size={18} color="var(--recovering)" /> Nothing to pull with</div>
+          <p class="sub muted">With this equipment there are no back exercises, so {plan.split === 'pushPullLegs' ? 'pull days will be nearly empty' : 'your back and biceps will get little work'}. A pull-up bar, resistance bands or dumbbells fix that.</p>
+        </div>
+      {/if}
       <div class="card stack" style="margin-top:20px">
         <div class="bold">Units</div>
         <p class="sub muted">Used for your weights and plate math.</p>
