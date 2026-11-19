@@ -13,7 +13,7 @@
   /** Bodyweight over time, with a quick weigh-in. */
   let logging = $state(false);
   let value = $state(0);
-  const entries = $derived(app.profile?.bodyweights ?? []);
+  const entries = $derived(app.bodyweights);
   const trend = $derived(bodyweightTrend(entries));
   const u = $derived(app.units);
   const points = $derived(entries.slice(0, 120).map((e) => ({ x: e.date, y: u.display(e.kg) })));

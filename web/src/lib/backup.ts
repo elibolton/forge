@@ -22,8 +22,12 @@ export async function exportBackup(): Promise<boolean> {
  * damaged record still makes it into the file.
  */
 export async function exportRawBackup(): Promise<boolean> {
-  const [profile, logs, kv, session] = await Promise.all([db.get('profile'), db.allLogs(), db.get('kv'), db.get('session')]);
-  const text = JSON.stringify({ app: 'forge', version: 1, raw: true, exportedAt: Date.now(), profile, logs, kv, session }, null, 1);
+  const [profile, logs, kv, session, activities, bodyweights, templates] = await Promise.all([
+    db.get('profile'), db.allLogs(), db.get('kv'), db.get('session'), db.all('activities'), db.all('bodyweights'), db.all('templates'),
+  ]);
+  const text = JSON.stringify({
+    app: 'forge', version: 2, raw: true, exportedAt: Date.now(), profile, logs, activities, bodyweights, templates, kv, session,
+  }, null, 1);
   return saveFile(text, `forge-raw-${dayKey()}.json`);
 }
 

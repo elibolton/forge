@@ -27,16 +27,42 @@ export interface Profile {
   programProgress: ProgramProgress | null;
   /** Your own sticky note per exercise ("seat on 4", "use the blue band"). */
   exerciseNotes: Record<string, string>;
-  /** Cardio and sport sessions, newest first. */
-  activities: Activity[];
   /** Lifting workouts you aim for each week (Monday to Sunday). */
   weeklyGoal: number;
-  /** Workouts you saved to do again. */
-  templates: WorkoutTemplate[];
   /** Stretches added before and after a workout. */
   mobility: { warmup: boolean; cooldown: boolean };
-  /** Weigh-ins, newest first. */
+}
+
+/**
+ * Records that grow over time, each in its own store since database version 3. Before that they lived
+ * inside the profile, so every weigh-in rewrote the whole profile.
+ */
+export interface Collections {
+  /** Cardio and sport sessions. */
+  activities: Activity[];
+  /** Weigh-ins. */
   bodyweights: BodyweightEntry[];
+  /** Workouts you saved to do again. */
+  templates: WorkoutTemplate[];
+}
+type CollectionName = keyof Collections;
+const COLLECTION_NAMES: CollectionName[] = ['activities', 'bodyweights', 'templates'];
+
+const newestFirst = <T extends { date: number }>(xs: T[]) => [...xs].sort((a, b) => b.date - a.date);
+
+/** Reads each collection tolerantly and puts it in display order. */
+function readCollections(v: { activities?: unknown; bodyweights?: unknown; templates?: unknown }): Collections {
+  return {
+    activities: newestFirst(lossy(v.activities, readActivity)),
+    bodyweights: newestFirst(lossy(v.bodyweights, readBodyweight)),
+    templates: lossy(v.templates, readTemplate).sort((a, b) => b.createdAt - a.createdAt),
+  };
+}
+
+/** Records with the same id: the first list's copy wins. */
+function mergeByID<T extends { id: string }>(first: T[], second: T[]): T[] {
+  const ids = new Set(first.map((x) => x.id));
+  return [...first, ...second.filter((x) => !ids.has(x.id))];
 }
 
 export interface WorkoutLog {
@@ -74,9 +100,6 @@ function readProfile(v: unknown): Profile | null {
     exerciseNotes: isObj(v.exerciseNotes)
       ? Object.fromEntries(Object.entries(v.exerciseNotes).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].trim() !== ''))
       : {},
-    activities: lossy(v.activities, readActivity).sort((a, b) => b.date - a.date),
-    templates: lossy(v.templates, readTemplate),
-    bodyweights: lossy(v.bodyweights, readBodyweight).sort((a, b) => b.date - a.date),
     mobility: {
       warmup: isObj(v.mobility) && typeof v.mobility.warmup === 'boolean' ? v.mobility.warmup : false,
       cooldown: isObj(v.mobility) && typeof v.mobility.cooldown === 'boolean' ? v.mobility.cooldown : false,
@@ -111,6 +134,12 @@ class AppStore {
   logs = $state.raw<WorkoutLog[]>([]);
   /** Small per-device UI values (today's plan, program day edits, generator day…). */
   kv = $state.raw<Record<string, unknown>>({});
+  /** Newest first. */
+  activities = $state.raw<Activity[]>([]);
+  /** Newest first. */
+  bodyweights = $state.raw<BodyweightEntry[]>([]);
+  /** Newest created first. */
+  templates = $state.raw<WorkoutTemplate[]>([]);
 
   records = $derived(this.logs.map(logRecord));
 
@@ -157,7 +186,12 @@ class AppStore {
 
   async load() {
     try {
-      const [profile, stored, legacy, kv] = await Promise.all([db.get('profile'), db.allLogs(), db.get('logs'), db.get('kv')]);
+      const [profile, stored, legacy, kv, activities, bodyweights, templates] = await Promise.all([
+        db.get('profile'), db.allLogs(), db.get('logs'), db.get('kv'), db.all('activities'), db.all('bodyweights'), db.all('templates'),
+      ]);
+      let collections = readCollections({ activities, bodyweights, templates });
+      // Before version 3, cardio, weigh-ins and saved workouts lived inside the profile; move them out once.
+      if (isObj(profile) && COLLECTION_NAMES.some((c) => c in profile)) collections = await this.moveOutOfProfile(profile, collections);
       let logs: unknown[] = stored;
       // Before version 2 every workout lived in one list under 'logs'; move them to their own store once.
       if (Array.isArray(legacy) && legacy.length) {
@@ -173,6 +207,7 @@ class AppStore {
       this.profile = p;
       this.logs = lossy(logs, readLog).sort((a, b) => b.date - a.date);
       this.kv = isObj(kv) ? kv : {};
+      this.setCollections(collections);
       this.loadError = null;
     } catch (e) {
       console.error('Could not load saved data', e);
@@ -190,9 +225,12 @@ class AppStore {
     this.loadError = null;
     this.ready = false;
     try {
-      const [stored, kv] = await Promise.all([db.allLogs(), db.get('kv')]);
+      const [stored, kv, activities, bodyweights, templates] = await Promise.all([
+        db.allLogs(), db.get('kv'), db.all('activities'), db.all('bodyweights'), db.all('templates'),
+      ]);
       this.logs = lossy(stored, readLog).sort((a, b) => b.date - a.date);
       this.kv = isObj(kv) ? kv : {};
+      this.setCollections(readCollections({ activities, bodyweights, templates }));
     } catch (e) {
       console.error('Could not read workouts', e);
     }
@@ -200,12 +238,33 @@ class AppStore {
     this.ready = true;
   }
 
+  /**
+   * Moves the collections out of a version 2 profile into their own stores, in one transaction with
+   * the slimmed profile, and returns them merged with anything already in the stores.
+   */
+  private async moveOutOfProfile(raw: Raw, stored: Collections): Promise<Collections> {
+    const fromProfile = readCollections(raw);
+    const slim = Object.fromEntries(Object.entries(raw).filter(([k]) => !COLLECTION_NAMES.includes(k as CollectionName)));
+    await db.moveIntoCollections(slim, $state.snapshot(fromProfile));
+    return {
+      activities: newestFirst(mergeByID(stored.activities, fromProfile.activities)),
+      bodyweights: newestFirst(mergeByID(stored.bodyweights, fromProfile.bodyweights)),
+      templates: mergeByID(stored.templates, fromProfile.templates).sort((a, b) => b.createdAt - a.createdAt),
+    };
+  }
+
+  private setCollections(c: Collections) {
+    this.activities = c.activities;
+    this.bodyweights = c.bodyweights;
+    this.templates = c.templates;
+  }
+
   // MARK: Profile
 
   createProfile(plan: UserPlan, gym: Gym, usesPounds: boolean, weeklyGoal = 3) {
     this.setProfile({
       plan, gyms: [gym], overrides: [], activeGymID: gym.id, usesPounds, createdAt: Date.now(), customExercises: [],
-      programProgress: null, exerciseNotes: {}, activities: [], weeklyGoal, templates: [], mobility: { warmup: false, cooldown: false }, bodyweights: [],
+      programProgress: null, exerciseNotes: {}, weeklyGoal, mobility: { warmup: false, cooldown: false },
     });
   }
 
@@ -248,30 +307,45 @@ class AppStore {
   }
 
   /** Logged activities in the form the recovery model reads. */
-  external = $derived(toExternal(this.profile?.activities ?? []));
+  external = $derived(toExternal(this.activities));
+
+  // Each writes just the one record it touches, and resolves to whether it reached the device.
+  private putRecord(c: CollectionName, item: { id: string }) {
+    const snap = $state.snapshot(item);
+    return saving.run(`${c}:${item.id}`, () => db.put(c, [snap]));
+  }
+  private deleteRecord(c: CollectionName, id: string) {
+    return saving.run(`${c}:${id}`, () => db.delete(c, id));
+  }
 
   addActivity(a: Activity) {
-    this.updateProfile((p) => { p.activities = [a, ...p.activities.filter((x) => x.id !== a.id)].sort((x, y) => y.date - x.date); });
+    this.activities = newestFirst([a, ...this.activities.filter((x) => x.id !== a.id)]);
+    return this.putRecord('activities', a);
   }
 
   removeActivity(id: string) {
-    this.updateProfile((p) => { p.activities = p.activities.filter((x) => x.id !== id); });
+    this.activities = this.activities.filter((x) => x.id !== id);
+    return this.deleteRecord('activities', id);
   }
 
   addBodyweight(e: BodyweightEntry) {
-    this.updateProfile((p) => { p.bodyweights = [e, ...p.bodyweights.filter((x) => x.id !== e.id)].sort((a, b) => b.date - a.date); });
+    this.bodyweights = newestFirst([e, ...this.bodyweights.filter((x) => x.id !== e.id)]);
+    return this.putRecord('bodyweights', e);
   }
 
   removeBodyweight(id: string) {
-    this.updateProfile((p) => { p.bodyweights = p.bodyweights.filter((x) => x.id !== id); });
+    this.bodyweights = this.bodyweights.filter((x) => x.id !== id);
+    return this.deleteRecord('bodyweights', id);
   }
 
   saveTemplate(t: WorkoutTemplate) {
-    this.updateProfile((p) => { p.templates = [t, ...p.templates.filter((x) => x.id !== t.id)]; });
+    this.templates = [t, ...this.templates.filter((x) => x.id !== t.id)].sort((a, b) => b.createdAt - a.createdAt);
+    return this.putRecord('templates', t);
   }
 
   removeTemplate(id: string) {
-    this.updateProfile((p) => { p.templates = p.templates.filter((x) => x.id !== id); });
+    this.templates = this.templates.filter((x) => x.id !== id);
+    return this.deleteRecord('templates', id);
   }
 
   setExerciseNote(id: string, text: string) {
@@ -345,18 +419,34 @@ class AppStore {
 
   // MARK: Backup
 
+  /** Version 2 keeps the collections beside the profile, as the database does. */
   backup(): string {
-    return JSON.stringify({ app: 'forge', version: 1, exportedAt: Date.now(), profile: this.profile, logs: this.logs }, null, 1);
+    return JSON.stringify({
+      app: 'forge', version: 2, exportedAt: Date.now(), profile: this.profile, logs: this.logs,
+      activities: this.activities, bodyweights: this.bodyweights, templates: this.templates,
+    }, null, 1);
   }
 
-  /** Replaces everything with a backup. Throws if the file isn't one. */
+  /**
+   * Replaces everything with a backup. Throws if the file isn't one. Reads both layouts: collections
+   * beside the profile (version 2) or inside it (version 1).
+   */
   restore(text: string) {
     const data = JSON.parse(text);
     if (!isObj(data) || data.app !== 'forge') throw new Error("That file isn't a Forge backup.");
     const profile = readProfile(data.profile);
     if (!profile) throw new Error('The backup has no profile.');
+    const inProfile = data.profile as Raw;
+    const pick = (c: CollectionName) => (Array.isArray(data[c]) ? data[c] : inProfile[c]);
+    const collections = readCollections({ activities: pick('activities'), bodyweights: pick('bodyweights'), templates: pick('templates') });
     this.setProfile(profile);
     this.restoreLogs(lossy(data.logs, readLog));
+    this.setCollections(collections);
+    for (const c of COLLECTION_NAMES) {
+      saving.forget(`${c}:`);
+      const snap = $state.snapshot(collections[c]);
+      saving.run(`${c}:*`, () => db.replace(c, snap));
+    }
     this.set('todayPlan', undefined);
   }
 

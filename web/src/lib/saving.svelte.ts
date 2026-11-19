@@ -21,7 +21,8 @@ class Saving {
    * Writes to IndexedDB run in the order they're made, so the newest write for a key lands last.
    */
   run(key: string, write: () => Promise<unknown>): Promise<boolean> {
-    return write().then(
+    // A write that throws before returning a promise counts as a failed save too.
+    return new Promise<unknown>((resolve) => resolve(write())).then(
       () => {
         this.failed.delete(key);
         if (!this.failed.size) this.error = null;

@@ -22,7 +22,7 @@
   });
   const activitiesByDay = $derived.by(() => {
     const m = new Map<string, Activity[]>();
-    for (const a of app.profile?.activities ?? []) { const k = dayKey(a.date); m.set(k, [...(m.get(k) ?? []), a]); }
+    for (const a of app.activities) { const k = dayKey(a.date); m.set(k, [...(m.get(k) ?? []), a]); }
     return m;
   });
   const monthDate = $derived(new Date(month));

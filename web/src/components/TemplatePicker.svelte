@@ -12,7 +12,7 @@
 
   /** Your saved workouts: start one, rename or delete it. */
   let { onclose }: { onclose: () => void } = $props();
-  const list = $derived([...(app.profile?.templates ?? [])].sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt)));
+  const list = $derived([...app.templates].sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt)));
 
   function start(t: WorkoutTemplate) {
     app.saveTemplate({ ...t, lastUsed: Date.now() });

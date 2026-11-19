@@ -9,7 +9,7 @@
   const now = Date.now();
   const dates = $derived(app.logs.map((l) => l.date));
   const lifted = $derived(trainedDays(dates, now));
-  const cardio = $derived(trainedDays((app.profile?.activities ?? []).map((a) => a.date), now));
+  const cardio = $derived(trainedDays(app.activities.map((a) => a.date), now));
   const done = $derived(countInWeek(dates, weekStart(now)));
   const goal = $derived(app.profile?.weeklyGoal ?? 3);
   const streak = $derived(goalStreak(dates, goal, now));
