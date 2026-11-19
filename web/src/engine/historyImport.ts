@@ -187,7 +187,8 @@ export class NameMatcher {
         : eq === 'cableHigh' || eq === 'cableLow' || eq === 'cableAdjustable' || eq === 'latPulldown' ? 'cable'
         : eq === 'kettlebell' ? 'kettlebell' : eq === 'smithMachine' ? 'smith' : eq === 'resistanceBand' ? 'band'
         : eq === 'ezBar' ? 'ez'
-        : ['legPress', 'legCurl', 'legExtension', 'chestPressMachine', 'shoulderPressMachine'].includes(eq) ? 'machine' : undefined;
+        : ['legPress', 'legCurl', 'legExtension', 'chestPressMachine', 'shoulderPressMachine', 'hackSquat', 'seatedLegCurl', 'calfMachine',
+          'hipAbductorMachine', 'pecDeck', 'lateralRaiseMachine', 'rowMachine'].includes(eq) ? 'machine' : undefined;
       if (w) uses.add(w);
     }
     return named.every((w) => uses.has(w));

@@ -233,3 +233,34 @@ export const mobility: Exercise[] = [
   stretch("shin-box", "Shin Box Hip Flexor Stretch", ['glutes', 'quads'], [], true),
   stretch("prone-calf-stretch", "Prone Calf Stretch", ['calves'], [], true),
 ];
+
+/** Added after the research report: top-rated picks the catalog was missing, and options for home cable stations. */
+export const researchPicks: Exercise[] = [
+  // Usable with a pulldown/row station, dumbbells and an adjustable bench
+  ex("bayesian-cable-curl", "Bayesian Cable Curl", ['biceps'], ['forearms'], ['cableLow', 'singleHandle'], 'isolation', { compound: false, oneRM: 20, joints: ['elbow', 'shoulder'] }),
+  ex("cable-reverse-fly", "Single-Arm Cable Reverse Fly", ['rearDelts'], ['upperBack'], ['cableHigh', 'singleHandle'], 'isolation', { compound: false, oneRM: 15, joints: ['shoulder'] }),
+  ex("low-to-high-cable-fly", "Low-to-High Cable Fly", ['chest'], ['frontDelts'], ['cableLow', 'singleHandle'], 'isolation', { compound: false, oneRM: 20, joints: ['shoulder'] }),
+  ex("kneeling-cable-pulldown", "Half-Kneeling Single-Arm Cable Pulldown", ['lats'], ['biceps', 'rearDelts'], ['cableHigh', 'singleHandle'], 'verticalPull', { compound: true, oneRM: 30, joints: ['shoulder'] }),
+  ex("cable-y-raise", "Cable Y-Raise", ['sideDelts'], ['upperBack'], ['cableLow', 'singleHandle'], 'isolation', { compound: false, level: 'intermediate', oneRM: 8, joints: ['shoulder'] }),
+  ex("jm-press", "JM Press", ['triceps'], ['chest', 'frontDelts'], ['barbell', 'bench', 'squatRack'], 'horizontalPush', { compound: true, level: 'intermediate', oneRM: 45, joints: ['elbow', 'wrist'] }),
+  ex("chest-supported-rear-raise", "Chest-Supported Rear Delt Raise", ['rearDelts'], ['upperBack'], ['dumbbell', 'adjustableBench'], 'isolation', { compound: false, oneRM: 8, joints: ['shoulder'] }),
+  ex("spider-curl", "Spider Curl", ['biceps'], [], ['dumbbell', 'adjustableBench'], 'isolation', { compound: false, oneRM: 10, joints: ['elbow'] }),
+  ex("deficit-reverse-lunge", "Deficit Reverse Lunge", ['quads', 'glutes'], ['adductors', 'hamstrings'], ['dumbbell'], 'lunge', { compound: true, oneRM: 20, joints: ['knee', 'hip'] }),
+  ex("reverse-nordic", "Reverse Nordic", ['quads'], [], [], 'isolation', { compound: false, level: 'intermediate', oneRM: 0, joints: ['knee'] }),
+  // Machines
+  ex("pec-deck", "Pec Deck", ['chest'], ['frontDelts'], ['pecDeck'], 'isolation', { compound: false, oneRM: 50, joints: ['shoulder'] }),
+  ex("reverse-pec-deck", "Reverse Pec Deck", ['rearDelts'], ['upperBack'], ['pecDeck'], 'isolation', { compound: false, oneRM: 35, joints: ['shoulder'] }),
+  ex("hack-squat", "Hack Squat", ['quads'], ['glutes', 'adductors'], ['hackSquat'], 'squat', { compound: true, oneRM: 100, joints: ['knee'] }),
+  ex("seated-leg-curl", "Seated Leg Curl", ['hamstrings'], ['calves'], ['seatedLegCurl'], 'isolation', { compound: false, oneRM: 55, joints: ['knee'] }),
+  ex("calf-machine-raise", "Standing Calf Raise Machine", ['calves'], [], ['calfMachine'], 'isolation', { compound: false, oneRM: 110, joints: ['ankle'] }),
+  ex("leg-press-calf-raise", "Leg Press Calf Raise", ['calves'], [], ['legPress'], 'isolation', { compound: false, oneRM: 140, joints: ['ankle'] }),
+  ex("machine-lateral-raise", "Machine Lateral Raise", ['sideDelts'], [], ['lateralRaiseMachine'], 'isolation', { compound: false, oneRM: 30, joints: ['shoulder'] }),
+  ex("machine-row", "Chest-Supported Machine Row", ['upperBack', 'lats'], ['biceps', 'rearDelts'], ['rowMachine'], 'horizontalPull', { compound: true, oneRM: 70, joints: ['shoulder', 'elbow'] }),
+  ex("machine-hip-abduction", "Hip Abduction Machine", ['abductors'], ['glutes'], ['hipAbductorMachine'], 'isolation', { compound: false, oneRM: 50, joints: ['hip'] }),
+  ex("machine-hip-adduction", "Hip Adduction Machine", ['adductors'], [], ['hipAbductorMachine'], 'isolation', { compound: false, oneRM: 50, joints: ['hip'] }),
+  // Small gear: an ankle strap, a rope, a dip belt
+  ex("cable-leg-curl", "Standing Cable Leg Curl", ['hamstrings'], [], ['cableLow', 'ankleStrap'], 'isolation', { compound: false, oneRM: 15, joints: ['knee'] }),
+  ex("cable-leg-extension", "Seated Cable Leg Extension", ['quads'], [], ['cableLow', 'ankleStrap', 'bench'], 'isolation', { compound: false, oneRM: 15, joints: ['knee'] }),
+  ex("cable-pull-through", "Cable Pull-Through", ['glutes', 'hamstrings'], ['lowerBack'], ['cableLow', 'rope'], 'hinge', { compound: true, oneRM: 40, joints: ['hip', 'lowerBack'] }),
+  ex("weighted-pull-up", "Weighted Pull-Up", ['lats'], ['biceps', 'upperBack', 'rearDelts'], ['pullUpBar', 'dipBelt'], 'verticalPull', { compound: true, level: 'intermediate', oneRM: 20, joints: ['shoulder', 'elbow'] }),
+];

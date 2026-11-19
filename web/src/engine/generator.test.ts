@@ -133,8 +133,8 @@ describe('Exercise quality', () => {
   });
 
   test('home gym without leg machines gets the stand-ins', () => {
-    const ids = make({ sessionMinutes: 75 }, Gyms.homeBarbell()).generate({ now, seed: 1, focus: 'legs' }).exercises.map((p) => p.exercise.id);
-    expect(ids).toContain('sissy-squat');
+    const ex = make({ sessionMinutes: 75 }, Gyms.homeBarbell()).generate({ now, seed: 1, focus: 'legs' }).exercises;
+    expect(ex.some((p) => ['sissy-squat', 'reverse-nordic'].includes(p.exercise.id))).toBe(true);
   });
 });
 

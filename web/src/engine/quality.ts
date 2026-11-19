@@ -201,7 +201,8 @@ export const QUALITY: Record<string, Quality> = {
   'bb-deadlift': q('BSSA', [3, 3, 5, 5, 4, 3, 5], 'deadlift'),
   'sumo-deadlift': q('CASB', [3, 3, 5, 5, 4, 3, 4], 'deadlift'),
   'trap-bar-deadlift': q('BABA', [3, 3, 5, 4, 2, 2, 3], 'deadlift'),
-  'leg-curl': q('SCCA', [4, 5, 5, 1, 1, 1, 1], 'legCurl'),
+  // Lying: hip extended, so less hamstring stretch than seated (Maeo 2021).
+  'leg-curl': q('ACCA', [3, 5, 5, 1, 1, 1, 1], 'legCurl'),
   'prone-db-leg-curl': q('BCCA', [3, 3, 2, 1, 1, 1, 1], 'legCurl'),
   'nordic-curl': q('BCCB', [5, 3, 1, 2, 2, 3, 1], 'legCurl'),
   'hip-thrust': q('ABCA', [2, 4, 5, 2, 2, 1, 2], 'hipThrust'),
@@ -262,6 +263,35 @@ export const QUALITY: Record<string, Quality> = {
   'bear-crawl': q('CCCB', ISO, 'core'),
   // Grip and conditioning, not a pull-day muscle builder.
   'farmer-carry': q('CBCA', [1, 3, 4, 3, 1, 1, 2], 'carry'),
+
+  // Research picks added later
+  // Behind-the-body: loads the biceps long head stretched; grew the biceps like the preacher curl.
+  'bayesian-cable-curl': q('SCCA', [5, 4, 4, 1, 2, 1, 1], 'curlLong'),
+  'cable-reverse-fly': q('SCCA', [4, 4, 4, 1, 1, 1, 1], 'rearDelt'),
+  'low-to-high-cable-fly': q('ACCB', [3, 4, 4, 1, 1, 1, 1], 'chestFly'),
+  'kneeling-cable-pulldown': q('ACCA', [5, 3, 4, 1, 2, 1, 1], 'verticalPull', 'latIso'),
+  'cable-y-raise': q('ACCA', [4, 4, 3, 1, 2, 1, 1], 'sideRaise'),
+  'jm-press': q('AAAB', [4, 3, 5, 2, 3, 3, 3], 'tricepsOther'),
+  'chest-supported-rear-raise': q('ACCA', [3, 4, 3, 1, 1, 1, 1], 'rearDelt'),
+  'spider-curl': q('BCCB', [1, 4, 3, 1, 1, 1, 1], 'curlShort'),
+  'deficit-reverse-lunge': q('ACCA', [5, 2, 4, 3, 2, 2, 2], 'unilateral'),
+  // Hip extended while the knee bends: stretches the rectus femoris, but it's hard to load.
+  'reverse-nordic': q('BCCB', [5, 3, 1, 1, 2, 3, 1], 'kneeExt'),
+  'pec-deck': q('SCCA', [4, 5, 5, 1, 1, 1, 1], 'chestFly'),
+  'reverse-pec-deck': q('SCCA', [3, 5, 5, 1, 1, 1, 1], 'rearDelt'),
+  'hack-squat': q('SBCA', [5, 5, 5, 3, 1, 2, 2], 'squatMain'),
+  // Hip flexed: the longer hamstring length grew more than lying curls (Maeo 2021).
+  'seated-leg-curl': q('SCCA', [5, 5, 5, 1, 1, 1, 1], 'legCurl'),
+  'calf-machine-raise': q('SCCA', [5, 5, 5, 1, 1, 1, 1], 'calf'),
+  'leg-press-calf-raise': q('ACCA', [5, 5, 5, 1, 1, 1, 1], 'calf'),
+  'machine-lateral-raise': q('SCCA', [3, 5, 5, 1, 1, 1, 1], 'sideRaise'),
+  'machine-row': q('SBCA', [4, 5, 5, 1, 1, 1, 2], 'row'),
+  'machine-hip-abduction': q('BCCB', [3, 5, 5, 1, 1, 1, 1], 'abduction'),
+  'machine-hip-adduction': q('BCCB', [4, 5, 5, 1, 1, 1, 1], 'adduction'),
+  'cable-leg-curl': q('ACCA', [3, 3, 4, 1, 2, 1, 1], 'legCurl'),
+  'cable-leg-extension': q('ACCB', [3, 3, 4, 1, 2, 2, 1], 'kneeExt'),
+  'cable-pull-through': q('BCCA', [3, 3, 4, 1, 1, 1, 1], 'hipThrust', 'hinge'),
+  'weighted-pull-up': q('SABA', [4, 3, 5, 2, 2, 2, 2], 'verticalPull'),
 };
 
 /** A best guess for exercises without an entry (the user's custom ones). */

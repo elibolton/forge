@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Catalog, type ExercisePreference, type LoggedExercise, guideFor, isBodyweight, isCustom, muscleName, oneRM, workingSets } from '../engine';
-  import { SquarePen, TriangleAlert } from '@lucide/svelte';
+  import { Lightbulb, SquarePen, TriangleAlert } from '@lucide/svelte';
   import BackBar from '../components/BackBar.svelte';
   import CustomExerciseEditor from '../components/CustomExerciseEditor.svelte';
   import ExerciseThumb from '../components/ExerciseThumb.svelte';
@@ -60,8 +60,11 @@
         {#each guide.steps as step, i (i)}
           <div class="row" style="align-items:flex-start"><span class="step-num">{i + 1}</span><span class="sub">{step}</span></div>
         {/each}
+        {#each guide.tips ?? [] as tip (tip)}
+          <div class="row" style="align-items:flex-start"><Lightbulb size={18} color="var(--fresh)" style="flex:none;margin:1px 2px 0" /><span class="sub"><b>Tip:</b>{" "}{tip}</span></div>
+        {/each}
         {#if guide.mistake}
-          <div class="row" style="align-items:flex-start"><TriangleAlert size={18} color="var(--recovering)" style="flex:none;margin:1px 2px 0" /><span class="sub"><b>Avoid: </b>{guide.mistake}</span></div>
+          <div class="row" style="align-items:flex-start"><TriangleAlert size={18} color="var(--recovering)" style="flex:none;margin:1px 2px 0" /><span class="sub"><b>Avoid:</b>{" "}{guide.mistake}</span></div>
         {/if}
       </div>
     </div>

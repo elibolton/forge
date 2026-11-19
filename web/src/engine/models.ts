@@ -23,7 +23,8 @@ export const EQUIPMENT = [
   'flatBench', 'adjustableBench', 'squatRack', 'pullUpBar', 'dipStation', 'preacherBench', 'backExtension',
   'cableDual', 'cableColumn', 'latPulldown', 'lowRow',
   'rope', 'straightBar', 'singleHandle', 'vBar', 'ankleStrap',
-  'legPress', 'legExtension', 'legCurl', 'chestPressMachine', 'shoulderPressMachine', 'smithMachine',
+  'legPress', 'hackSquat', 'legExtension', 'seatedLegCurl', 'legCurl', 'calfMachine', 'hipAbductorMachine',
+  'chestPressMachine', 'pecDeck', 'shoulderPressMachine', 'lateralRaiseMachine', 'rowMachine', 'smithMachine',
   'resistanceBand', 'abWheel',
 ] as const;
 export type Equipment = (typeof EQUIPMENT)[number];
@@ -37,7 +38,8 @@ export const NEEDS = [
   'bench', 'adjustableBench', 'squatRack', 'pullUpBar', 'dipStation', 'preacherBench', 'backExtension',
   'cableHigh', 'cableLow', 'cableAdjustable', 'latPulldown',
   'rope', 'straightBar', 'singleHandle', 'vBar', 'ankleStrap',
-  'legPress', 'legExtension', 'legCurl', 'chestPressMachine', 'shoulderPressMachine', 'smithMachine',
+  'legPress', 'hackSquat', 'legExtension', 'seatedLegCurl', 'legCurl', 'calfMachine', 'hipAbductorMachine',
+  'chestPressMachine', 'pecDeck', 'shoulderPressMachine', 'lateralRaiseMachine', 'rowMachine', 'smithMachine',
   'resistanceBand', 'abWheel',
 ] as const;
 export type Need = (typeof NEEDS)[number];
@@ -57,7 +59,7 @@ export function provides(equipment: readonly Equipment[]): Set<Need> {
 
 /** Load-step settings are per kind of load: all cables share one stack step, for example. */
 export const LOAD_KINDS = [
-  'barbell', 'trapBar', 'ezBar', 'smithMachine', 'dumbbell', 'kettlebell', 'plates',
+  'barbell', 'trapBar', 'ezBar', 'smithMachine', 'dumbbell', 'kettlebell', 'plates', 'machine',
   'cable', 'latPulldown', 'legPress', 'legCurl', 'legExtension', 'chestPressMachine', 'shoulderPressMachine',
 ] as const;
 export type LoadKind = (typeof LOAD_KINDS)[number];
@@ -131,9 +133,11 @@ export const isCustom = (e: Exercise) => e.id.startsWith(CUSTOM_PREFIX);
 
 const LOAD_ORDER: [Need, LoadKind][] = [
   ['barbell', 'barbell'], ['trapBar', 'trapBar'], ['ezBar', 'ezBar'], ['smithMachine', 'smithMachine'],
-  ['dumbbell', 'dumbbell'], ['kettlebell', 'kettlebell'], ['dipBelt', 'plates'], ['latPulldown', 'latPulldown'],
+  ['dumbbell', 'dumbbell'], ['kettlebell', 'kettlebell'], ['dipBelt', 'plates'], ['hackSquat', 'plates'], ['latPulldown', 'latPulldown'],
   ['cableHigh', 'cable'], ['cableLow', 'cable'], ['cableAdjustable', 'cable'], ['legPress', 'legPress'], ['legCurl', 'legCurl'],
   ['legExtension', 'legExtension'], ['chestPressMachine', 'chestPressMachine'], ['shoulderPressMachine', 'shoulderPressMachine'],
+  ['seatedLegCurl', 'machine'], ['calfMachine', 'machine'], ['hipAbductorMachine', 'machine'], ['pecDeck', 'machine'],
+  ['lateralRaiseMachine', 'machine'], ['rowMachine', 'machine'],
 ];
 
 /** The kind of load that sets the step size and bar weight. */

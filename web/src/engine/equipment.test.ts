@@ -57,3 +57,47 @@ describe('Specific equipment', () => {
     expect(Catalog.builtIn.filter((e) => !gymHas(full, e)).map((e) => e.id)).toEqual([]);
   });
 });
+
+describe('Research picks', () => {
+  const NEW = ['bayesian-cable-curl', 'cable-reverse-fly', 'low-to-high-cable-fly', 'kneeling-cable-pulldown', 'cable-y-raise', 'jm-press',
+    'chest-supported-rear-raise', 'spider-curl', 'deficit-reverse-lunge', 'reverse-nordic', 'pec-deck', 'reverse-pec-deck', 'hack-squat',
+    'seated-leg-curl', 'calf-machine-raise', 'leg-press-calf-raise', 'machine-lateral-raise', 'machine-row', 'machine-hip-abduction',
+    'machine-hip-adduction', 'cable-leg-curl', 'cable-leg-extension', 'cable-pull-through', 'weighted-pull-up'];
+
+  test('each has a rating and instructions with tips', async () => {
+    const { QUALITY, guideFor } = await import('./index');
+    for (const id of NEW) {
+      expect(Catalog.byID.get(id), id).toBeDefined();
+      expect(QUALITY[id], id).toBeDefined();
+      const g = guideFor(byID(id))!;
+      expect(g.steps.length, id).toBeGreaterThanOrEqual(3);
+      expect(g.tips?.length, id).toBeGreaterThanOrEqual(2);
+      expect(g.mistake, id).toBeTruthy();
+    }
+  });
+
+  const plan = (gym: ReturnType<typeof makeGym>, focus: 'push' | 'pull' | 'legs') =>
+    new Planner({ plan: defaultPlan({ sessionMinutes: 75 }), gym, history: [] }).generate({ now: 1_800_000_000_000, seed: 1, focus })
+      .exercises.map((p) => p.exercise.id);
+
+  test('a home pulldown/row station gets the new cable picks', () => {
+    const home = Gyms.homeBarbell();
+    for (const id of ['bayesian-cable-curl', 'cable-reverse-fly', 'low-to-high-cable-fly', 'cable-y-raise']) expect(gymHas(home, byID(id)), id).toBe(true);
+    expect(plan(home, 'push')).toEqual(expect.arrayContaining([expect.stringMatching(/fly|dip/)]));
+  });
+
+  test('a full gym uses the seated leg curl and the pec deck', () => {
+    const full = Gyms.commercial();
+    expect(plan(full, 'legs')).not.toContain('leg-curl');
+    const ids = Array.from({ length: 6 }, (_, s) => new Planner({ plan: defaultPlan({ sessionMinutes: 90 }), gym: full, history: [] })
+      .generate({ now: 1_800_000_000_000, seed: s, focus: 'push' }).exercises.map((p) => p.exercise.id)).flat();
+    expect(ids.some((id) => ['pec-deck', 'cable-fly'].includes(id))).toBe(true);
+  });
+
+  test('an ankle strap unlocks cable leg curls and extensions', () => {
+    const strap = makeGym('Home', [...Gyms.homeBarbell().equipment, 'ankleStrap']);
+    expect(gymHas(strap, byID('cable-leg-curl'))).toBe(true);
+    expect(gymHas(strap, byID('cable-leg-extension'))).toBe(true);
+    expect(gymHas(Gyms.homeBarbell(), byID('cable-leg-curl'))).toBe(false);
+  });
+});
