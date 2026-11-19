@@ -2,7 +2,8 @@ import {
   Catalog, DAY_FOCUSES, type DayFocus, type Exercise, type Gym, Gyms, type LoggedExercise, type LoggedSet, Planner, Programs,
   type ProgramProgress, type ProgramRef, type RecoveryOverride, type UserPlan, type WorkoutProgram, type WorkoutRecord,
   completeDay, defaultPlan, lossy, oneRM, readExercise, readGym, readLogged, readOverrides, readPlan, readProgramRef,
-  readProgress, uuid, workingSets, loadEquipment, POUNDS_PER_KG, gymIncrement,
+  readProgress, uuid, workingSets, loadEquipment, POUNDS_PER_KG, gymIncrement, type BlockCheckIn, type BlockCheckIns,
+  readBlockCheckIns,
 } from '../engine';
 import { db, requestPersistence } from './db';
 import { saving } from './saving.svelte';
@@ -27,6 +28,11 @@ export interface Profile {
   customExercises: Exercise[];
   /** The active program and where you are in it. */
   programProgress: ProgramProgress | null;
+  /**
+   * Generated-workout block check-ins, by block start then week. In the profile (not the per-device
+   * values) so they're in backups: they decide where past blocks' deloads fell.
+   */
+  blockCheckIns: BlockCheckIns;
   /** Your own sticky note per exercise ("seat on 4", "use the blue band"). */
   exerciseNotes: Record<string, string>;
   /** Lifting workouts you aim for each week (Monday to Sunday). */
@@ -111,6 +117,7 @@ function readProfile(v: unknown): Profile | null {
     createdAt: typeof v.createdAt === 'number' ? v.createdAt : Date.now(),
     customExercises: lossy(v.customExercises, readExercise),
     programProgress: readProgress(v.programProgress),
+    blockCheckIns: readBlockCheckIns(v.blockCheckIns),
     exerciseNotes: isObj(v.exerciseNotes)
       ? Object.fromEntries(Object.entries(v.exerciseNotes).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].trim() !== ''))
       : {},
@@ -331,7 +338,7 @@ class AppStore {
   createProfile(plan: UserPlan, gym: Gym, usesPounds: boolean, weeklyGoal = 3) {
     this.setProfile({
       plan, gyms: [gym], overrides: [], activeGymID: gym.id, usesPounds, createdAt: Date.now(), customExercises: [],
-      programProgress: null, exerciseNotes: {}, weeklyGoal, mobility: { warmup: false, cooldown: false },
+      programProgress: null, blockCheckIns: {}, exerciseNotes: {}, weeklyGoal, mobility: { warmup: false, cooldown: false },
     });
   }
 
@@ -439,7 +446,17 @@ class AppStore {
     const p = this.profile;
     const plan = { ...(p?.plan ?? defaultPlan()) };
     if (minutes) plan.sessionMinutes = minutes;
-    return new Planner({ plan, gym: this.activeGym, history: this.records, overrides: p?.overrides ?? [], external: this.external });
+    return new Planner({
+      plan, gym: this.activeGym, history: this.records, overrides: p?.overrides ?? [], external: this.external, checkIns: p?.blockCheckIns,
+    });
+  }
+
+  /** Saves the check-in for a block week (answered or skipped). */
+  saveBlockCheckIn(blockStart: number, week: number, answer: BlockCheckIn) {
+    this.updateProfile((p) => {
+      const key = String(blockStart);
+      p.blockCheckIns[key] = { ...(p.blockCheckIns[key] ?? {}), [week]: answer };
+    });
   }
 
   /** One loadable step for this exercise at the active gym, in display units. */

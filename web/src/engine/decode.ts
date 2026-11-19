@@ -9,6 +9,7 @@ import {
 } from './models';
 import type { ProgramRef } from './models';
 import type { FatigueCheckIn, ProgramProgress } from './program';
+import { type BlockCheckIn, type BlockCheckIns, LOADING_WEEKS, MAX_LOADING_WEEKS } from './block';
 
 type Raw = Record<string, unknown>;
 const isObj = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -227,4 +228,30 @@ export function readProgress(v: unknown): ProgramProgress | null {
     setAdjustments: numberMap(v.setAdjustments), rangeExtensions: numberMap(v.rangeExtensions),
     checkIns: weekMap(v.checkIns, readCheckIn), isFinished: bool(v.isFinished, false),
   };
+}
+
+/**
+ * End-of-block check-in answers (block start → week → answers). A block start that isn't a number, a
+ * week outside 5–7, or an answer with no answer time is dropped, so a damaged entry only means that
+ * block keeps its default plan.
+ */
+export function readBlockCheckIns(v: unknown): BlockCheckIns {
+  const out: BlockCheckIns = {};
+  if (!isObj(v)) return out;
+  for (const [start, weeks] of Object.entries(v)) {
+    if (start.trim() === '' || !Number.isFinite(+start) || !isObj(weeks)) continue;
+    const block: Record<number, BlockCheckIn> = {};
+    for (const [w, a] of Object.entries(weeks)) {
+      const week = +w;
+      if (!Number.isInteger(week) || week < LOADING_WEEKS || week > MAX_LOADING_WEEKS) continue;
+      if (!isObj(a) || typeof a.answeredAt !== 'number' || !Number.isFinite(a.answeredAt)) continue;
+      block[week] = {
+        jointPain: bool(a.jointPain, false), stillSore: bool(a.stillSore, false),
+        poorSleepOrMotivation: bool(a.poorSleepOrMotivation, false), stalled: bool(a.stalled, false),
+        answeredAt: a.answeredAt, ...(a.skipped === true ? { skipped: true } : {}),
+      };
+    }
+    if (Object.keys(block).length) out[String(+start)] = block;
+  }
+  return out;
 }
