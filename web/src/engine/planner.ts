@@ -132,7 +132,7 @@ export function dayNumber(t: number): number {
 
 /** Muscle groups the "Fresh Muscles" split chooses between. */
 const FRESH_GROUPS: Muscle[][] = [
-  ['chest'], ['lats', 'upperBack'], ['shoulders'], ['biceps', 'triceps'], ['quads', 'glutes'], ['hamstrings', 'glutes'],
+  ['chest'], ['lats', 'upperBack'], ['frontDelts', 'sideDelts', 'rearDelts'], ['biceps', 'triceps'], ['quads', 'glutes'], ['hamstrings', 'glutes'],
 ];
 
 const avg = (recovery: MuscleMap, muscles: Muscle[]) =>
@@ -221,9 +221,12 @@ const SESSION_HARD_CAP = 14;
 
 /** Muscles with no weekly target: covered by compound lifts unless you add them yourself. */
 const OPTIONAL_MUSCLES: Muscle[] = ['forearms', 'adductors', 'abductors', 'lowerBack'];
-/** Smaller muscles that need less direct work. */
-const SMALL_MUSCLES: Muscle[] = ['calves', 'abs'];
-const BIG_MUSCLES: Muscle[] = ['chest', 'lats', 'upperBack', 'shoulders', 'quads', 'hamstrings', 'glutes'];
+/**
+ * Muscles that need less direct work: calves and abs are small, and front and rear delts get most of
+ * theirs from presses and rows (spec step 17).
+ */
+const SMALL_MUSCLES: Muscle[] = ['calves', 'abs', 'frontDelts', 'rearDelts'];
+const BIG_MUSCLES: Muscle[] = ['chest', 'lats', 'upperBack', 'quads', 'hamstrings', 'glutes'];
 
 /** Fractional sets an exercise gives each muscle: 1 per primary set, 0.5 per synergist set. */
 function credit(p: PlannedExercise): MuscleMap {
@@ -414,7 +417,7 @@ export class Planner {
     const done = !outOfTime;
 
     // 3. Time left over: muscles the day doesn't otherwise train.
-    // Rear delts count toward "shoulders", so skip an extra that would push a muscle past the hard ceiling.
+    // Skip an extra that would push a muscle past the hard ceiling.
     if (done) {
       slots.forEach((s, i) => {
         if (!s.extra || filled.has(i)) return;

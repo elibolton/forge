@@ -70,7 +70,7 @@ describe('Session size', () => {
   test('short sessions still train every main muscle of the day', () => {
     const w = make({ sessionMinutes: 30 }).generate({ now, seed: 1, focus: 'push' });
     const c = credit(w.exercises);
-    for (const m of ['chest', 'shoulders', 'triceps'] as const) expect(c[m] ?? 0, m).toBeGreaterThanOrEqual(2);
+    for (const m of ['chest', 'sideDelts', 'triceps'] as const) expect(c[m] ?? 0, m).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -135,5 +135,29 @@ describe('Exercise quality', () => {
   test('home gym without leg machines gets the stand-ins', () => {
     const ids = make({ sessionMinutes: 75 }, Gyms.homeBarbell()).generate({ now, seed: 1, focus: 'legs' }).exercises.map((p) => p.exercise.id);
     expect(ids).toContain('sissy-squat');
+  });
+});
+
+describe('Three delt heads', () => {
+  test('push days train side delts directly and add rear delts with spare time', () => {
+    const w = make({ sessionMinutes: 90 }).generate({ now, seed: 1, focus: 'push' });
+    const c = credit(w.exercises);
+    expect(c.sideDelts ?? 0).toBeGreaterThanOrEqual(6);
+    expect(c.frontDelts ?? 0).toBeGreaterThan(0);
+    expect(w.exercises.some((p) => p.exercise.primary.includes('rearDelts'))).toBe(true);
+  });
+
+  test('pull days give rear delts credit from rows plus direct work', () => {
+    const w = make({ sessionMinutes: 60 }).generate({ now, seed: 1, focus: 'pull' });
+    expect(credit(w.exercises).rearDelts ?? 0).toBeGreaterThanOrEqual(5);
+  });
+
+  test('presses train front delts, raises side delts, face pulls rear delts', () => {
+    const e = (id: string) => Catalog.byID.get(id)!;
+    expect(e('bb-ohp').primary).toContain('frontDelts');
+    expect(e('bb-bench').secondary).toContain('frontDelts');
+    expect(e('db-lateral-raise').primary).toEqual(['sideDelts']);
+    expect(e('face-pull').primary).toContain('rearDelts');
+    expect(e('cable-row').secondary).toContain('rearDelts');
   });
 });

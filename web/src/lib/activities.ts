@@ -24,8 +24,8 @@ export const activityMuscles: Record<ActivityKind, Muscle[]> = {
   walk: ['quads', 'glutes', 'calves'],
   ride: ['quads', 'glutes', 'calves'],
   row: ['lats', 'upperBack', 'quads', 'hamstrings', 'glutes'],
-  swim: ['lats', 'shoulders', 'upperBack', 'triceps'],
-  sport: [...LEGS, 'shoulders'],
+  swim: ['lats', 'frontDelts', 'sideDelts', 'rearDelts', 'upperBack', 'triceps'],
+  sport: [...LEGS, 'frontDelts', 'sideDelts'],
   other: [],
 };
 

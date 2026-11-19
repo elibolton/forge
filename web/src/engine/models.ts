@@ -2,7 +2,7 @@
 // Dates are epoch milliseconds.
 
 export const MUSCLES = [
-  'chest', 'shoulders', 'triceps', 'biceps', 'forearms',
+  'chest', 'frontDelts', 'sideDelts', 'rearDelts', 'triceps', 'biceps', 'forearms',
   'lats', 'upperBack', 'lowerBack', 'abs',
   'quads', 'hamstrings', 'glutes', 'calves', 'adductors', 'abductors',
 ] as const;
@@ -11,6 +11,9 @@ export type Muscle = (typeof MUSCLES)[number];
 export function muscleName(m: Muscle): string {
   if (m === 'upperBack') return 'Upper Back';
   if (m === 'lowerBack') return 'Lower Back';
+  if (m === 'frontDelts') return 'Front Delts';
+  if (m === 'sideDelts') return 'Side Delts';
+  if (m === 'rearDelts') return 'Rear Delts';
   return m.charAt(0).toUpperCase() + m.slice(1);
 }
 
@@ -118,8 +121,8 @@ export type DayFocus = (typeof DAY_FOCUSES)[number];
 
 export function focusMuscles(f: DayFocus): Muscle[] {
   switch (f) {
-    case 'push': return ['chest', 'shoulders', 'triceps'];
-    case 'pull': return ['lats', 'upperBack', 'biceps', 'forearms'];
+    case 'push': return ['chest', 'frontDelts', 'sideDelts', 'triceps'];
+    case 'pull': return ['lats', 'upperBack', 'rearDelts', 'biceps', 'forearms'];
     case 'legs': return ['quads', 'hamstrings', 'glutes', 'calves', 'adductors', 'abductors', 'lowerBack'];
     case 'upper': return [...focusMuscles('push'), ...focusMuscles('pull')];
     case 'lower': return [...focusMuscles('legs'), 'abs'];
