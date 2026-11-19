@@ -22,8 +22,9 @@
     return progress.isFinished ? 'Finished' : `Week ${progress.week} of ${program.weeks}`;
   });
 
-  function addGym(preset: () => Gym, name: string) {
-    const gym = { ...withGymUnits(preset(), p.usesPounds), id: uuid(), name };
+  /** A new gym from a preset, named after it ("Full Gym", "No Equipment"); rename it on the next screen. */
+  function addGym(preset: () => Gym) {
+    const gym = { ...withGymUnits(preset(), p.usesPounds), id: uuid() };
     app.updateProfile((x) => { x.gyms.push(gym); });
     nav.push({ name: 'gym', id: gym.id });
   }
@@ -108,6 +109,9 @@
         </div>
       </div>
     </div>
+    {#if app.activeProgram && app.weeklyGoal !== p.weeklyGoal}
+      <div class="foot">While {app.activeProgram.program.name} runs, the week counts its {app.weeklyGoal} training days instead.</div>
+    {/if}
     <div class="foot">Generated workouts run in blocks: a few weeks that slowly get harder, then a lighter deload week so you recover and come back stronger. Today shows which week you're in.</div>
   </div>
 
@@ -136,10 +140,10 @@
         </div>
       {/each}
       <ActionMenu label="Add Gym" class="item link" items={[
-        { label: 'Full Gym', action: () => addGym(Gyms.commercial, 'New Gym') },
-        { label: 'Home Gym (Barbell + Cables)', action: () => addGym(Gyms.homeBarbell, 'Home Gym') },
-        { label: 'Home Gym', action: () => addGym(Gyms.home, 'Home') },
-        { label: 'No Equipment', action: () => addGym(Gyms.bodyweight, 'Travel') },
+        { label: 'Full Gym', action: () => addGym(Gyms.commercial) },
+        { label: 'Home Gym (Barbell + Cables)', action: () => addGym(Gyms.homeBarbell) },
+        { label: 'Home Gym', action: () => addGym(Gyms.home) },
+        { label: 'No Equipment', action: () => addGym(Gyms.bodyweight) },
       ]}>Add Gym</ActionMenu>
     </div>
   </div>

@@ -367,17 +367,17 @@ export function withGymUnits(g: Gym, pounds: boolean): Gym {
 
 export const Gyms = {
   /** Plates left unset: the full standard set, as many as needed. */
-  commercial: () => makeGym('Commercial Gym', [...EQUIPMENT]),
+  commercial: () => makeGym('Full Gym', [...EQUIPMENT]),
   /**
    * Barbell, EZ bar, dumbbells, benches, rack, dip station and a lat pulldown / low row station with attachments.
    * A typical home plate set: no 25s or 15s (35s in lb), as many of each as needed.
    */
-  homeBarbell: (): Gym => ({ ...makeGym('Home Gym', [
+  homeBarbell: (): Gym => ({ ...makeGym('Home Gym (Barbell + Cables)', [
     'barbell', 'ezBar', 'dumbbell', 'flatBench', 'adjustableBench', 'squatRack', 'dipStation', 'latPulldown', 'lowRow',
     'rope', 'straightBar', 'singleHandle', 'vBar',
   ]), plates: HOME_PLATES.kg.map((weight) => ({ weight })) }),
-  home: () => makeGym('Home', ['dumbbell', 'adjustableBench', 'pullUpBar', 'resistanceBand', 'kettlebell']),
-  bodyweight: () => makeGym('Bodyweight', []),
+  home: () => makeGym('Home Gym', ['dumbbell', 'adjustableBench', 'pullUpBar', 'resistanceBand', 'kettlebell']),
+  bodyweight: () => makeGym('No Equipment', []),
 };
 
 export interface UserPlan {

@@ -26,11 +26,14 @@
   let reviewing = $state(false);
   let scroller = $state<HTMLDivElement>();
   let tick = $state(Date.now());
-  // Once ever: point out that you can swipe between exercises.
+  // Once ever: point out that you can swipe between exercises. It shows for a few seconds in place of
+  // "Exercise 1 of N", between the arrows it stands for, rather than as a toast over Minimize and Finish.
+  let swipeHint = $state(false);
   $effect(() => {
     if (ws.exercises.length > 1 && !app.get('swipeHintShown')) {
       app.set('swipeHintShown', true);
-      setTimeout(() => toasts.show('Tip: swipe left or right to move between exercises'), 900);
+      swipeHint = true;
+      setTimeout(() => (swipeHint = false), 6000);
     }
   });
   $effect(() => { const t = setInterval(() => (tick = Date.now()), 1000); return () => clearInterval(t); });
@@ -61,6 +64,7 @@
   const title = $derived(ws.title ?? (ws.focus ? dayTitle(ws.focus) : 'Workout'));
 
   function go(i: number) {
+    swipeHint = false;
     session.goTo(i);
     scroller?.scrollTo({ top: 0 });
   }
@@ -146,7 +150,11 @@
   {#if ws.exercises.length}
     <div class="pos">
       <button class="step" aria-label="Previous exercise" disabled={index === 0} onclick={() => go(index - 1)}><ChevronLeft size={16} /></button>
-      <span class="eyebrow">Exercise {index + 1} of {ws.exercises.length}</span>
+      {#if swipeHint}
+        <span class="eyebrow hint" role="status">Swipe to change exercise</span>
+      {:else}
+        <span class="eyebrow">Exercise {index + 1} of {ws.exercises.length}</span>
+      {/if}
       <button class="step" aria-label="Next exercise" disabled={index >= ws.exercises.length - 1} onclick={() => go(index + 1)}><ChevronRight size={16} /></button>
     </div>
   {/if}
@@ -294,6 +302,7 @@
   .title { font-weight: 650; font-size: 0.95rem; }
   .elapsed { font-size: 0.78rem; color: var(--text-3); }
   .finish { min-height: 44px; padding: 8px 16px; }
+  .pos .hint { color: var(--accent); }
   .pos { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 2px; }
   .step { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--surface-2); }
   .strip { display: flex; gap: 5px; padding: 0 18px; }

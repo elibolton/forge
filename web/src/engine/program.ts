@@ -8,6 +8,12 @@ import { type DayFocus, type Exercise, type Gym, type RepRange, gymHas, isBodywe
 export interface RIRTarget { low: number; high: number }
 export const rirTarget = (low: number, high?: number): RIRTarget => ({ low, high: Math.max(low, high ?? low) });
 export const rirText = (t: RIRTarget) => (t.low === t.high ? `${t.low}` : `${t.low}–${t.high}`);
+/**
+ * An RIR target in the app's plain words, as the logger asks it ("Reps left on set N"):
+ * "2 reps left", "1–2 reps left", "1 rep left", or "to failure" for 0.
+ */
+export const repsLeftText = (t: RIRTarget) =>
+  (t.high === 0 ? 'to failure' : `${rirText(t)} ${t.low === 1 && t.high === 1 ? 'rep' : 'reps'} left`);
 
 export type Effort =
   | { type: 'rir'; rir: RIRTarget }
@@ -209,7 +215,7 @@ export function setsText(p: ResolvedPrescription): string {
 }
 
 export function effortText(e: Effort): string {
-  return e.type === 'rir' ? `RIR ${rirText(e.rir)}` : 'lowering reps · stop when you lose control';
+  return e.type === 'rir' ? repsLeftText(e.rir) : 'lowering reps · stop when you lose control';
 }
 
 function fmtRest(s: number): string {

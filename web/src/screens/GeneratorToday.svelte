@@ -201,7 +201,7 @@
   {#if app.activeGym.reviewEquipment}
     <button class="card tight row" style="text-align:left" onclick={() => nav.push({ name: 'gym', id: app.activeGym.id })}>
       <MapPin size={18} color="var(--ember-2)" aria-hidden="true" />
-      <span class="grow"><span class="sub bold">Check {app.activeGym.name}'s equipment</span><br /><span class="caption muted">Forge now asks which bench, cables and attachments you have, so it only suggests what you can do.</span></span>
+      <span class="grow"><span class="sub bold">Check your equipment: {app.activeGym.name}</span><br /><span class="caption muted">Forge now asks which bench, cables and attachments you have, so it only suggests what you can do.</span></span>
       <ChevronRight size={16} color="var(--text-3)" />
     </button>
   {/if}
@@ -316,7 +316,7 @@
           {#if complete}
             <p class="caption muted">Every muscle today already gets the sets that help it grow; more would add fatigue, not size. Leftover time went to muscles today doesn't otherwise train.</p>
           {:else}
-          <p class="caption muted">Only a few {focusTitle[workout.focus].toLowerCase()} exercises suit {app.activeGym.name}'s equipment and today's recovery. Add one to use the time, or shorten today's session.</p>
+          <p class="caption muted">Only a few {focusTitle[workout.focus].toLowerCase()} exercises suit your equipment ({app.activeGym.name}) and today's recovery. Add one to use the time, or shorten today's session.</p>
           {/if}
           <button class="link sub" style="text-align:left" onclick={() => (adding = true)}>Add an exercise</button>
         </div>

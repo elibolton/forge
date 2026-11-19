@@ -1,5 +1,7 @@
 // Calendar weeks run Monday to Sunday, in local time.
 
+import { type WorkoutProgram, dayOrder } from '../engine';
+
 export const DAY = 86_400_000;
 
 export function startOfDay(t: number): number {
@@ -55,4 +57,13 @@ export function weeklyCounts(dates: number[], n: number, now = Date.now()): numb
   let week = weekStart(now);
   for (let i = 0; i < n; i++) { weeks.unshift(week); week = previousWeek(week); }
   return weeks.map((w) => countInWeek(dates, w));
+}
+
+/**
+ * Workouts a week to aim for: a running program's training days (its schedule is the plan), else
+ * the goal set in You.
+ */
+export function weeklyGoalFor(profileGoal: number, program?: WorkoutProgram | null): number {
+  const days = program ? dayOrder(program).length : 0;
+  return days > 0 ? days : profileGoal;
 }
