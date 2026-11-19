@@ -16,9 +16,14 @@
   import { exerciseRecords, liveRecords } from '../lib/records';
   import { toasts } from '../lib/toasts.svelte';
 
-  let { exercise: ex, nextName, onNext, onFinish, onswap, partner }: {
+  /** This exercise's superset, tri-set or circuit: where it sits, the round, and who's up next. */
+  interface GroupInfo {
+    label: string; position: number; size: number; round: number; rounds: number;
+    next?: { name: string; newRound: boolean; go: () => void };
+  }
+  let { exercise: ex, nextName, onNext, onFinish, onswap, group }: {
     exercise: SessionExercise; nextName?: string; onNext: () => void; onFinish: () => void;
-    onswap?: () => void; partner?: { name: string; go: () => void };
+    onswap?: () => void; group?: GroupInfo;
   } = $props();
 
   /** A set the user tapped to edit; otherwise the first unlogged working set is active. */
@@ -101,11 +106,15 @@
       </div>
       {#if onswap}<button class="icon-btn swap" aria-label="Swap {e.name} for another exercise" onclick={onswap}><ArrowLeftRight size={17} /></button>{/if}
     </div>
-    {#if partner}
-      <button class="pair" onclick={partner.go}>
-        <span class="kicker">SUPERSET</span>
-        <span class="caption grow one-line" style="text-align:left">Alternate with <b>{partner.name}</b></span>
-        <ArrowRight size={14} />
+    {#if group}
+      {@const g = group}
+      <button class="pair" disabled={!g.next} onclick={() => g.next?.go()}
+        aria-label="{g.label}, exercise {g.position} of {g.size}, round {g.round} of {g.rounds}{g.next ? `. Next: ${g.next.name}` : ''}">
+        <span class="kicker">{g.label.toUpperCase()}</span>
+        <span class="caption grow one-line" style="text-align:left">
+          {g.position} of {g.size} · round {g.round}/{g.rounds}{#if g.next}{` · ${g.next.newRound ? 'then back to' : 'then'} `}<b>{g.next.name}</b>{/if}
+        </span>
+        {#if g.next}<ArrowRight size={14} />{/if}
       </button>
     {/if}
     {#if ex.program}

@@ -2,7 +2,7 @@
   import SaveTemplateSheet from '../components/SaveTemplateSheet.svelte';
   import { templateFromSession } from '../lib/templates';
   import { Catalog } from '../engine';
-  import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Ellipsis, Dumbbell, Trash2 } from '@lucide/svelte';
+  import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Ellipsis, Dumbbell, Link2, Plus, Trash2 } from '@lucide/svelte';
   import ActionMenu from '../components/ActionMenu.svelte';
   import ExercisePage from '../components/ExercisePage.svelte';
   import ExercisePicker from '../components/ExercisePicker.svelte';
@@ -17,6 +17,7 @@
   import { minSec } from '../lib/units';
   import { saving } from '../lib/saving.svelte';
   import { liveRecords } from '../lib/records';
+  import { groupLabel, linkedToNext, members, nextInRound } from '../lib/groups';
 
   let adding = $state(false);
   let swapping = $state(false);
@@ -132,7 +133,7 @@
       <div class="num elapsed" aria-label="Elapsed time">{minSec((tick - ws.startedAt) / 1000)}</div>
     </div>
     <ActionMenu label="Workout options" class="icon-btn" items={[
-      { label: 'All exercises', action: () => (overview = true) },
+      { label: 'Reorder & group exercises', action: () => (overview = true) },
       { label: 'Swap this exercise', action: () => (swapping = true) },
       { label: 'Add exercise', action: () => (adding = true) },
       { label: 'Save as a workout', action: () => (savingTemplate = true) },
@@ -169,11 +170,18 @@
       </div>
     {:else if current}
       {#key current.id}
-        {@const group = supersetOf(current)}
-        {@const partnerIndex = group ? ws.exercises.findIndex((x, i) => i !== index && supersetOf(x) === group) : -1}
+        {@const g = supersetOf(current)}
+        {@const m = g ? members(ws, g) : []}
+        {@const step = nextInRound(ws, index)}
+        {@const working = (x: typeof current) => x.sets.filter((s) => !s.isWarmup)}
+        {@const rounds = Math.max(...m.map((i) => working(ws.exercises[i]).length), 0)}
         <ExercisePage exercise={current} nextName={ws.exercises[index + 1] ? exerciseOf(ws.exercises[index + 1]).name : undefined}
           onswap={() => (swapping = true)}
-          partner={partnerIndex >= 0 ? { name: exerciseOf(ws.exercises[partnerIndex]).name, go: () => go(partnerIndex) } : undefined}
+          group={m.length >= 2 ? {
+            label: groupLabel(m.length), position: m.indexOf(index) + 1, size: m.length, rounds,
+            round: Math.min(rounds, working(current).filter((s) => s.done).length + 1),
+            next: step.next !== undefined ? { name: exerciseOf(ws.exercises[step.next]).name, newRound: step.endOfRound, go: () => go(step.next!) } : undefined,
+          } : undefined}
           onNext={() => go(index + 1)} onFinish={() => (reviewing = true)} />
       {/key}
     {/if}
@@ -228,10 +236,17 @@
   <Sheet title="Exercises" onclose={() => (overview = false)}>
     {#snippet leading()}<span></span>{/snippet}
     {#snippet trailing()}<button class="link bold" onclick={() => (overview = false)}>Done</button>{/snippet}
+    <p class="caption muted" style="margin:0 4px 10px">Link exercises to do them in rotation, one set of each per round: two make a superset, three a tri-set, more a circuit.</p>
     <div class="list">
       {#each ws.exercises as x, i (x.id)}
         {@const w = x.sets.filter((s) => !s.isWarmup)}
-        <div class="item">
+        {@const g = supersetOf(x)}
+        {@const linked = linkedToNext(ws, i)}
+        {#if g && (i === 0 || supersetOf(ws.exercises[i - 1]) !== g)}
+          {@const size = members(ws, g).length}
+          <div class="group-head"><span class="kicker">{groupLabel(size).toUpperCase()}</span><span class="caption muted">{size} exercises · one set of each per round</span></div>
+        {/if}
+        <div class="item" class:grouped={!!g}>
           <button class="row grow" style="text-align:left" onclick={() => { go(i); overview = false; }}>
             <ExerciseThumb exercise={exerciseOf(x)} size={44} />
             <span class="grow"><span>{exerciseOf(x).name}</span><br /><span class="caption muted mono">{w.filter((s) => s.done).length}/{w.length} sets</span></span>
@@ -241,6 +256,16 @@
           <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} down" disabled={i === ws.exercises.length - 1} onclick={() => session.moveExercise(x.id, 1)}><ArrowDown size={18} /></button>
           <button class="icon-btn" style="color:var(--fatigued)" aria-label="Remove {exerciseOf(x).name}" onclick={() => remove(x)}><Trash2 size={18} /></button>
         </div>
+        {#if i < ws.exercises.length - 1}
+          {@const nextName = exerciseOf(ws.exercises[i + 1]).name}
+          <div class="link-row" class:linked>
+            <button class="link-btn" aria-pressed={linked}
+              aria-label={linked ? `Unlink ${exerciseOf(x).name} from ${nextName}` : `Link ${exerciseOf(x).name} with ${nextName}`}
+              onclick={() => (linked ? session.unlinkFromNext(x.id) : session.linkWithNext(x.id))}>
+              {#if linked}<Link2 size={14} /> Linked<span class="faint"> · tap to unlink</span>{:else}<Plus size={14} /> Link with next{/if}
+            </button>
+          </div>
+        {/if}
       {/each}
       <button class="item link" onclick={() => { overview = false; adding = true; }}>Add Exercise</button>
     </div>
@@ -280,6 +305,16 @@
   .strip button:has(.pair-start) { padding-right: 0; margin-right: -5px; }
   .seg.pair-start { border-radius: 3px 0 0 3px; }
   .seg.pair-end { border-radius: 0 3px 3px 0; }
+  .seg.pair-start.pair-end { border-radius: 0; }
+  /* Grouped exercises in the overview: a rail down the left joins them. */
+  .group-head { display: flex; align-items: baseline; gap: 8px; padding: 12px 16px 2px; color: var(--ember-2); }
+  .item.grouped { box-shadow: inset 3px 0 0 var(--ember); }
+  .link-row { display: flex; justify-content: center; padding: 2px 0; }
+  .link-row.linked { box-shadow: inset 3px 0 0 var(--ember); }
+  .list > .link-row, .list > .link-row + .item { border-top: 0; }
+  .link-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 999px;
+    font-size: 0.8rem; font-weight: 600; color: var(--text-2); }
+  .linked .link-btn { color: var(--ember-2); }
   .scroll { flex: 1; overflow-y: auto; padding: 10px 18px 0; -webkit-overflow-scrolling: touch; }
   .scroll > :global(*) { max-width: 620px; margin: 0 auto; }
   .rest { padding-bottom: var(--safe-bottom); }

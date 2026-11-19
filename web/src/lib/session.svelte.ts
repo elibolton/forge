@@ -7,6 +7,7 @@ import { saving } from './saving.svelte';
 import { app } from './store.svelte';
 import { type RestSound, playRestSound } from './sounds';
 import { swapInSession } from './swap';
+import { groupOf, groupRest, linkWithNext, nextInRound, normalizeGroups, unlinkFromNext } from './groups';
 import { type PersonalRecord, completesProgramDay, newRecords, workoutLog } from './finishWorkout';
 
 export interface SessionSet {
@@ -37,7 +38,7 @@ export interface ProgramSlotInfo {
   laterality: Laterality;
   sideRest?: number;
   supersetGroup?: string;
-  /** Set on the first exercise of a superset pair. */
+  /** Set on the first exercise of a group: the rest between its exercises. */
   supersetRestBetween?: number;
   isOptional: boolean;
   suggestionReason?: string;
@@ -54,7 +55,7 @@ export interface SessionExercise {
   rir: number | null;
   reasons: string[];
   program?: ProgramSlotInfo;
-  /** Superset pairing from the workout generator; program days use `program.supersetGroup`. */
+  /** Superset, tri-set or circuit (see groups.ts); program days also keep it in `program.supersetGroup`. */
   supersetGroup?: string;
 }
 
@@ -65,8 +66,8 @@ export interface SessionExercise {
 export const isRated = (e: SessionExercise): boolean =>
   e.program?.effort.type !== 'eccentricOnly' && !Catalog.exercise(e.exerciseID).isTimed;
 
-/** The superset this exercise belongs to, whichever way it was paired. */
-export const supersetOf = (e: SessionExercise): string | undefined => e.supersetGroup ?? e.program?.supersetGroup;
+/** The superset, tri-set or circuit this exercise belongs to (see groups.ts). */
+export const supersetOf = groupOf;
 
 export interface SessionState {
   startedAt: number;
@@ -226,7 +227,12 @@ class WorkoutSession {
 
   /** Adds an exercise at the end and shows it. */
   addExercise(planned: PlannedExercise) {
-    this.update((s) => { s.exercises.push(sessionExerciseFrom(planned)); s.currentIndex = s.exercises.length - 1; });
+    this.update((s) => {
+      const x = sessionExerciseFrom(planned);
+      delete x.supersetGroup; // a generator pairing means nothing in this workout
+      s.exercises.push(x);
+      s.currentIndex = s.exercises.length - 1;
+    });
   }
 
   /** Removes an exercise. Returns an undo that puts it back where it was. */
@@ -236,6 +242,7 @@ class WorkoutSession {
     this.update((s) => {
       s.exercises = s.exercises.filter((x) => x.id !== id);
       if (s.currentIndex >= s.exercises.length) s.currentIndex = Math.max(0, s.exercises.length - 1);
+      normalizeGroups(s);
     });
     return () => this.update((s) => { s.exercises = before.exercises; s.currentIndex = before.currentIndex; });
   }
@@ -248,12 +255,23 @@ class WorkoutSession {
       if (i < 0 || j < 0 || j >= s.exercises.length) return;
       [s.exercises[i], s.exercises[j]] = [s.exercises[j], s.exercises[i]];
       if (s.currentIndex === i) s.currentIndex = j; else if (s.currentIndex === j) s.currentIndex = i;
+      normalizeGroups(s);
     });
+  }
+
+  /** Groups exercise `id` with the one after it: a superset, or a tri-set or circuit as more join. */
+  linkWithNext(id: string) {
+    this.update((s) => { const i = s.exercises.findIndex((x) => x.id === id); if (i >= 0) linkWithNext(s, i); });
+  }
+
+  /** Splits the group between exercise `id` and the one after it. */
+  unlinkFromNext(id: string) {
+    this.update((s) => { const i = s.exercises.findIndex((x) => x.id === id); if (i >= 0) unlinkFromNext(s, i); });
   }
 
   /** Swaps exercise `id` for `replacement`, keeping any sets already logged (see `swapInSession`). */
   swapExercise(id: string, replacement: Exercise, planner: Planner) {
-    this.update((s) => swapInSession(s, id, replacement, planner));
+    this.update((s) => { swapInSession(s, id, replacement, planner); normalizeGroups(s); });
   }
 
   /** How many reps were left in the tank on this exercise's last set. */
@@ -347,11 +365,11 @@ class WorkoutSession {
       // First side of a per-side set: short (or no) rest, then the other side.
       if (info.sideRest) restFor = info.sideRest;
     } else if (group) {
-      // Supersets: alternate between the pair, short rest in between, full rest after the pair.
-      const exercises = this.state!.exercises;
-      const partner = exercises.findIndex((x, i) => i !== ei && supersetOf(x) === group);
-      restFor = partner >= 0 ? (info?.supersetRestBetween ?? after.restSeconds) : after.restSeconds;
-      if (partner >= 0 && exercises[partner].sets.some((x) => !x.isWarmup && !x.done)) jumpTo = partner;
+      // Supersets, tri-sets and circuits: on to the next exercise with a short rest, the full rest
+      // after each round.
+      const step = nextInRound(this.state!, ei);
+      restFor = groupRest(this.state!, ei, step.endOfRound);
+      jumpTo = step.next;
     } else restFor = after.restSeconds;
 
     if (jumpTo !== undefined) this.update((s) => { s.currentIndex = jumpTo!; });

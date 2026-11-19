@@ -1,11 +1,13 @@
 import { type LoggedExercise, type PlannedExercise, plannedWorkingSets, uuid, workingSets } from '../engine';
 import type { SessionExercise } from './session.svelte';
+import { groupOf } from './groups';
 
 /** A workout you saved to do again: which exercises, how many sets, and the reps you aim for. */
 export interface WorkoutTemplate {
   id: string;
   name: string;
-  exercises: { exerciseID: string; sets: number; reps: number }[];
+  /** `group` joins neighbouring exercises into a superset, tri-set or circuit. */
+  exercises: { exerciseID: string; sets: number; reps: number; group?: string }[];
   createdAt: number;
   lastUsed?: number;
 }
@@ -20,12 +22,16 @@ export const templateFromLogged = (name: string, logged: LoggedExercise[]) =>
   make(name, logged.map((l) => ({ exerciseID: l.exerciseID, sets: workingSets(l).length, reps: median(workingSets(l).map((s) => s.reps)) || 10 })));
 
 export const templateFromPlanned = (name: string, planned: PlannedExercise[]) =>
-  make(name, planned.map((p) => ({ exerciseID: p.exercise.id, sets: plannedWorkingSets(p).length, reps: plannedWorkingSets(p)[0]?.reps ?? 10 })));
+  make(name, planned.map((p) => ({
+    exerciseID: p.exercise.id, sets: plannedWorkingSets(p).length, reps: plannedWorkingSets(p)[0]?.reps ?? 10,
+    ...(p.supersetGroup ? { group: p.supersetGroup } : {}),
+  })));
 
 export const templateFromSession = (name: string, exercises: SessionExercise[]) =>
   make(name, exercises.map((x) => {
     const working = x.sets.filter((s) => !s.isWarmup);
-    return { exerciseID: x.exerciseID, sets: working.length, reps: median(working.map((s) => s.reps)) || 10 };
+    const group = groupOf(x);
+    return { exerciseID: x.exerciseID, sets: working.length, reps: median(working.map((s) => s.reps)) || 10, ...(group ? { group } : {}) };
   }));
 
 export function readTemplate(v: unknown): WorkoutTemplate | undefined {
@@ -35,7 +41,10 @@ export function readTemplate(v: unknown): WorkoutTemplate | undefined {
   const exercises = o.exercises.flatMap((x) => {
     const e = x as Record<string, unknown>;
     return typeof e?.exerciseID === 'string' && typeof e.sets === 'number' && typeof e.reps === 'number'
-      ? [{ exerciseID: e.exerciseID, sets: Math.max(1, Math.round(e.sets)), reps: Math.max(1, Math.round(e.reps)) }] : [];
+      ? [{
+        exerciseID: e.exerciseID, sets: Math.max(1, Math.round(e.sets)), reps: Math.max(1, Math.round(e.reps)),
+        ...(typeof e.group === 'string' && e.group ? { group: e.group } : {}),
+      }] : [];
   });
   if (!exercises.length) return undefined;
   return {
