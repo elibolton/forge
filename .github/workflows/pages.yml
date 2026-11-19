@@ -1,11 +1,14 @@
-# Builds the web app in web/ and publishes it to GitHub Pages on every push to main.
+# Builds the web app in web/ and publishes it to GitHub Pages on every push to main, merges included.
 # One-time setup: repo Settings → Pages → Source: "GitHub Actions".
+#
+# No path filter: every push to main deploys. A change outside web/ just republishes the same build,
+# which is cheaper than a merge that silently never ships. Run it by hand from the Actions tab with
+# "Run workflow" if a deploy ever needs repeating.
 name: Deploy web app
 
 on:
   push:
     branches: [main]
-    paths: ['web/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -13,9 +16,11 @@ permissions:
   pages: write
   id-token: write
 
+# One deploy at a time. A newer push waits for the running one rather than cancelling it halfway
+# through publishing.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -24,8 +29,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -35,7 +40,7 @@ jobs:
       - run: npm run build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: web/dist
 
@@ -47,4 +52,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
