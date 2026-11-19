@@ -1,7 +1,8 @@
 <script lang="ts">
   // The small settings pages pushed from You: gym editor, workout style, injuries, preferences, custom exercises.
-  import { Catalog, EQUIPMENT, type Equipment, JOINTS, VARIABILITIES, gymIncrement, muscleName } from '../engine';
-  import { gymLoadKinds, nextStep } from '../lib/loadSteps';
+  import { type BarKind, Catalog, EQUIPMENT, type Equipment, JOINTS, MAX_BAR, MAX_PAIRS, VARIABILITIES, gymBar, gymIncrement, gymPlates, muscleName } from '../engine';
+  import { PLATE_CHOICES, gymBarKinds, gymLoadKinds, nextStep, readAmount, usesPlates } from '../lib/loadSteps';
+  import { fmtNum } from '../lib/units';
   import { Check, ChevronRight, Plus, Trash2 } from '@lucide/svelte';
   import BackBar from '../components/BackBar.svelte';
   import CustomExerciseEditor from '../components/CustomExerciseEditor.svelte';
@@ -28,6 +29,38 @@
     updateGym(id, (g) => {
       g.equipment = EQUIPMENT.filter((x) => (x === eq ? on : g.equipment.includes(x)));
       delete g.reviewEquipment;
+    });
+  }
+
+  /** Adds or removes a plate size; the gym always keeps at least one. */
+  function togglePlate(id: string, weight: number, on: boolean) {
+    updateGym(id, (g) => {
+      const owned = gymPlates(g).filter((x) => x.weight !== weight);
+      if (on) owned.push({ weight });
+      if (!owned.length) return toasts.show('Keep at least one plate size');
+      g.plates = owned.sort((a, b) => b.weight - a.weight).map((x) => ({ ...x }));
+    });
+  }
+
+  /** Blank is as many as needed. */
+  function setPairs(id: string, weight: number, input: HTMLInputElement) {
+    const pairs = readAmount(input.value, MAX_PAIRS, true);
+    const gym = p.gyms.find((g) => g.id === id);
+    if (pairs === undefined) { input.value = String(gym && gymPlates(gym).find((x) => x.weight === weight)?.pairs || ''); return; }
+    updateGym(id, (g) => {
+      g.plates = gymPlates(g).map((x) => (x.weight !== weight ? { ...x } : pairs === null ? { weight } : { weight, pairs }));
+    });
+  }
+
+  /** Blank is the standard bar. */
+  function setBar(id: string, kind: BarKind, input: HTMLInputElement) {
+    const weight = readAmount(input.value, MAX_BAR);
+    const gym = p.gyms.find((g) => g.id === id);
+    if (weight === undefined) { input.value = String(gym?.bars?.[kind] ?? ''); return; }
+    updateGym(id, (g) => {
+      const bars = { ...g.bars };
+      if (weight === null) delete bars[kind]; else bars[kind] = weight;
+      if (Object.keys(bars).length) g.bars = bars; else delete g.bars;
     });
   }
 
@@ -64,6 +97,42 @@
           {#if group.foot}<div class="foot">{group.foot}</div>{/if}
         </div>
       {/each}
+      {#if usesPlates(gym)}
+        {@const unit = gym.usesPounds ? 'lb' : 'kg'}
+        {@const owned = gymPlates(gym)}
+        {@const choices = [...new Set([...(gym.usesPounds ? PLATE_CHOICES.lb : PLATE_CHOICES.kg), ...owned.map((x) => x.weight)])].sort((a, b) => b - a)}
+        <div class="section"><div class="head">Plates and bars</div>
+          <div class="list">
+            <div class="item stack" style="--gap:10px;align-items:stretch">
+              <span class="sub muted">Plates you have ({unit})</span>
+              <div class="row wrap" style="--gap:8px">
+                {#each choices as w (w)}
+                  {@const on = owned.some((x) => x.weight === w)}
+                  <button class="chip" class:on aria-pressed={on} aria-label="{fmtNum(w, 2)} {unit} plates"
+                    onclick={() => togglePlate(gym.id, w, !on)}>{fmtNum(w, 2)}</button>
+                {/each}
+              </div>
+            </div>
+            {#each owned as plate (plate.weight)}
+              <label class="item">
+                <span class="grow">{fmtNum(plate.weight, 2)} {unit} pairs</span>
+                <input type="text" inputmode="numeric" enterkeyhint="done" class="amount" placeholder="Any"
+                  aria-label="Pairs of {fmtNum(plate.weight, 2)} {unit} plates" value={plate.pairs ?? ''}
+                  onchange={(ev) => setPairs(gym.id, plate.weight, ev.currentTarget as HTMLInputElement)} />
+              </label>
+            {/each}
+            {#each gymBarKinds(gym) as kind (kind)}
+              <label class="item">
+                <span class="grow">{kind === 'smithMachine' ? 'Smith machine start' : loadTitle[kind]} ({unit})</span>
+                <input type="text" inputmode="decimal" enterkeyhint="done" class="amount" placeholder={fmtNum(gymBar({ ...gym, bars: undefined }, kind), 2)}
+                  aria-label="{loadTitle[kind]} weight in {unit}" value={gym.bars?.[kind] ?? ''}
+                  onchange={(ev) => setBar(gym.id, kind, ev.currentTarget as HTMLInputElement)} />
+              </label>
+            {/each}
+          </div>
+          <div class="foot">Suggested weights are ones these plates and bars can make. Leave pairs blank if you have plenty, and a bar blank for the standard weight.</div>
+        </div>
+      {/if}
       <div class="section"><div class="head">Weight Steps</div>
         <div class="list">
           {#each gymLoadKinds(gym) as eq (eq)}
@@ -192,3 +261,8 @@
 {#if creating}
   <CustomExerciseEditor onsave={() => {}} onclose={() => (creating = false)} />
 {/if}
+
+<style>
+  /* A short number field at the end of a settings row. */
+  .amount { width: 84px; min-height: 38px; padding: 7px 12px; text-align: right; flex: none; }
+</style>

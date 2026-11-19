@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EQUIPMENT, GOALS, type Gym, Gyms, LEVELS, SPLITS, type Split, defaultPlan, uuid } from '../engine';
+  import { EQUIPMENT, GOALS, type Gym, Gyms, LEVELS, SPLITS, type Split, defaultPlan, uuid, withGymUnits } from '../engine';
   import { canPull } from '../lib/gymFit';
   import { Building2, ChevronLeft, Dumbbell, ChevronRight, Circle, CircleCheck, Footprints, House, TriangleAlert, Zap, Share, SquarePlus, Download } from '@lucide/svelte';
   import Sheet from '../components/Sheet.svelte';
@@ -32,7 +32,7 @@
   const summary = $derived(`${goalTitle[plan.goal]} · ${splitTitle[plan.split]} · ${plan.sessionMinutes} min · ${levelTitle[plan.experience]} · ${gymName}`);
 
   function finish() {
-    const g = { ...$state.snapshot(gym), id: uuid(), usesPounds: pounds, name: gymName, increments: {} };
+    const g = { ...withGymUnits($state.snapshot(gym), pounds), id: uuid(), name: gymName, increments: {} };
     app.createProfile($state.snapshot(plan), g, pounds, days);
   }
 </script>
