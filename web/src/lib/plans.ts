@@ -28,12 +28,17 @@ export const isTodayPlanCurrent = (t: TodayPlan, logCount: number, now = Date.no
   isSameDay(t.generatedAt, now) && t.logCount === logCount;
 
 /** Everything a generated workout depends on, as a stable string. Preferences are applied in place. */
+/** Bump when the workout generator changes how it builds sessions. */
+export const GENERATOR_VERSION = 'gen2';
+
 export function planBasis(p: Profile, activities: { id: string }[] = app.activities): string {
   const plan = p.plan;
   const gym = p.gyms.find((g) => g.id === p.activeGymID) ?? p.gyms[0];
   const increments = Object.entries(gym?.increments ?? {}).map(([k, v]) => `${k}=${v}`).sort();
   const overrides = p.overrides.map((o) => `${o.muscle}=${o.recovery}@${Math.trunc(o.date / 1000)}`).sort();
   return [
+    // Bump when the generator changes, so saved plans offer a rebuild.
+    GENERATOR_VERSION,
     plan.goal, plan.experience, plan.split, plan.sessionMinutes, plan.variability, plan.warmUpSets, plan.supersets,
     [...plan.injuries].sort().join(','), gym?.id, [...(gym?.equipment ?? [])].sort().join(','), gym?.usesPounds,
     increments.join(','), overrides.join(','), activities.map((a) => a.id).sort().join(','),

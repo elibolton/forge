@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import {
   Catalog, DAY_MS, type DayFocus, type Exercise, Gyms, type LoggedExercise, NameMatcher, Planner, type WorkoutRecord,
   computeRecovery, defaultPlan, estimatedOneRM, focusMuscles, guideFor, lossy, makeScheme, oneRM, parseHistory,
-  plannedWorkingSets, readExercise, readGym, readLogged, readPlan, roundLoad, weightForReps, workingSets,
+  plannedWorkingSets, qualityOf, QUALITY, plannedSeconds, readExercise, readGym, readLogged, readPlan, roundLoad, weightForReps, workingSets,
 } from './index';
 
 export const now = 1_800_000_000_000;
@@ -78,7 +78,9 @@ describe('Planner', () => {
   test('follows split rotation', () => {
     const w = planner(defaultPlan(), Gyms.commercial(), [{ date: daysAgo(1), focus: 'push', exercises: [session('bb-bench', 80, 6)] }]).generate({ now });
     expect(w.focus).toBe('pull');
-    expect(w.exercises.every((p) => p.exercise.primary.some((m) => focusMuscles('pull').includes(m)))).toBe(true);
+    // Abs and calves may fill spare time once the pull muscles are done.
+    const extras = ['abs', 'calves'];
+    expect(w.exercises.every((p) => p.exercise.primary.some((m) => focusMuscles('pull').includes(m) || extras.includes(m)))).toBe(true);
   });
 
   test('fresh muscles avoids what you just trained', () => {
@@ -104,12 +106,16 @@ describe('Planner', () => {
     expect(w.exercises.length).toBeGreaterThanOrEqual(3);
   });
 
-  test('no doubled isolations for one muscle', () => {
+  test('no isolation role twice, except a second side raise', () => {
     for (let seed = 0; seed < 20; seed++) {
-      for (const focus of ['push', 'pull', 'legs'] as DayFocus[]) {
-        const w = planner().generate({ now, seed, focus });
-        const targets = w.exercises.filter((p) => !p.exercise.isCompound).map((p) => [...p.exercise.primary].sort().join(','));
-        expect(new Set(targets).size, `seed ${seed} ${focus}`).toBe(targets.length);
+      for (const focus of ['push', 'pull', 'legs', 'upper'] as DayFocus[]) {
+        const w = planner(defaultPlan({ sessionMinutes: 120 })).generate({ now, seed, focus });
+        const ids = w.exercises.map((p) => p.exercise.id);
+        expect(new Set(ids).size, `seed ${seed} ${focus}`).toBe(ids.length);
+        const roles = w.exercises.filter((p) => !p.exercise.isCompound).map((p) => qualityOf(p.exercise).roles[0]);
+        for (const r of new Set(roles)) {
+          expect(roles.filter((x) => x === r).length, `${r} seed ${seed} ${focus}`).toBeLessThanOrEqual(r === 'sideRaise' ? 2 : 1);
+        }
       }
     }
   });

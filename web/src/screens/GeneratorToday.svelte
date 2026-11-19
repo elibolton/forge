@@ -208,10 +208,18 @@
 
     {#if chosenMinutes - estimate >= 10 && estimate < chosenMinutes * 0.8}
       <div class="card tight row" style="align-items:flex-start">
-        <TimerOff size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
+        {#if workout.note}
+          <BadgeCheck size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
+        {:else}
+          <TimerOff size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
+        {/if}
         <div class="stack grow" style="--gap:6px">
           <div class="sub bold">About {estimate} of your {chosenMinutes} min</div>
+          {#if workout.note}
+            <p class="caption muted">Every muscle today already gets the sets that help it grow; more would add fatigue, not size. Leftover time went to muscles today doesn't otherwise train.</p>
+          {:else}
           <p class="caption muted">Only a few {focusTitle[workout.focus].toLowerCase()} exercises suit {app.activeGym.name}'s equipment and today's recovery. Add one to use the time, or shorten today's session.</p>
+          {/if}
           <button class="link sub" style="text-align:left" onclick={() => (adding = true)}>Add an exercise</button>
         </div>
       </div>

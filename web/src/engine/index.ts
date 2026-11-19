@@ -9,3 +9,5 @@ export * from './programs';
 export * from './progression';
 export * from './historyImport';
 export * from './decode';
+export * from './quality';
+export * from './templates';
