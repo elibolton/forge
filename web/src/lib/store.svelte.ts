@@ -9,6 +9,7 @@ import { db, requestPersistence } from './db';
 import { saving } from './saving.svelte';
 import { sync } from './sync.svelte';
 import { WeightUnits } from './units';
+import { weeklyGoalFor } from './weeks';
 import { type Activity, readActivity, toExternal } from './activities';
 import { prTimeline } from './records';
 import { hasOneRM } from './finishWorkout';
@@ -253,6 +254,9 @@ class AppStore {
     const program = Programs.byID(progress.programID);
     return program ? { program, progress } : null;
   });
+
+  /** Workouts a week to aim for: the running program's days, else the profile's weekly goal. */
+  weeklyGoal = $derived(weeklyGoalFor(this.profile?.weeklyGoal ?? 3, this.activeProgram?.program));
 
   async load() {
     try {

@@ -121,7 +121,7 @@
         </label>
         {#each rule.notes as n (n)}<div class="item caption" style="align-items:flex-start"><Info size={14} style="flex:none" /> {n}</div>{/each}
       </div>
-      <div class="foot">RIR is reps in reserve: how many more reps you could still do when you stop. RIR 2 means end the set with about two left. A deload is a lighter week to recover.</div>
+      <div class="foot">"Reps left" is how many more reps you could still do when you stop: "2 reps left" means end the set with about two in the tank, and "to failure" means none. A deload is a lighter week to recover.</div>
     </div>
 
     {#each dayOrder(program) as dayID (dayID)}

@@ -3,7 +3,7 @@
   import { addMobility } from '../lib/mobility';
   import { focusMuscles, gymFitsProgramExercise } from '../engine';
   import {
-    type Exercise, type FatigueCheckIn, type WeekRule, Programs, checkInDue, nextDayID, programDay, rirText, rxExercise,
+    type Exercise, type FatigueCheckIn, type WeekRule, Programs, checkInDue, nextDayID, programDay, repsLeftText, rxExercise,
     scheduledOn, setsText, effortText, restText, skipDay, dayOrder, isDone, ruleFor,
   } from '../engine';
   import { BedDouble, ChevronRight, Ellipsis, Flame, HeartPulse, Info, MoonStar, TriangleAlert } from '@lucide/svelte';
@@ -105,8 +105,8 @@
   function chips(rule: WeekRule): string[] {
     const out: string[] = [];
     // In plain words: "RIR" (reps in reserve) means nothing to a newcomer; the logger asks "reps left" too.
-    if (rule.compoundRIR) out.push(`Big lifts: ${rirText(rule.compoundRIR)} reps left`);
-    if (rule.isolationRIR) out.push(`Small lifts: ${rirText(rule.isolationRIR)} reps left`);
+    if (rule.compoundRIR) out.push(`Big lifts: ${repsLeftText(rule.compoundRIR)}`);
+    if (rule.isolationRIR) out.push(`Small lifts: ${repsLeftText(rule.isolationRIR)}`);
     if (!rule.compoundRIR && !rule.isolationRIR) out.push('Usual effort');
     return out;
   }
@@ -230,7 +230,7 @@
                 {#if p.lastSetNote}<span class="caption row" style="--gap:6px;color:var(--recovering)"><Flame size={13} /> {p.lastSetNote}</span>{/if}
                 {#each [...p.slot.notes, ...(p.weekNote ? [p.weekNote] : [])] as n (n)}<span class="caption faint">• {n}</span>{/each}
                 {#if !gymFitsProgramExercise(app.activeGym, e)}
-                  <span class="caption row" style="--gap:6px;color:var(--recovering)"><TriangleAlert size={13} /> {app.activeGym.name} doesn't list all the equipment</span>
+                  <span class="caption row" style="--gap:6px;color:var(--recovering)"><TriangleAlert size={13} /> Needs equipment your gym ({app.activeGym.name}) doesn't list</span>
                 {/if}
                 {#if item.isSwapped}<span class="caption faint">Swapped for today</span>{/if}
               </div>

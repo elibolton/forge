@@ -159,7 +159,7 @@ describe('Progression', () => {
     const s = suggest(rx('push.1', 1), { history: [], gym, now });
     expect(s.reps).toBe(5);
     expect(s.weight ?? 0).toBeGreaterThanOrEqual(20);
-    expect(s.reason).toContain('RIR 3');
+    expect(s.reason).toContain('5 reps with 3 reps left');
   });
   test('adds reps before load', () => {
     const s = suggest(rx('push.1', 2), { history: [logged('push.1', 1, 80, [8, 7, 6], daysAgo(7))], gym, now });

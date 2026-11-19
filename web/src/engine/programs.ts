@@ -89,7 +89,7 @@ const pplul8: WorkoutProgram = (() => {
       rx('upper.6a', 'ez-preacher-curl', 3, r(8, 12), rir(0, 1), 'isolation', { label: '6a', rest: [90, 90], step: 'upperBarbell',
         superset: '6', notes: ['Arms over the incline backrest'] }),
       rx('upper.6b', 'skull-crusher', 3, r(8, 12), rir(1), 'isolation', { label: '6b', rest: [120, 120], step: 'upperBarbell',
-        superset: '6', notes: ['Lower the bar behind your head'], lastSet: '0 RIR on the last set' }),
+        superset: '6', notes: ['Lower the bar behind your head'], lastSet: 'Take the last set to failure' }),
     ],
     supersets: [{ group: '6', restBetween: [60, 90] as [number, number], restAfter: 120 }],
   };
@@ -113,19 +113,19 @@ const pplul8: WorkoutProgram = (() => {
   const late = (w: number) => weekRule(w, {
     compoundRIR: rirTarget(1), isolationRIR: rirTarget(0),
     rirExceptions: { 'bb-squat': rirTarget(1, 2), 'bb-rdl': rirTarget(1, 2) },
-    isolationLastSetNote: '0 RIR, then lengthened partials on the last set',
+    isolationLastSetNote: 'Take the last set to failure, then add lengthened partials',
   });
 
   return {
     id: 'pplul-8wk-home',
     name: '8-Week Push/Pull/Legs/Upper/Lower',
-    summary: '5 days a week, hypertrophy, home gym. Long-length training, 10–20 weekly sets per muscle, RIR that drops week by week, and a deload in week 8.',
+    summary: '5 days a week, hypertrophy, home gym. Long-length training, 10–20 weekly sets per muscle, effort that climbs week by week, and a deload in week 8.',
     weeks: 8,
     schedule: ['push', 'pull', 'legs', null, 'upper', 'lower', null],
     days: [push, pull, legs, upper, lower],
     weekRules: [
       weekRule(1, { compoundRIR: rirTarget(3), isolationRIR: rirTarget(2), calibrate: true,
-        notes: ['Take the last set of one isolation per session to true failure, to calibrate your RIR.'] }),
+        notes: ['Take the last set of one isolation per session to true failure, to learn what 0 reps left feels like.'] }),
       weekRule(2, { compoundRIR: rirTarget(2), isolationRIR: rirTarget(1) }),
       weekRule(3),
       weekRule(4, { notes: ['Optional: +1 set for 1–2 lagging muscles if you have no fatigue flags.'] }),
@@ -134,7 +134,7 @@ const pplul8: WorkoutProgram = (() => {
         notes: ['Deload: same exercises, about half the sets.', 'Same loads or up to 10% lighter. No failure, no partials.'] }),
     ],
     progressionNotes: [
-      'Start with the load that puts set 1 at the bottom of the range at the target RIR.',
+      'Start with the load that puts set 1 at the bottom of the range with the target reps left.',
       'Add reps first, week to week.',
       'Add load once every working set reaches the top of the range: squat/RDL +5 kg (10 lb), presses and rows +2.5 kg (5 lb), dumbbells the next pair, cables the next pin.',
       "If that jump is over ~10% of the load, extend the range by 3–5 reps first.",

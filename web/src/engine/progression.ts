@@ -5,7 +5,7 @@ import {
 } from './models';
 import { Planner } from './planner';
 import {
-  type LoadStep, type ProgramProgress, type ResolvedPrescription, effortRIR, isEccentric, rirText, rxExercise,
+  type LoadStep, type ProgramProgress, type ResolvedPrescription, effortRIR, isEccentric, repsLeftText, rxExercise,
 } from './program';
 import { estimatedOneRM, weightForReps } from './strength';
 
@@ -149,7 +149,7 @@ export function suggest(p: ResolvedPrescription, args: {
     const source = back ? `${back}, easing in` : known === undefined ? 'Starting guess' : 'From your history';
     return {
       weight, reps: range.lower, range,
-      reason: `${source}: adjust so set 1 lands at ${range.lower} reps with RIR ${rir ? rirText(rir) : '2'}`,
+      reason: `${source}: adjust so set 1 lands at ${range.lower} reps with ${rir ? repsLeftText(rir) : '2 reps left'}`,
     };
   }
 

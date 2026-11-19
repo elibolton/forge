@@ -232,7 +232,7 @@
         <div><div class="bold">All sets logged</div><div class="caption muted">{numbered.length} sets of {e.name}{working.length > numbered.length ? ` + ${working.length - numbered.length} drop` : ''}</div></div>
       </div>
       {#if eccentric}
-        <p class="sub muted">Lowering reps only, so there's no RIR to rate. Progress comes from more controlled reps.</p>
+        <p class="sub muted">Lowering reps only, so there are no reps left to rate. Progress comes from more controlled reps.</p>
       {:else if rated}
         {@const doneSets = numbered.filter((x) => x.done)}
         {@const last = doneSets[doneSets.length - 1]}

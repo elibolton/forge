@@ -32,7 +32,7 @@
 
   const daysSinceLast = $derived(app.logs[0] ? Math.round((startOfDay(currentTime()) - startOfDay(app.logs[0].date)) / DAY) : null);
   const thisWeek = $derived(app.logs.filter((l) => l.date >= weekStart(currentTime())).length);
-  const goal = $derived(app.profile!.weeklyGoal);
+  const goal = $derived(app.weeklyGoal);
   const dates = $derived(app.logs.map((l) => l.date));
   /** Consecutive weeks that hit the weekly goal. */
   const streak = $derived(goalStreak(dates, goal));
