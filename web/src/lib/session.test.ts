@@ -8,7 +8,10 @@ vi.mock('./db', () => ({
 
 const { Gyms, Programs, defaultPlan, newProgress } = await import('../engine');
 const { app } = await import('./store.svelte');
-const { session, newSet } = await import('./session.svelte');
+const { session, newSet, supersetOf } = await import('./session.svelte');
+const { groupLabel } = await import('./groups');
+const { templateFromSession, readTemplate } = await import('./templates');
+const { sessionFromTemplate } = await import('./templateStart');
 const { goalStreak, trainedDays, weeklyCounts, DAY } = await import('./weeks');
 const { exerciseRecords, prTimeline } = await import('./records');
 const { toExternal } = await import('./activities');
@@ -281,6 +284,92 @@ describe('Building the saved workout', () => {
     expect(newRecords(log.exercises, new Map())).toEqual([]);
     expect(newRecords(log.exercises, new Map([['bb-bench', 200]]))).toEqual([]);
     expect(newRecords(log.exercises, new Map([['bb-bench', 100]])).map((r) => r.exercise.id)).toEqual(['bb-bench']);
+  });
+});
+
+describe('Supersets, tri-sets and circuits', () => {
+  const sets = (n: number, w = 20) => Array.from({ length: n }, () => newSet(w, 10));
+  const groupsNow = () => session.state!.exercises.map((x) => supersetOf(x) ?? '-').join('');
+  const ex = (id: string, n = 3, o: Partial<SessionExercise> = {}) => exercise(id, sets(n), { exerciseID: 'db-fly', restSeconds: 90, ...o });
+  const logNext = () => {
+    const cur = session.state!.exercises[session.state!.currentIndex];
+    session.logSet(cur.sets.find((x) => !x.done && !x.isWarmup)!.id, cur.id);
+    return cur.id;
+  };
+
+  test('a tri-set rotates through all three, with a short rest between and the full rest after each round', () => {
+    start([ex('a'), ex('b', 3, { restSeconds: 120 }), ex('c')]);
+    session.linkWithNext('a');
+    session.linkWithNext('b');
+    expect(groupsNow()).toBe('AAA');
+    const order: string[] = [], rests: number[] = [];
+    for (let k = 0; k < 9; k++) { order.push(logNext()); rests.push(session.restTotal); }
+    expect(order.join('')).toBe('abcabcabc');
+    expect(rests).toEqual([30, 30, 120, 30, 30, 120, 30, 30, 120]);
+  });
+
+  test('an exercise that runs out of sets drops out of the rotation', () => {
+    start([ex('a', 2), ex('b', 1), ex('c', 2), ex('d', 2)]);
+    session.linkWithNext('a'); session.linkWithNext('b'); session.linkWithNext('c');
+    const order: string[] = [];
+    for (let k = 0; k < 7; k++) order.push(logNext());
+    expect(order.join('')).toBe('abcdacd');
+  });
+
+  test('a program pair keeps its own between-rest', () => {
+    start([
+      ex('a', 2, { program: info({ supersetGroup: '6', supersetRestBetween: 75 }), restSeconds: 75 }),
+      ex('b', 2, { program: info({ supersetGroup: '6' }), restSeconds: 120 }),
+    ]);
+    logNext();
+    expect(session.restTotal).toBe(75);
+    logNext();
+    expect(session.restTotal).toBe(120);
+  });
+
+  test('linking joins groups; unlinking splits them, and one left alone leaves the group', () => {
+    start([ex('a'), ex('b'), ex('c'), ex('d'), ex('e')]);
+    session.linkWithNext('a');
+    session.linkWithNext('c');
+    expect(groupsNow()).toBe('AABB-');
+    session.linkWithNext('b'); // joins the two pairs into a circuit of four
+    expect(groupsNow()).toBe('AAAA-');
+    session.unlinkFromNext('b');
+    expect(groupsNow()).toBe('AABB-');
+    session.unlinkFromNext('a');
+    expect(groupsNow()).toBe('--BB-');
+  });
+
+  test('moving or removing an exercise keeps every group a run of neighbours', () => {
+    start([ex('a'), ex('b'), ex('c'), ex('d')]);
+    session.linkWithNext('a'); session.linkWithNext('b');
+    expect(groupsNow()).toBe('AAA-');
+    session.moveExercise('c', 1);
+    expect(groupsNow()).toBe('AA--');
+    session.removeExercise('b');
+    expect(groupsNow()).toBe('---');
+  });
+
+  test('ungrouping gives a short-rest exercise its own rest back', () => {
+    start([ex('a', 3, { supersetGroup: 'A', restSeconds: 30 }), ex('b', 3, { supersetGroup: 'A', restSeconds: 120 })]);
+    session.unlinkFromNext('a');
+    expect(session.state!.exercises.map((x) => x.restSeconds)).toEqual([60, 120]);
+  });
+
+  test('saved workouts keep their groups', () => {
+    start([ex('a'), ex('b'), ex('c')]);
+    session.linkWithNext('a'); session.linkWithNext('b');
+    const t = templateFromSession('Arms', session.state!.exercises);
+    expect(t.exercises.map((x) => x.group)).toEqual(['A', 'A', 'A']);
+    expect(readTemplate(JSON.parse(JSON.stringify(t)))!.exercises.map((x) => x.group)).toEqual(['A', 'A', 'A']);
+    const started = sessionFromTemplate(t, app.planner());
+    expect(started.exercises.map((x) => x.supersetGroup)).toEqual(['A', 'A', 'A']);
+    const lonely = sessionFromTemplate({ ...t, exercises: [t.exercises[0], { ...t.exercises[1], group: undefined }] }, app.planner());
+    expect(lonely.exercises.map((x) => x.supersetGroup)).toEqual([undefined, undefined]);
+  });
+
+  test('names by size', () => {
+    expect([2, 3, 4, 6].map(groupLabel)).toEqual(['Superset', 'Tri-set', 'Circuit', 'Circuit']);
   });
 });
 

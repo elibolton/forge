@@ -1,6 +1,7 @@
 import { Catalog, type Planner, plannedWorkingSets } from '../engine';
 import { type SessionState, newSet, sessionExerciseFrom } from './session.svelte';
 import type { WorkoutTemplate } from './templates';
+import { normalizeGroups } from './groups';
 
 /**
  * A workout ready to log from a template. Sets and reps come from the template; loads come from your
@@ -17,9 +18,12 @@ export function sessionFromTemplate(t: WorkoutTemplate, planner: Planner): Sessi
       ...Array.from({ length: item.sets }, () => newSet(weight, item.reps)),
     ];
     x.targetReps = item.reps;
+    if (item.group) x.supersetGroup = item.group; else delete x.supersetGroup;
     x.reasons = [`From “${t.name}”`, ...planned.reasons];
     return x;
   });
-  return { startedAt: Date.now(), focus: null, exercises, currentIndex: 0, title: t.name };
+  const state: SessionState = { startedAt: Date.now(), focus: null, exercises, currentIndex: 0, title: t.name };
+  normalizeGroups(state); // a template edited by hand might hold a group of one
+  return state;
 }
 
