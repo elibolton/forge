@@ -9,14 +9,14 @@ export interface PersonalRecord { exercise: Exercise; oneRM: number; previous: n
 
 /**
  * The sets that were done, per exercise. Exercises with nothing done are left out. Working sets carry
- * the exercise's RIR; warm-ups and lowering-only work don't.
+ * their own RIR, or the exercise's if only that was rated; warm-ups and lowering-only work have none.
  */
 export function loggedExercises(state: SessionState): LoggedExercise[] {
   const logged: LoggedExercise[] = [];
   for (const ex of state.exercises) {
     const eccentric = ex.program?.effort.type === 'eccentricOnly';
     const sets = ex.sets.filter((s) => s.done).map((s) => ({
-      weight: s.weight ?? 0, reps: s.reps, rir: s.isWarmup || eccentric ? null : ex.rir, isWarmup: s.isWarmup, side: s.side ?? null,
+      weight: s.weight ?? 0, reps: s.reps, rir: s.isWarmup || eccentric ? null : (s.rir ?? ex.rir), isWarmup: s.isWarmup, side: s.side ?? null,
     }));
     if (!sets.length) continue;
     logged.push({

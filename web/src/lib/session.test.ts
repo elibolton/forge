@@ -16,6 +16,8 @@ const { db } = await import('./db');
 const { saving } = await import('./saving.svelte');
 const { checkSet } = await import('./setCheck');
 const { workoutLog, newRecords, completesProgramDay } = await import('./finishWorkout');
+const { liveRecords } = await import('./records');
+const { oneRM } = await import('../engine');
 type SessionExercise = import('./session.svelte').SessionExercise;
 type ProgramSlotInfo = import('./session.svelte').ProgramSlotInfo;
 
@@ -279,6 +281,70 @@ describe('Building the saved workout', () => {
     expect(newRecords(log.exercises, new Map())).toEqual([]);
     expect(newRecords(log.exercises, new Map([['bb-bench', 200]]))).toEqual([]);
     expect(newRecords(log.exercises, new Map([['bb-bench', 100]])).map((r) => r.exercise.id)).toEqual(['bb-bench']);
+  });
+});
+
+describe('Rating sets', () => {
+  test('logging a working set asks for its rating; warm-ups, first sides and lowering-only work do not', () => {
+    const [w, a1] = [newSet(40, 8, { isWarmup: true }), newSet(80, 8)];
+    start([
+      exercise('a', [w, a1]),
+      exercise('b', [newSet(20, 10, { side: 'left' }), newSet(20, 10, { side: 'right' })], { program: info({ laterality: 'perArm' }) }),
+      exercise('c', [newSet(0, 5)], { exerciseID: 'nordic-curl', program: info({ effort: { type: 'eccentricOnly' } }) }),
+    ]);
+    session.logSet(w.id, 'a');
+    expect(session.pendingRating).toBeNull();
+    session.logSet(a1.id, 'a');
+    expect(session.pendingRating).toEqual({ exerciseID: 'a', setID: a1.id });
+
+    const [left, right] = session.state!.exercises[1].sets;
+    session.logSet(left.id, 'b');
+    expect(session.pendingRating).toBeNull();
+    session.logSet(right.id, 'b');
+    expect(session.pendingRating?.setID).toBe(right.id);
+
+    session.logSet(session.state!.exercises[2].sets[0].id, 'c');
+    expect(session.pendingRating).toBeNull();
+  });
+
+  test('rating the right side rates an unrated left side too, and closes the prompt', () => {
+    start([exercise('b', [newSet(20, 10, { side: 'left', done: true }), newSet(20, 10, { side: 'right', done: true })], { program: info({ laterality: 'perLeg' }) })]);
+    const [left, right] = session.state!.exercises[0].sets;
+    session.pendingRating = { exerciseID: 'b', setID: right.id };
+    session.rateSet('b', right.id, 2);
+    expect(session.state!.exercises[0].sets.map((x) => x.rir)).toEqual([2, 2]);
+    expect(session.pendingRating).toBeNull();
+    session.rateSet('b', left.id, 1);
+    session.rateSet('b', right.id, 3);
+    expect(session.state!.exercises[0].sets.map((x) => x.rir)).toEqual([1, 3]); // a left side rated on its own keeps its rating
+  });
+
+  test('each set is saved with its own rating, falling back to the exercise rating', async () => {
+    start([exercise('a', [newSet(80, 8, { done: true, rir: 3 }), newSet(80, 8, { done: true }), newSet(80, 8, { done: true, rir: 0 })], { rir: 1 })]);
+    await session.finish();
+    expect(app.logs[0].exercises[0].sets.map((x) => x.rir)).toEqual([3, 1, 0]);
+  });
+});
+
+describe('Live personal records', () => {
+  const set = (weight: number, reps: number, o: Partial<ReturnType<typeof newSet>> = {}) => newSet(weight, reps, { done: true, ...o });
+
+  test('a set beating your best by over 0.5% is a record; only sets that beat earlier ones today count', () => {
+    const sets = [set(100, 5), set(105, 5), set(102.5, 5), set(110, 5)];
+    const best = oneRM(100, 5, 0);
+    expect([...liveRecords(sets, best).keys()]).toEqual([sets[1].id, sets[3].id]);
+  });
+
+  test('no history, warm-ups, unlogged sets and bodyweight sets are never records', () => {
+    expect(liveRecords([set(200, 5)], undefined).size).toBe(0);
+    expect(liveRecords([set(200, 5, { isWarmup: true }), newSet(200, 5), set(0, 20)], 50).size).toBe(0);
+  });
+
+  test('a rating counts toward the estimate', () => {
+    const best = oneRM(100, 5, 0);
+    expect(liveRecords([set(100, 5)], best).size).toBe(0);
+    expect(liveRecords([set(100, 5, { rir: 2 })], best).size).toBe(1);
+    expect(liveRecords([set(100, 5)], best, 2).size).toBe(1);
   });
 });
 

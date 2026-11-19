@@ -19,6 +19,8 @@ export interface SessionSet {
   done: boolean;
   /** For per-arm and per-leg work. */
   side?: Side | null;
+  /** Reps left in reserve, rated after the set; null or absent when not rated. */
+  rir?: number | null;
 }
 
 /** The program prescription behind a session exercise. */
@@ -48,12 +50,20 @@ export interface SessionExercise {
   restSeconds: number;
   targetRIR: number;
   targetReps: number | null;
+  /** The old one-rating-per-exercise RIR; sets rated on their own take precedence. */
   rir: number | null;
   reasons: string[];
   program?: ProgramSlotInfo;
   /** Superset pairing from the workout generator; program days use `program.supersetGroup`. */
   supersetGroup?: string;
 }
+
+/**
+ * Whether sets of this exercise get a reps-in-reserve rating. Lowering-only work has no RIR, and timed
+ * holds are rated by time, not reps.
+ */
+export const isRated = (e: SessionExercise): boolean =>
+  e.program?.effort.type !== 'eccentricOnly' && !Catalog.exercise(e.exerciseID).isTimed;
 
 /** The superset this exercise belongs to, whichever way it was paired. */
 export const supersetOf = (e: SessionExercise): string | undefined => e.supersetGroup ?? e.program?.supersetGroup;
@@ -112,6 +122,9 @@ class WorkoutSession {
   private restTimer: ReturnType<typeof setTimeout> | undefined;
 
   get isActive() { return this.state !== null; }
+
+  /** The set just logged, waiting for a quick "reps left?" rating. Not saved; skipping it is fine. */
+  pendingRating = $state<{ exerciseID: string; setID: string } | null>(null);
 
   /** Set when a workout in progress has sat untouched for hours; the app asks if you're still training. */
   staleSince = $state<number | null>(null);
@@ -182,6 +195,7 @@ class WorkoutSession {
   private begin(state: SessionState) {
     this.unlockAudio();
     this.staleSince = null;
+    this.pendingRating = null;
     this.state = state;
     this.isExpanded = true;
     this.persist();
@@ -247,6 +261,25 @@ class WorkoutSession {
     this.updateExercise(exerciseID, (e) => { e.rir = rir === null ? null : Math.max(0, Math.round(rir)); });
   }
 
+  /**
+   * Rates one set: reps left in reserve. Rating the right side of a per-side round also rates its
+   * left side, if that wasn't rated, since both were asked about as one set.
+   */
+  rateSet(exerciseID: string, setID: string, rir: number | null) {
+    const value = rir === null ? null : Math.max(0, Math.round(rir));
+    this.updateExercise(exerciseID, (e) => {
+      const i = e.sets.findIndex((x) => x.id === setID);
+      if (i < 0) return;
+      e.sets[i].rir = value;
+      const before = e.sets[i - 1];
+      if (e.sets[i].side === 'right' && before?.side === 'left' && before.rir == null) before.rir = value;
+    });
+    if (this.pendingRating?.setID === setID) this.pendingRating = null;
+  }
+
+  /** Not now: closes the rating prompt, leaving the set unrated. */
+  skipRating() { this.pendingRating = null; }
+
   // MARK: Sets
 
   /** Changes a set's weight (kg, null for bodyweight) or reps. Never negative; reps are whole. */
@@ -307,7 +340,10 @@ class WorkoutSession {
     if (wasDone || set.isWarmup) return;
     const info = after.program;
     const group = supersetOf(after);
-    if (info && isPerSide(info.laterality) && set.side === 'left' && after.sets.some((x) => x.side === 'right' && !x.done && !x.isWarmup)) {
+    const firstSide = !!info && isPerSide(info.laterality) && set.side === 'left' && after.sets.some((x) => x.side === 'right' && !x.done && !x.isWarmup);
+    // Ask once per round: after the right side when per-side.
+    this.pendingRating = !firstSide && isRated(after) ? { exerciseID: after.id, setID: set.id } : null;
+    if (firstSide) {
       // First side of a per-side set: short (or no) rest, then the other side.
       if (info.sideRest) restFor = info.sideRest;
     } else if (group) {
@@ -354,6 +390,7 @@ class WorkoutSession {
     const was = this.state && structuredClone($state.snapshot(this.state));
     this.state = null;
     this.staleSince = null;
+    this.pendingRating = null;
     this.restEndsAt = null;
     clearTimeout(this.restTimer);
     this.persist();

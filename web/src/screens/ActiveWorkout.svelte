@@ -8,6 +8,7 @@
   import ExercisePicker from '../components/ExercisePicker.svelte';
   import ExerciseThumb from '../components/ExerciseThumb.svelte';
   import RestTimerBar from '../components/RestTimerBar.svelte';
+  import RatePrompt from '../components/RatePrompt.svelte';
   import Sheet from '../components/Sheet.svelte';
   import { dayTitle } from '../lib/labels';
   import { type SessionExercise, exerciseOf, isComplete, session, supersetOf } from '../lib/session.svelte';
@@ -15,6 +16,7 @@
   import { toasts } from '../lib/toasts.svelte';
   import { minSec } from '../lib/units';
   import { saving } from '../lib/saving.svelte';
+  import { liveRecords } from '../lib/records';
 
   let adding = $state(false);
   let swapping = $state(false);
@@ -84,6 +86,23 @@
     if (dx < 0 && index < ws.exercises.length - 1) go(index + 1);
     if (dx > 0 && index > 0) go(index - 1);
   }
+
+  // Personal records as they happen: a toast and a buzz the moment a set beats your best.
+  const live = $derived(new Map(ws.exercises.flatMap((x) =>
+    [...liveRecords(x.sets, app.derivedHistory.bestOneRM.get(x.exerciseID), x.rir)].map(([id, e1rm]) => [id, { x, e1rm }] as const))));
+  /** Records already shown, so reopening the logger or editing a set doesn't announce one twice. */
+  let announced: Set<string> | null = null;
+  $effect(() => {
+    const ids = [...live.keys()];
+    if (!announced) { announced = new Set(ids); return; }
+    for (const id of ids) {
+      if (announced.has(id)) continue;
+      announced.add(id);
+      const r = live.get(id)!;
+      navigator.vibrate?.([30, 40, 30, 40, 60]);
+      toasts.show(`New PR · ${exerciseOf(r.x).name} · est. 1RM ${app.units.format(r.e1rm)}`);
+    }
+  });
 
   // Finish review
   const done = $derived(ws.exercises.flatMap((x) => x.sets).filter((s) => !s.isWarmup && s.done));
@@ -160,7 +179,7 @@
     {/if}
   </div>
 
-  <div class="rest"><RestTimerBar /></div>
+  <div class="rest"><RatePrompt /><RestTimerBar /></div>
 </div>
 
 {#if reviewing}

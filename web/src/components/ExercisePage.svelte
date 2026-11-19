@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type LoggedSet, isBodyweight, isPerSide, muscleName, repRangeText } from '../engine';
-  import { ArrowLeftRight, ArrowRight, Check, ChevronDown, Circle, CircleCheck, Flag, Flame, Info, Pencil, Plus } from '@lucide/svelte';
-  import { type SessionExercise, type SessionSet, exerciseOf, session } from '../lib/session.svelte';
+  import { ArrowLeftRight, ArrowRight, Check, ChevronDown, Circle, CircleCheck, Flag, Flame, Info, Pencil, Plus, Trophy } from '@lucide/svelte';
+  import { type SessionExercise, type SessionSet, exerciseOf, isRated, session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { fmtNum } from '../lib/units';
   import ActionMenu from './ActionMenu.svelte';
@@ -10,9 +10,10 @@
   import { barFor } from '../lib/plates';
   import ExerciseThumb from './ExerciseThumb.svelte';
   import ValueStepper from './ValueStepper.svelte';
+  import RIRChips from './RIRChips.svelte';
   import Sheet from './Sheet.svelte';
   import { checkSet } from '../lib/setCheck';
-  import { exerciseRecords } from '../lib/records';
+  import { exerciseRecords, liveRecords } from '../lib/records';
   import { toasts } from '../lib/toasts.svelte';
 
   let { exercise: ex, nextName, onNext, onFinish, onswap, partner }: {
@@ -36,6 +37,12 @@
   const weightStep = $derived(app.weightStep(e));
   const bar = $derived(barFor(e, units.pounds));
   const eccentric = $derived(ex.program?.effort.type === 'eccentricOnly');
+  const rated = $derived(isRated(ex));
+  /** Sets today that are personal records. */
+  const prs = $derived(liveRecords(ex.sets, app.derivedHistory.bestOneRM.get(ex.exerciseID), ex.rir));
+  /** A set's reps in reserve: its own rating, else the old per-exercise one. */
+  const rirOf = (s: SessionSet) => s.rir ?? ex.rir;
+  const rirText = (v: number | null | undefined) => (v == null ? '–' : v >= 4 ? '4+' : String(v));
 
   /** Set number; for per-side work both sides of a round share it. */
   function number(id: string) {
@@ -172,6 +179,12 @@
       {#if bar !== undefined && (s.weight ?? 0) > 0}
         <PlateBar total={units.display(s.weight ?? 0)} {bar} pounds={units.pounds} />
       {/if}
+      {#if s.done && rated && !s.isWarmup}
+        <div class="stack" style="--gap:8px">
+          <span class="eyebrow">Reps left</span>
+          <RIRChips compact value={s.rir} label="Reps left on set {number(s.id)}" onpick={(v) => session.rateSet(ex.id, s.id, v)} />
+        </div>
+      {/if}
     </section>
   {:else if working.length}
     <section class="focus complete stack" style="--gap:18px">
@@ -181,18 +194,21 @@
       </div>
       {#if eccentric}
         <p class="sub muted">Lowering reps only, so there's no RIR to rate. Progress comes from more controlled reps.</p>
-      {:else if !e.isTimed}
-        <div class="stack" style="--gap:10px">
-          <span class="sub semibold" id="rir-{ex.id}">How many more reps did you have left?</span>
-          <div class="rirs" role="radiogroup" aria-labelledby="rir-{ex.id}">
-            {#each [0, 1, 2, 3, 4] as v (v)}
-              <button class="rir num" class:on={ex.rir === v} role="radio" aria-checked={ex.rir === v}
-                aria-label={v === 0 ? 'None, went to failure' : `${v} reps left`}
-                onclick={() => session.setRIR(ex.id, v)}>{v === 4 ? '4+' : v}<small>{v === 0 ? 'failure' : v === 1 ? 'one' : v === 4 ? 'easy' : ''}</small></button>
-            {/each}
+      {:else if rated}
+        {@const doneSets = working.filter((x) => x.done)}
+        {@const last = doneSets[doneSets.length - 1]}
+        {#if last && rirOf(last) == null && session.pendingRating?.setID !== last.id}
+          <div class="stack" style="--gap:10px">
+            <span class="sub semibold">How many more reps did you have left on your last set?</span>
+            <RIRChips value={last.rir} label="Reps left on your last set" onpick={(v) => session.rateSet(ex.id, last.id, v)} />
           </div>
-          <span class="caption faint">This tunes how quickly Forge adds weight next time.</span>
-        </div>
+        {:else}
+          <div class="row wrap" style="--gap:6px">
+            <span class="caption muted" style="margin-right:4px">Reps left</span>
+            {#each doneSets as d (d.id)}<span class="chip small-chip num">{rirText(rirOf(d))}</span>{/each}
+          </div>
+        {/if}
+        <span class="caption faint">Rating each set tunes how quickly Forge adds weight next time.</span>
       {/if}
     </section>
   {/if}
@@ -204,11 +220,13 @@
       {@const last = lastFor(s.id)}
       <div class="row" style="--gap:4px">
         <button class="set-row grow" class:active={isActive} class:done={s.done && !isActive}
-          aria-label="Set {s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}, {setText(s)}{s.done ? ', done' : ''}"
+          aria-label="Set {s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}, {setText(s)}{s.done ? ', done' : ''}{s.done && rated && rirOf(s) != null ? `, ${rirText(rirOf(s))} reps left` : ''}{prs.has(s.id) ? ', personal record' : ''}"
           aria-pressed={isActive} onclick={() => (editingID = isActive ? null : s.id)}>
           <span class="badge num">{s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}</span>
           <span class="semibold mono">{setText(s)}</span>
           {#if last && !s.done}<span class="caption muted mono">last {lastShort(last)}</span>{/if}
+          {#if prs.has(s.id)}<span class="pr" role="img" aria-label="Personal record"><Trophy size={13} /></span>{/if}
+          {#if s.done && rated && rirOf(s) != null}<span class="caption muted nowrap">{rirOf(s) === 0 ? 'to failure' : `${rirText(rirOf(s))} left`}</span>{/if}
           <span class="grow"></span>
           {#if s.done}<CircleCheck size={22} color="var(--fresh)" />{:else if isActive}<Pencil size={18} color="var(--ember-2)" />{:else}<Circle size={22} color="var(--text-3)" />{/if}
         </button>
@@ -277,13 +295,10 @@
     background: linear-gradient(to top, var(--bg) 70%, rgba(7, 7, 8, 0)); }
   .log { min-height: 62px; font-size: 1.08rem; }
   .check { width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); display: grid; place-items: center; }
+  .pr { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%;
+    color: var(--recovering); background: rgba(255, 187, 69, 0.14); border: 1px solid rgba(255, 187, 69, 0.3); }
+  .nowrap, .set-row .mono { white-space: nowrap; }
   .done-badge { width: 40px; height: 40px; border-radius: 50%; background: var(--fresh); color: #062b1e; display: grid; place-items: center; box-shadow: 0 0 24px rgba(60, 239, 176, 0.45); }
-  .rirs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-  .rir { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 0 8px; border-radius: 16px; background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--hairline); font-size: 1.3rem; }
-  .rir small { font-family: var(--font); font-size: 0.6rem; font-weight: 600; color: var(--text-3); min-height: 0.8em; }
-  .rir.on { background: var(--ember-gradient); border-color: transparent; color: #fff; box-shadow: 0 10px 24px -8px var(--ember-glow); }
-  .rir.on small { color: rgba(255, 255, 255, 0.8); }
   .set-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 16px; width: 100%; text-align: left; min-height: 52px;
     background: var(--surface); border: 1px solid var(--hairline); }
   .set-row:active { transform: none; }
