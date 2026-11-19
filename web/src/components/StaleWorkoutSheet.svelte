@@ -34,9 +34,8 @@
   }
 
   function discard() {
-    const snapshot = structuredClone($state.snapshot(ws));
-    session.discard();
-    toasts.show('Workout discarded', () => session.restore(snapshot));
+    const snapshot = session.discard();
+    if (snapshot) toasts.show('Workout discarded', () => session.restore(snapshot));
   }
 </script>
 

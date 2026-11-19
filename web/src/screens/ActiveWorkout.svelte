@@ -10,11 +10,10 @@
   import RestTimerBar from '../components/RestTimerBar.svelte';
   import Sheet from '../components/Sheet.svelte';
   import { dayTitle } from '../lib/labels';
-  import { exerciseOf, isComplete, session, sessionExerciseFrom, supersetOf } from '../lib/session.svelte';
+  import { type SessionExercise, exerciseOf, isComplete, session, supersetOf } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { minSec } from '../lib/units';
-  import { swapInSession } from '../lib/swap';
   import { saving } from '../lib/saving.svelte';
 
   let adding = $state(false);
@@ -59,38 +58,20 @@
   const title = $derived(ws.title ?? (ws.focus ? dayTitle(ws.focus) : 'Workout'));
 
   function go(i: number) {
-    session.update((s) => { s.currentIndex = i; });
+    session.goTo(i);
     scroller?.scrollTo({ top: 0 });
   }
 
   function discard() {
-    const snapshot = structuredClone(session.state!);
-    session.discard();
-    toasts.show('Workout discarded', () => session.restore(snapshot));
+    const snapshot = session.discard();
+    if (snapshot) toasts.show('Workout discarded', () => session.restore(snapshot));
   }
 
-  function add(e: ReturnType<typeof Catalog.exercise>) {
-    const planned = app.planner().prescribe(e);
-    session.update((s) => { s.exercises.push(sessionExerciseFrom(planned)); s.currentIndex = s.exercises.length - 1; });
-  }
+  const add = (e: ReturnType<typeof Catalog.exercise>) => session.addExercise(app.planner().prescribe(e));
 
-  function removeAt(i: number) {
-    const before = structuredClone(session.state!.exercises);
-    const name = exerciseOf(before[i]).name;
-    session.update((s) => {
-      s.exercises.splice(i, 1);
-      if (s.currentIndex >= s.exercises.length) s.currentIndex = Math.max(0, s.exercises.length - 1);
-    });
-    toasts.show(`Removed ${name}`, () => session.update((s) => { s.exercises = before; }));
-  }
-
-  function move(i: number, by: number) {
-    session.update((s) => {
-      const j = i + by;
-      if (j < 0 || j >= s.exercises.length) return;
-      [s.exercises[i], s.exercises[j]] = [s.exercises[j], s.exercises[i]];
-      if (s.currentIndex === i) s.currentIndex = j; else if (s.currentIndex === j) s.currentIndex = i;
-    });
+  function remove(x: SessionExercise) {
+    const undo = session.removeExercise(x.id);
+    if (undo) toasts.show(`Removed ${exerciseOf(x).name}`, undo);
   }
 
   // Swipe between exercises, like the iOS pager.
@@ -237,9 +218,9 @@
             <span class="grow"><span>{exerciseOf(x).name}</span><br /><span class="caption muted mono">{w.filter((s) => s.done).length}/{w.length} sets</span></span>
             {#if isComplete(x)}<CircleCheck size={20} color="var(--fresh)" aria-label="Done" />{/if}
           </button>
-          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} up" disabled={i === 0} onclick={() => move(i, -1)}><ArrowUp size={18} /></button>
-          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} down" disabled={i === ws.exercises.length - 1} onclick={() => move(i, 1)}><ArrowDown size={18} /></button>
-          <button class="icon-btn" style="color:var(--fatigued)" aria-label="Remove {exerciseOf(x).name}" onclick={() => removeAt(i)}><Trash2 size={18} /></button>
+          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} up" disabled={i === 0} onclick={() => session.moveExercise(x.id, -1)}><ArrowUp size={18} /></button>
+          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} down" disabled={i === ws.exercises.length - 1} onclick={() => session.moveExercise(x.id, 1)}><ArrowDown size={18} /></button>
+          <button class="icon-btn" style="color:var(--fatigued)" aria-label="Remove {exerciseOf(x).name}" onclick={() => remove(x)}><Trash2 size={18} /></button>
         </div>
       {/each}
       <button class="item link" onclick={() => { overview = false; adding = true; }}>Add Exercise</button>
@@ -253,7 +234,7 @@
 {#if swapping && current}
   {@const c = current}
   <ExercisePicker title="Swap {exerciseOf(c).name}" exercises={app.planner().alternatives(exerciseOf(c), new Set(ws.exercises.map((x) => x.exerciseID)))}
-    onpick={(e) => { session.update((s) => swapInSession(s, c.id, e, app.planner())); toasts.show(`Swapped in ${e.name}`); }}
+    onpick={(e) => { session.swapExercise(c.id, e, app.planner()); toasts.show(`Swapped in ${e.name}`); }}
     onclose={() => (swapping = false)} />
 {/if}
 {#if adding}

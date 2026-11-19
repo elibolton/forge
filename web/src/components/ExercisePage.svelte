@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type LoggedSet, isBodyweight, isPerSide, muscleName, repRangeText } from '../engine';
   import { ArrowLeftRight, ArrowRight, Check, ChevronDown, Circle, CircleCheck, Flag, Flame, Info, Pencil, Plus } from '@lucide/svelte';
-  import { type SessionExercise, type SessionSet, exerciseOf, newSet, session } from '../lib/session.svelte';
+  import { type SessionExercise, type SessionSet, exerciseOf, session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { fmtNum } from '../lib/units';
   import ActionMenu from './ActionMenu.svelte';
@@ -49,9 +49,6 @@
     return lastSets[i] ?? lastSets[lastSets.length - 1];
   }
 
-  const setUpdate = (id: string, change: (s: SessionSet) => void) =>
-    session.updateExercise(ex.id, (x) => { const s = x.sets.find((y) => y.id === id); if (s) change(s); });
-
   /** Heaviest working set ever logged for this exercise (kg). */
   const heaviest = $derived(exerciseRecords(app.derivedHistory.sessions.get(ex.exerciseID) ?? []).heaviest?.value);
   /** A set that looks like a typo, waiting for "log it anyway". */
@@ -69,20 +66,11 @@
     editingID = null;
   }
 
-  function toggle(id: string) { setUpdate(id, (s) => { s.done = !s.done; }); }
+  const toggle = (s: SessionSet) => session.setDone(ex.id, s.id, !s.done);
 
   function remove(id: string) {
-    session.updateExercise(ex.id, (x) => { x.sets = x.sets.filter((s) => s.id !== id); });
+    session.removeSet(ex.id, id);
     if (editingID === id) editingID = null;
-  }
-
-  function addSet() {
-    const last = working[working.length - 1];
-    session.updateExercise(ex.id, (x) => {
-      if (perSide) {
-        x.sets.push(newSet(last?.weight ?? null, last?.reps ?? 10, { side: 'left' }), newSet(last?.weight ?? null, last?.reps ?? 10, { side: 'right' }));
-      } else x.sets.push(newSet(last?.weight ?? null, last?.reps ?? 10));
-    });
   }
 
   const repsLabel = (reps: number) => (e.isTimed ? `${reps}s` : `${reps}`);
@@ -139,7 +127,7 @@
       {#if showWarmups}
         <div class="stack" style="--gap:6px;margin-top:10px">
           {#each warmups as w (w.id)}
-            <button class="set-row" class:done={w.done} onclick={() => toggle(w.id)} aria-label="Warm-up set, {setText(w)}{w.done ? ', done' : ''}">
+            <button class="set-row" class:done={w.done} onclick={() => toggle(w)} aria-label="Warm-up set, {setText(w)}{w.done ? ', done' : ''}">
               <span class="badge">W</span>
               <span class="semibold mono grow">{setText(w)}</span>
               {#if w.done}<CircleCheck size={22} color="var(--fresh)" />{:else}<Circle size={22} color="var(--text-3)" />{/if}
@@ -176,10 +164,10 @@
       <div class="row steppers" style="--gap:10px">
         {#if !isBodyweight(e)}
           <ValueStepper title="Weight" value={units.display(s.weight ?? 0)} step={weightStep} unit={units.symbol} decimals
-            onchange={(v) => setUpdate(s.id, (x) => { x.weight = units.kg(v); })} />
+            onchange={(v) => session.editSet(ex.id, s.id, { weight: units.kg(v) })} />
         {/if}
         <ValueStepper title={e.isTimed ? 'Time' : 'Reps'} value={s.reps} step={e.isTimed ? 5 : 1} unit={e.isTimed ? 'seconds' : 'reps'} decimals={false}
-          onchange={(v) => setUpdate(s.id, (x) => { x.reps = Math.max(0, Math.round(v)); })} />
+          onchange={(v) => session.editSet(ex.id, s.id, { reps: v })} />
       </div>
       {#if bar !== undefined && (s.weight ?? 0) > 0}
         <PlateBar total={units.display(s.weight ?? 0)} {bar} pounds={units.pounds} />
@@ -200,7 +188,7 @@
             {#each [0, 1, 2, 3, 4] as v (v)}
               <button class="rir num" class:on={ex.rir === v} role="radio" aria-checked={ex.rir === v}
                 aria-label={v === 0 ? 'None, went to failure' : `${v} reps left`}
-                onclick={() => session.updateExercise(ex.id, (x) => { x.rir = v; })}>{v === 4 ? '4+' : v}<small>{v === 0 ? 'failure' : v === 1 ? 'one' : v === 4 ? 'easy' : ''}</small></button>
+                onclick={() => session.setRIR(ex.id, v)}>{v === 4 ? '4+' : v}<small>{v === 0 ? 'failure' : v === 1 ? 'one' : v === 4 ? 'easy' : ''}</small></button>
             {/each}
           </div>
           <span class="caption faint">This tunes how quickly Forge adds weight next time.</span>
@@ -225,12 +213,12 @@
           {#if s.done}<CircleCheck size={22} color="var(--fresh)" />{:else if isActive}<Pencil size={18} color="var(--ember-2)" />{:else}<Circle size={22} color="var(--text-3)" />{/if}
         </button>
         <ActionMenu label="Set {number(s.id)} options" items={[
-          ...(s.done ? [{ label: 'Mark not done', action: () => toggle(s.id) }] : []),
+          ...(s.done ? [{ label: 'Mark not done', action: () => toggle(s) }] : []),
           { label: 'Delete set', danger: true, action: () => remove(s.id) },
         ]}><span class="dots">⋯</span></ActionMenu>
       </div>
     {/each}
-    <button class="add-set" onclick={addSet}><Plus size={16} /> Add set</button>
+    <button class="add-set" onclick={() => session.addSet(ex.id)}><Plus size={16} /> Add set</button>
   </div>
 
   <!-- The one action that matters between sets, pinned where the thumb rests. -->

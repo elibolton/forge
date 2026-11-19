@@ -15,6 +15,7 @@ const { toExternal } = await import('./activities');
 const { db } = await import('./db');
 const { saving } = await import('./saving.svelte');
 const { checkSet } = await import('./setCheck');
+const { workoutLog, newRecords, completesProgramDay } = await import('./finishWorkout');
 type SessionExercise = import('./session.svelte').SessionExercise;
 type ProgramSlotInfo = import('./session.svelte').ProgramSlotInfo;
 
@@ -174,6 +175,110 @@ describe('Finishing', async () => {
     expect(first).toEqual([]);
     expect(second).toBeNull();
     expect(app.logs.length).toBe(1);
+  });
+});
+
+describe('Changing a workout in progress', () => {
+  const ids = () => session.state!.exercises.map((x) => x.id);
+
+  test('removing an exercise can be undone, back where it was and still showing', () => {
+    start([exercise('a', [newSet(80, 8)]), exercise('b', [newSet(20, 12)]), exercise('c', [newSet(30, 10)])]);
+    session.goTo(2);
+    const undo = session.removeExercise('c')!;
+    expect(ids()).toEqual(['a', 'b']);
+    expect(session.state!.currentIndex).toBe(1);
+    undo();
+    expect(ids()).toEqual(['a', 'b', 'c']);
+    expect(session.state!.currentIndex).toBe(2);
+    expect(session.removeExercise('nope')).toBeUndefined();
+  });
+
+  test('moving keeps the showing exercise showing; moves past the ends do nothing', () => {
+    start([exercise('a', [newSet(80, 8)]), exercise('b', [newSet(20, 12)])]);
+    session.moveExercise('a', 1);
+    expect(ids()).toEqual(['b', 'a']);
+    expect(session.state!.currentIndex).toBe(1);
+    session.moveExercise('a', 1);
+    expect(ids()).toEqual(['b', 'a']);
+    session.goTo(5);
+    expect(session.state!.currentIndex).toBe(1);
+  });
+
+  test('set edits are never negative and reps are whole', () => {
+    const set = newSet(80, 8);
+    start([exercise('a', [set])]);
+    session.editSet('a', set.id, { weight: -5, reps: 7.6 });
+    expect(session.state!.exercises[0].sets[0]).toMatchObject({ weight: 0, reps: 8 });
+    session.editSet('a', set.id, { reps: -2 });
+    expect(session.state!.exercises[0].sets[0].reps).toBe(0);
+    session.editSet('a', set.id, { weight: null });
+    expect(session.state!.exercises[0].sets[0].weight).toBeNull();
+  });
+
+  test('adding a set copies the last working set; per-side work adds both sides', () => {
+    start([
+      exercise('a', [newSet(40, 8, { isWarmup: true }), newSet(80, 6)]),
+      exercise('b', [newSet(20, 10, { side: 'left' }), newSet(20, 10, { side: 'right' })], { program: info({ laterality: 'perArm' }) }),
+      exercise('c', []),
+    ]);
+    session.addSet('a');
+    session.addSet('b');
+    session.addSet('c');
+    const [a, b, c] = session.state!.exercises;
+    expect(a.sets.slice(-1)[0]).toMatchObject({ weight: 80, reps: 6, isWarmup: false, done: false });
+    expect(b.sets.slice(-2).map((x) => x.side)).toEqual(['left', 'right']);
+    expect(c.sets).toMatchObject([{ weight: null, reps: 10 }]);
+  });
+
+  test('marking done, removing a set and rating RIR', () => {
+    const [s1, s2] = [newSet(80, 8), newSet(80, 8)];
+    start([exercise('a', [s1, s2])]);
+    session.setDone('a', s1.id, true);
+    session.removeSet('a', s2.id);
+    session.setRIR('a', 2.4);
+    const a = session.state!.exercises[0];
+    expect(a.sets.map((x) => x.done)).toEqual([true]);
+    expect(a.rir).toBe(2);
+    expect(session.restEndsAt).toBeNull(); // only logSet starts rest
+  });
+
+  test('discarding hands back the workout for undo', () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const snapshot = session.discard()!;
+    expect(session.state).toBeNull();
+    session.restore(snapshot);
+    expect(session.state!.exercises[0].sets[0].done).toBe(true);
+    expect(session.discard()).not.toBeNull();
+    expect(session.discard()).toBeNull();
+  });
+});
+
+describe('Building the saved workout', () => {
+  const state = (exercises: SessionExercise[], program?: { programID: string; week: number; dayID: string; isDeload: boolean }) =>
+    ({ startedAt: 1_000_000, focus: 'push' as const, exercises, currentIndex: 0, program });
+
+  test('nothing done is nothing to save', () => {
+    expect(workoutLog(state([exercise('a', [newSet(80, 8)])]), 'x', 2_000_000)).toBeNull();
+  });
+
+  test('it ends when told, never before it started', () => {
+    const st = state([exercise('a', [newSet(80, 8, { done: true })])]);
+    expect(workoutLog(st, 'x', 1_000_000 + 45 * 60_000)!.durationSeconds).toBe(45 * 60);
+    expect(workoutLog(st, 'x', 0)!.durationSeconds).toBe(0);
+  });
+
+  test('a program day completes only with a working set', () => {
+    const ref = { programID: 'p', week: 1, dayID: 'push', isDeload: false };
+    expect(completesProgramDay(workoutLog(state([exercise('a', [newSet(80, 8, { done: true })])], ref), 'x', 2_000_000))).toBe(true);
+    expect(completesProgramDay(workoutLog(state([exercise('a', [newSet(40, 8, { isWarmup: true, done: true })])], ref), 'x', 2_000_000))).toBe(false);
+    expect(completesProgramDay(workoutLog(state([exercise('a', [newSet(80, 8, { done: true })])]), 'x', 2_000_000))).toBe(false);
+  });
+
+  test('records beat the previous best by more than half a percent; first times are not records', () => {
+    const log = workoutLog(state([exercise('a', [newSet(100, 5, { done: true })], { rir: 0 })]), 'x', 2_000_000)!;
+    expect(newRecords(log.exercises, new Map())).toEqual([]);
+    expect(newRecords(log.exercises, new Map([['bb-bench', 200]]))).toEqual([]);
+    expect(newRecords(log.exercises, new Map([['bb-bench', 100]])).map((r) => r.exercise.id)).toEqual(['bb-bench']);
   });
 });
 

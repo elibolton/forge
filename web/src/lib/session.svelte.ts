@@ -1,12 +1,13 @@
 import {
-  Catalog, type DayFocus, type Effort, type Exercise, type Laterality, type LoggedExercise, type PlannedExercise,
-  type PlannedWorkout, type ProgramRef, type RepRange, type Side, oneRM, plannedWorkingSets, uuid, workingSets, isPerSide,
-  effortRIR,
+  Catalog, type DayFocus, type Effort, type Exercise, type Laterality, type PlannedExercise, type PlannedWorkout, type Planner,
+  type ProgramRef, type RepRange, type Side, plannedWorkingSets, uuid, isPerSide,
 } from '../engine';
 import { db } from './db';
 import { saving } from './saving.svelte';
 import { app } from './store.svelte';
 import { type RestSound, playRestSound } from './sounds';
+import { swapInSession } from './swap';
+import { type PersonalRecord, completesProgramDay, newRecords, workoutLog } from './finishWorkout';
 
 export interface SessionSet {
   id: string;
@@ -74,7 +75,7 @@ export interface SessionState {
 /** A workout untouched this long was most likely finished without tapping Finish. */
 export const STALE_AFTER = 3 * 3_600_000;
 
-export interface PersonalRecord { exercise: Exercise; oneRM: number; previous: number }
+export type { PersonalRecord };
 
 export const exerciseOf = (e: SessionExercise) => Catalog.exercise(e.exerciseID);
 
@@ -161,7 +162,10 @@ class WorkoutSession {
     } else saving.run('session', () => db.del('session'));
   }
 
-  /** Clone, change, save. */
+  /**
+   * Clone, change, save. The building block for the named changes below; screens use those, so the
+   * rules for a workout in progress live here rather than in the UI.
+   */
   update(change: (s: SessionState) => void) {
     if (!this.state) return;
     const next = structuredClone(this.state);
@@ -198,6 +202,83 @@ class WorkoutSession {
 
   /** Brings back a discarded session (Undo). */
   restore(snapshot: SessionState) { this.begin(snapshot); }
+
+  // MARK: Exercises
+
+  /** Shows exercise `index` in the logger. */
+  goTo(index: number) {
+    this.update((s) => { if (index >= 0 && index < s.exercises.length) s.currentIndex = index; });
+  }
+
+  /** Adds an exercise at the end and shows it. */
+  addExercise(planned: PlannedExercise) {
+    this.update((s) => { s.exercises.push(sessionExerciseFrom(planned)); s.currentIndex = s.exercises.length - 1; });
+  }
+
+  /** Removes an exercise. Returns an undo that puts it back where it was. */
+  removeExercise(id: string): (() => void) | undefined {
+    const before = this.state && structuredClone({ exercises: this.state.exercises, currentIndex: this.state.currentIndex });
+    if (!before || !before.exercises.some((x) => x.id === id)) return undefined;
+    this.update((s) => {
+      s.exercises = s.exercises.filter((x) => x.id !== id);
+      if (s.currentIndex >= s.exercises.length) s.currentIndex = Math.max(0, s.exercises.length - 1);
+    });
+    return () => this.update((s) => { s.exercises = before.exercises; s.currentIndex = before.currentIndex; });
+  }
+
+  /** Moves exercise `id` up (-1) or down (+1); the one showing stays showing. */
+  moveExercise(id: string, by: -1 | 1) {
+    this.update((s) => {
+      const i = s.exercises.findIndex((x) => x.id === id);
+      const j = i + by;
+      if (i < 0 || j < 0 || j >= s.exercises.length) return;
+      [s.exercises[i], s.exercises[j]] = [s.exercises[j], s.exercises[i]];
+      if (s.currentIndex === i) s.currentIndex = j; else if (s.currentIndex === j) s.currentIndex = i;
+    });
+  }
+
+  /** Swaps exercise `id` for `replacement`, keeping any sets already logged (see `swapInSession`). */
+  swapExercise(id: string, replacement: Exercise, planner: Planner) {
+    this.update((s) => swapInSession(s, id, replacement, planner));
+  }
+
+  /** How many reps were left in the tank on this exercise's last set. */
+  setRIR(exerciseID: string, rir: number | null) {
+    this.updateExercise(exerciseID, (e) => { e.rir = rir === null ? null : Math.max(0, Math.round(rir)); });
+  }
+
+  // MARK: Sets
+
+  /** Changes a set's weight (kg, null for bodyweight) or reps. Never negative; reps are whole. */
+  editSet(exerciseID: string, setID: string, change: { weight?: number | null; reps?: number }) {
+    this.updateExercise(exerciseID, (e) => {
+      const set = e.sets.find((x) => x.id === setID);
+      if (!set) return;
+      if (change.weight !== undefined) set.weight = change.weight === null ? null : Math.max(0, change.weight);
+      if (change.reps !== undefined) set.reps = Math.max(0, Math.round(change.reps));
+    });
+  }
+
+  /** Marks a set done or not, without starting rest (that's `logSet`). */
+  setDone(exerciseID: string, setID: string, done: boolean) {
+    this.updateExercise(exerciseID, (e) => { const set = e.sets.find((x) => x.id === setID); if (set) set.done = done; });
+  }
+
+  removeSet(exerciseID: string, setID: string) {
+    this.updateExercise(exerciseID, (e) => { e.sets = e.sets.filter((x) => x.id !== setID); });
+  }
+
+  /** Adds a working set like the last one; per-side work gets a left and a right. */
+  addSet(exerciseID: string) {
+    this.updateExercise(exerciseID, (e) => {
+      const working = e.sets.filter((x) => !x.isWarmup);
+      const last = working[working.length - 1];
+      const weight = last?.weight ?? null, reps = last?.reps ?? 10;
+      if (e.program && isPerSide(e.program.laterality)) {
+        e.sets.push(newSet(weight, reps, { side: 'left' }), newSet(weight, reps, { side: 'right' }));
+      } else e.sets.push(newSet(weight, reps));
+    });
+  }
 
   /** Marks a set done, carries its weight to the remaining sets and starts rest. */
   logSet(setID: string, exerciseID: string) {
@@ -268,13 +349,16 @@ class WorkoutSession {
     this.persist();
   }
 
-  discard() {
+  /** Ends the workout without saving. Returns what it was, for an undo via `restore`. */
+  discard(): SessionState | null {
+    const was = this.state && structuredClone($state.snapshot(this.state));
     this.state = null;
     this.staleSince = null;
     this.restEndsAt = null;
     clearTimeout(this.restTimer);
     this.persist();
     this.releaseWake();
+    return was;
   }
 
   /**
@@ -285,42 +369,18 @@ class WorkoutSession {
   async finish(endedAt = Date.now()): Promise<PersonalRecord[] | null> {
     const state = this.state;
     if (!state || this.saving) return null;
-    const logged: LoggedExercise[] = [];
-    for (const ex of state.exercises) {
-      const eccentric = ex.program?.effort.type === 'eccentricOnly';
-      const sets = ex.sets.filter((s) => s.done).map((s) => ({
-        weight: s.weight ?? 0, reps: s.reps, rir: s.isWarmup || eccentric ? null : ex.rir, isWarmup: s.isWarmup, side: s.side ?? null,
-      }));
-      if (!sets.length) continue;
-      logged.push({
-        exerciseID: ex.exerciseID, sets, targetReps: ex.targetReps, slotID: ex.program?.slotID ?? null,
-        repRange: ex.program?.range ?? null, targetRIR: ex.program ? effortRIR(ex.program.effort)?.low ?? null : null,
-      });
-    }
-
-    const best = app.derivedHistory.bestOneRM;
-    const records: PersonalRecord[] = [];
-    for (const ex of logged) {
-      const values = workingSets(ex).filter((s) => s.weight > 0).map((s) => oneRM(s.weight, s.reps, s.rir));
-      const top = values.length ? Math.max(...values) : 0;
-      const previous = best.get(ex.exerciseID);
-      if (previous !== undefined && top > previous * 1.005) records.push({ exercise: Catalog.exercise(ex.exerciseID), oneRM: top, previous });
-    }
-
-    const loggedWorking = logged.some((l) => workingSets(l).length > 0);
-    if (logged.length) {
-      const id = uuid();
+    const log = workoutLog(state, uuid(), endedAt);
+    // Against history before this workout joins it.
+    const records = log ? newRecords(log.exercises, app.derivedHistory.bestOneRM) : [];
+    if (log) {
       this.saving = true;
-      const saved = await app.addLog({
-        id, date: state.startedAt, focus: state.focus, durationSeconds: Math.round((Math.max(endedAt, state.startedAt) - state.startedAt) / 1000),
-        exercises: logged, program: state.program ?? null,
-      }).finally(() => { this.saving = false; });
+      const saved = await app.addLog(log).finally(() => { this.saving = false; });
       if (!saved) {
-        app.dropUnsavedLog(id);
+        app.dropUnsavedLog(log.id);
         return null;
       }
     }
-    if (state.program && loggedWorking) app.completeProgramDay(state.program);
+    if (completesProgramDay(log)) app.completeProgramDay(state.program!);
     this.discard();
     this.finished = { records };
     return records;
