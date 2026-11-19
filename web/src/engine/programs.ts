@@ -79,7 +79,7 @@ const pplul8: WorkoutProgram = (() => {
       rx('upper.1', 'bb-incline-bench', 3, r(6, 10), rir(1, 2), 'compound', { rest: [180, 180], step: 'upperBarbell',
         notes: ['Bench at 30°'] }),
       rx('upper.2', 'weighted-dip', 2, r(6, 12), rir(1, 2), 'compound', { rest: [150, 180], step: 'dumbbell',
-        notes: ['Lean forward 20–30°', 'Only as deep as is pain-free'] }),
+        notes: ['Lean forward 20–30°', 'Only as deep as is pain-free', 'Load with a dip belt, or a dumbbell held between your feet'] }),
       rx('upper.3', 'single-arm-lat-pulldown', 3, r(10, 12), rir(1), 'compound', { rest: [60, 60], sideRest: 60, laterality: 'perArm',
         step: 'cablePin', notes: ['Half-kneeling, D-handle'] }),
       rx('upper.4', 'wide-grip-cable-row', 3, r(10, 12), rir(1), 'compound', { rest: [120, 120], step: 'cablePin',

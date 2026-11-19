@@ -1,7 +1,7 @@
 import {
   type DayFocus, type PlannedWorkout, type ProgramProgress, type ProgramRef, type ProgressionSuggestion,
   type ResolvedPrescription, type ResolvedSession, type WorkoutProgram, Catalog, dayNumber, effortRIR, effortText,
-  isPerSide, nextDayID, resolveSession, restText, rxExercise, setsText, suggest,
+  isPerSide, nextDayID, resolveSession, restText, rxExercise, setsText, suggest, swappedSlot,
 } from '../engine';
 import { type Profile, app } from './store.svelte';
 import { type SessionExercise, type SessionSet, type SessionState, newSet } from './session.svelte';
@@ -121,26 +121,41 @@ export function makeDayPlan(program: WorkoutProgram, progress: ProgramProgress, 
   const session = id ? resolveSession(program, id, progress.week, progress.setAdjustments) : undefined;
   if (!id || !session) return undefined;
   const edits = loadEdits(editsKey(program.id, progress.week, id));
-  session.exercises = session.exercises.map((p) =>
-    edits.swaps[p.slot.id] ? { ...p, slot: { ...p.slot, exerciseID: edits.swaps[p.slot.id] } } : p);
+  // A swapped slot takes its load step, effort and laterality from the new exercise (re-resolved, so the
+  // week table applies to its effort), and starts without the old exercise's range extension.
+  const swaps = Object.fromEntries(Object.entries(edits.swaps).filter(([slotID]) => session.exercises.some((p) => p.slot.id === slotID)));
+  if (Object.keys(swaps).length) {
+    const swappedProgram = { ...program, days: program.days.map((d) => d.id !== id ? d : {
+      ...d, exercises: d.exercises.map((slot) => (swaps[slot.id] ? swappedSlot(slot, swaps[slot.id]) : slot)),
+    }) };
+    const resolved = resolveSession(swappedProgram, id, progress.week, progress.setAdjustments);
+    if (resolved) session.exercises = resolved.exercises;
+  }
   const gym = app.activeGym;
   const kept = session.exercises.filter((p) => !edits.removed.includes(p.slot.id));
-  const items = kept.map((p) => ({
-    prescription: p,
-    suggestion: suggest(p, { progress, history: app.records, gym, plan: app.profile!.plan }),
-    isSwapped: edits.swaps[p.slot.id] !== undefined,
-  }));
+  const items = kept.map((p) => {
+    const isSwapped = swaps[p.slot.id] !== undefined;
+    const ownProgress = isSwapped ? { ...progress, rangeExtensions: { ...progress.rangeExtensions, [p.slot.id]: 0 } } : progress;
+    return {
+      prescription: p,
+      suggestion: suggest(p, { progress: ownProgress, history: app.records, gym, plan: app.profile!.plan }),
+      isSwapped,
+    };
+  });
   return { program, progress, session, items, removed: session.exercises.filter((p) => edits.removed.includes(p.slot.id)) };
 }
 
-/** Logger state for this day, and the progress with big-jump range changes applied. */
-export function startDayPlan(plan: ProgramDayPlan): { state: SessionState; progress: ProgramProgress } {
-  const progress = structuredClone(plan.progress);
+/**
+ * Logger state for this day. Big-jump range changes ride along on each exercise (`rangeExtension`) and
+ * are saved to the program only when the day is logged, so a discarded start changes nothing. A swapped
+ * exercise's range never changes the slot's.
+ */
+export function startDayPlan(plan: ProgramDayPlan): { state: SessionState } {
   const planner = app.planner();
   const exercises = plan.items.map((item): SessionExercise => {
     const p = item.prescription, s = item.suggestion, e = rxExercise(p);
-    if (s.action?.type === 'extendRange') progress.rangeExtensions[p.slot.id] = s.action.by;
-    if (s.action?.type === 'resetRange') delete progress.rangeExtensions[p.slot.id];
+    const rangeExtension = item.isSwapped ? undefined
+      : s.action?.type === 'extendRange' ? s.action.by : s.action?.type === 'resetRange' ? null : undefined;
     const sets: SessionSet[] = [];
     const perSide = isPerSide(p.slot.laterality);
     if (s.weight !== null && !perSide) {
@@ -160,13 +175,12 @@ export function startDayPlan(plan: ProgramDayPlan): { state: SessionState; progr
         effortText: effortText(p.effort), restText: restText(p), notes: [...p.slot.notes, ...(p.weekNote ? [p.weekNote] : [])],
         lastSetNote: p.lastSetNote, laterality: p.slot.laterality, sideRest: p.slot.sideRest,
         supersetGroup: p.slot.supersetGroup, supersetRestBetween: p.supersetRestBetween, isOptional: p.slot.isOptional,
-        suggestionReason: s.reason,
+        suggestionReason: s.reason, ...(rangeExtension !== undefined ? { rangeExtension } : {}),
       },
     };
   });
   return {
     state: { startedAt: Date.now(), focus: plan.session.day.focus, exercises, currentIndex: 0, program: dayPlanRef(plan), title: dayPlanTitle(plan) },
-    progress,
   };
 }
 

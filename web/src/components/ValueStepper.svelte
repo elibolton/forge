@@ -6,29 +6,43 @@
    * as they're valid, so tapping Log straight from the keyboard logs what's on screen. Holding − or +
    * keeps stepping, faster the longer you hold.
    */
-  let { title, value, step, unit, decimals, onchange }: {
+  let { title, value, step, unit, decimals, onchange, min = 0, max = Infinity }: {
     title: string; value: number; step: number; unit: string; decimals: boolean; onchange: (v: number) => void;
+    /** Typed and stepped values are kept within these; a typo like 1000 for 100 can't be saved. */
+    min?: number; max?: number;
   } = $props();
 
   const round = (v: number) => (decimals ? Math.round(v * 10) / 10 : Math.round(v));
+  const clamp = (v: number) => Math.min(max, Math.max(min, round(v)));
   const shown = $derived(String(round(value)));
 
   // While typing, show exactly what was typed ("82." mid-entry) rather than the rounded value.
   let draft = $state<string | null>(null);
   const text = $derived(draft ?? shown);
+  /** What's typed is below the minimum (or not a number): the minimum is what counts until it's fixed. */
+  let invalid = $state(false);
 
   function input(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
     draft = el.value;
     const raw = el.value.replace(',', '.');
     const n = Number(raw);
-    if (raw !== '' && Number.isFinite(n)) onchange(Math.max(0, round(n)));
+    if (raw === '' || !Number.isFinite(n)) { invalid = raw !== ''; return; }
+    const committed = clamp(n);
+    onchange(committed);
+    invalid = n < min;
+    // Show what will be saved: rounded reps, or the cap. A number under the minimum may still be on its
+    // way to a valid one ("2" before "25"), so it's flagged instead and settles on blur.
+    if (!invalid && committed !== n) {
+      draft = String(committed);
+      el.value = draft;
+    }
   }
 
   // MARK: Hold to repeat
 
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const bump = (dir: 1 | -1) => onchange(Math.max(0, round(value + dir * step)));
+  const bump = (dir: 1 | -1) => onchange(clamp(value + dir * step));
 
   function hold(e: PointerEvent, dir: 1 | -1) {
     if (e.button !== 0) return;
@@ -54,7 +68,8 @@
   <span class="eyebrow" aria-hidden="true">{title}</span>
   <input class="num value" type="text" inputmode={decimals ? 'decimal' : 'numeric'} enterkeyhint="done" value={text} aria-label="{title} in {unit}"
     style="font-size:{text.length > 4 ? 2.1 : text.length > 3 ? 2.5 : 3.1}rem"
-    oninput={input} onblur={() => (draft = null)}
+    class:invalid aria-invalid={invalid}
+    oninput={input} onblur={() => { draft = null; invalid = false; }}
     onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
     onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
   <span class="caption muted" aria-hidden="true">{unit}</span>
@@ -71,6 +86,7 @@
     border-radius: var(--r-lg); background: rgba(0, 0, 0, 0.28); border: 1px solid var(--hairline); }
   .value { background: transparent !important; border: 0 !important; text-align: center; padding: 0 !important; min-height: 0 !important;
     height: 3.4rem; line-height: 1; font-stretch: 125%; font-weight: 800; letter-spacing: -0.03em; width: 100%; }
+  .value.invalid { color: var(--fatigued); }
   .steps { display: flex; gap: 8px; width: 100%; margin-top: 10px; }
   .steps button { flex: 1; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-2);
     border: 1px solid var(--hairline); touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }

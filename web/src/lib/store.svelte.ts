@@ -10,6 +10,7 @@ import { sync } from './sync.svelte';
 import { WeightUnits } from './units';
 import { type Activity, readActivity, toExternal } from './activities';
 import { prTimeline } from './records';
+import { hasOneRM } from './finishWorkout';
 import { type WorkoutTemplate, readTemplate } from './templates';
 import { type BodyweightEntry, readBodyweight } from './bodyweight';
 
@@ -202,6 +203,7 @@ class AppStore {
         const list = sessions.get(id) ?? [];
         list.push({ date: log.date, logged, logID: log.id });
         sessions.set(id, list);
+        if (!hasOneRM(id)) continue;
         for (const s of workingSets(logged)) {
           if (s.weight <= 0) continue;
           const e = oneRM(s.weight, s.reps, s.rir);
@@ -213,7 +215,7 @@ class AppStore {
   });
 
   /** Every new best e1RM, newest first. */
-  prEvents = $derived(prTimeline(this.logs));
+  prEvents = $derived(prTimeline(this.logs.map((l) => ({ ...l, exercises: l.exercises.filter((x) => hasOneRM(x.exerciseID)) }))));
 
   units = $derived(new WeightUnits(this.profile?.usesPounds ?? false));
 
@@ -353,11 +355,15 @@ class AppStore {
   }
 
   /** Marks a logged program day done and moves the program on. */
-  completeProgramDay(ref: ProgramRef) {
+  /** Logs a program day, and saves the big-jump range changes it made (slot id → extension, null to reset). */
+  completeProgramDay(ref: ProgramRef, rangeChanges: Record<string, number | null> = {}) {
     this.updateProfile((p) => {
       const progress = p.programProgress;
       const program = progress && Programs.byID(progress.programID);
       if (!progress || !program || progress.programID !== ref.programID) return;
+      for (const [slotID, ext] of Object.entries(rangeChanges)) {
+        if (ext === null) delete progress.rangeExtensions[slotID]; else progress.rangeExtensions[slotID] = ext;
+      }
       completeDay(progress, ref.dayID, ref.week, program);
     });
   }

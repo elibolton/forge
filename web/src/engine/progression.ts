@@ -1,6 +1,6 @@
 import {
   type Exercise, type Gym, type LoggedExercise, type RepRange, type UserPlan, type WorkoutRecord,
-  POUNDS_PER_KG, defaultPlan, gymIncrementKg, gymRound, isBodyweight, loadEquipment, repRange, repRangeText, roundLoad,
+  DAY_MS, POUNDS_PER_KG, defaultPlan, gymIncrementKg, gymRound, isBodyweight, loadEquipment, repRange, repRangeText, roundLoad,
   straightSets, workingSets,
 } from './models';
 import { Planner } from './planner';
@@ -40,6 +40,24 @@ export function stepKg(step: LoadStep, exercise: Exercise, gym: Gym): number {
   }
 }
 
+/** The rounding grid `roundFor` uses for this exercise, in kg. */
+export function gridKg(exercise: Exercise, gym: Gym): number {
+  const eq = loadEquipment(exercise);
+  if (eq) return gymIncrementKg(gym, eq);
+  return gym.usesPounds ? 5 / POUNDS_PER_KG : 2.5;
+}
+
+/**
+ * The next load once every set hit the top of the range: at least the slot's step and at least one
+ * step of the grid the load is rounded to, so it never rounds back to the same weight ("+0 kg").
+ */
+export function nextLoad(lastLoad: number, step: LoadStep, exercise: Exercise, gym: Gym): number {
+  const grid = gridKg(exercise, gym);
+  let next = roundFor(lastLoad + Math.max(stepKg(step, exercise, gym), grid), exercise, gym);
+  for (let k = 2; next <= lastLoad + 1e-6 && k <= 4; k++) next = roundFor(lastLoad + k * grid, exercise, gym);
+  return next;
+}
+
 /** Rounds to something loadable; exercises with no load equipment (a held plate) use 2.5 kg / 5 lb. */
 export function roundFor(kg: number, exercise: Exercise, gym: Gym): number {
   const eq = loadEquipment(exercise);
@@ -57,14 +75,23 @@ const maxOf = (xs: number[]) => (xs.length ? Math.max(...xs) : 0);
 const minOf = (xs: number[]) => (xs.length ? Math.min(...xs) : 0);
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
-interface Past { logged: LoggedExercise; isDeload: boolean; slotMatches: boolean }
+interface Past { logged: LoggedExercise; date: number; isDeload: boolean; slotMatches: boolean }
 
-/** Newest first; same slot preferred, then the same exercise logged anywhere. */
+/** Past this long without the exercise, the last session is no guide: ease back in from a decayed estimate. */
+export const TIME_AWAY_DAYS = 14;
+
+/**
+ * Newest first; same slot preferred, then the same exercise logged anywhere. With the exercise in two
+ * slots of one workout, the entry for this slot is the one read. Sessions with only drop sets are skipped.
+ */
 function pastSessions(p: ResolvedPrescription, history: WorkoutRecord[]): Past[] {
   const all: Past[] = [];
+  const counts = (x: LoggedExercise) => x.exerciseID === p.slot.exerciseID && straightSets(x).length > 0;
   for (const record of [...history].sort((a, b) => b.date - a.date)) {
-    const logged = record.exercises.find((x) => x.exerciseID === p.slot.exerciseID && workingSets(x).length > 0);
-    if (logged) all.push({ logged, isDeload: record.program?.isDeload ?? false, slotMatches: logged.slotID === p.slot.id });
+    const logged = record.exercises.find((x) => counts(x) && x.slotID === p.slot.id) ?? record.exercises.find(counts);
+    if (logged) {
+      all.push({ logged, date: record.date, isDeload: record.program?.isDeload ?? false, slotMatches: logged.slotID === p.slot.id });
+    }
   }
   const same = all.filter((x) => x.slotMatches);
   return same.length ? same : all;
@@ -98,26 +125,34 @@ export function suggest(p: ResolvedPrescription, args: {
   const rir = effortRIR(p.effort);
 
   const past = pastSessions(p, history);
-  const last = past[0]?.logged;
-  if (!last) {
+  // A deload is lighter on purpose: the last real week is what to build on (after a restart too).
+  const lastPast = past.find((x) => !x.isDeload) ?? past[0];
+  const last = lastPast?.logged;
+  const working = last ? straightSets(last) : [];
+  const lastLoad = maxOf(working.map((s) => s.weight));
+  const daysAway = past[0] ? (now - past[0].date) / DAY_MS : 0;
+  const away = daysAway > TIME_AWAY_DAYS;
+  // Nothing to build on: never done, weeks away, or a loaded exercise saved with no weight.
+  if (!last || away || (loaded && lastLoad <= 0)) {
+    const back = away ? `Back after ${Math.round(daysAway / 7)} weeks away` : undefined;
     if (!loaded) {
-      const reason = isEccentric(p.effort)
-        ? 'Lower as slowly as you can; end the set when you lose control'
-        : `First session: aim for ${range.lower}+ reps`;
+      const reason = back
+        ? `${back}: ease in, aim for ${range.lower}+ reps`
+        : isEccentric(p.effort)
+          ? 'Lower as slowly as you can; end the set when you lose control'
+          : `First session: aim for ${range.lower}+ reps`;
       return { weight: null, reps: range.lower, range, reason };
     }
     const known = estimatedOneRM(e.id, history, now);
     const oneRM = known ?? new Planner({ plan, gym, history }).startingOneRM(e, now);
     const weight = roundFor(weightForReps(range.lower, rir?.high ?? 2, oneRM), e, gym);
-    const source = known === undefined ? 'Starting guess' : 'From your history';
+    const source = back ? `${back}, easing in` : known === undefined ? 'Starting guess' : 'From your history';
     return {
       weight, reps: range.lower, range,
       reason: `${source}: adjust so set 1 lands at ${range.lower} reps with RIR ${rir ? rirText(rir) : '2'}`,
     };
   }
 
-  const working = straightSets(last);
-  const lastLoad = maxOf(working.map((s) => s.weight));
   const repsList = working.map((s) => `${s.reps}`).join(', ');
 
   if (p.isDeload) {
@@ -128,7 +163,11 @@ export function suggest(p: ResolvedPrescription, args: {
   }
 
   const targetRIR = last.targetRIR ?? rir?.low ?? 0;
-  const allTop = working.length > 0 && working.every((s) => s.reps >= range.upper && (s.rir ?? targetRIR) >= targetRIR);
+  // Failure sets and the last set (the program's calibration and "0 RIR on the last set" notes) are
+  // meant to go below the target, so their RIR doesn't hold progression back.
+  const lastIndex = working.length - 1;
+  const allTop = working.length > 0 && working.every((s, i) =>
+    s.reps >= range.upper && (s.type === 'failure' || i === lastIndex || (s.rir ?? targetRIR) >= targetRIR));
   const minReps = minOf(working.map((s) => s.reps));
 
   let s: ProgressionSuggestion;
@@ -141,14 +180,14 @@ export function suggest(p: ResolvedPrescription, args: {
       s = { weight: null, reps, range, reason: `Aim for ${reps}+ on every set (last: ${repsList})` };
     }
   } else if (allTop) {
-    const step = stepKg(p.slot.loadStep, e, gym);
+    const next = nextLoad(lastLoad, p.slot.loadStep, e, gym);
+    const step = next - lastLoad;
     if (ext === 0 && lastLoad > 0 && step > lastLoad * 0.10) {
       const extended = repRange(p.reps.lower, p.reps.upper + 4);
       s = { weight: lastLoad, reps: Math.min(extended.upper, range.upper + 1), range: extended,
         reason: `Next jump (+${fmt(step)}) is over 10% of the load: extend to ${repRangeText(extended)} reps first`,
         action: { type: 'extendRange', by: 4 } };
     } else {
-      const next = roundFor(lastLoad + step, e, gym);
       const base = repRange(p.reps.lower, p.reps.upper);
       s = { weight: next, reps: base.lower, range: base, reason: `Top of the range on every set: +${fmt(next - lastLoad)}`,
         action: ext > 0 ? { type: 'resetRange' } : undefined };
@@ -161,8 +200,11 @@ export function suggest(p: ResolvedPrescription, args: {
     s = { weight: lastLoad, reps, range, reason };
   }
 
-  if (!s.action && p.sets > 1 && (progress?.setAdjustments[p.slot.id] ?? 0) === 0
-      && isStalled(past.filter((x) => !x.isDeload && x.slotMatches).map((x) => x.logged))) {
+  // Holding the top of the range isn't a stall (reps can't go higher). Only this run of the program
+  // counts: after a restart, the old run's weeks say nothing about progress now.
+  const thisRun = past.filter((x) => !x.isDeload && x.slotMatches && (!progress || x.date >= progress.startedAt));
+  if (!s.action && !allTop && p.sets > 1 && (progress?.setAdjustments[p.slot.id] ?? 0) === 0
+      && isStalled(thisRun.map((x) => x.logged))) {
     s.action = { type: 'dropSet' };
     s.reason += ' · No progress for 2 weeks: drop a set';
   }
@@ -171,16 +213,24 @@ export function suggest(p: ResolvedPrescription, args: {
 
 // MARK: Fatigue
 
-/** Slots where reps dropped at the same load compared with the week before. */
-export function repsDropped(history: WorkoutRecord[], programID: string, week: number): string[] {
+/**
+ * Slots where reps dropped at the same load compared with the week before. Only workouts since
+ * `since` (the current run's start) count, and the newest log of a slot in a week wins, so an older run
+ * of the same program, or a week done twice after a jump back, doesn't decide.
+ */
+export function repsDropped(history: WorkoutRecord[], programID: string, week: number, since = -Infinity): string[] {
   if (week <= 1) return [];
   const byWeek = (w: number) => {
-    const out = new Map<string, LoggedExercise>();
+    const out = new Map<string, { l: LoggedExercise; date: number }>();
     for (const r of history) {
-      if (r.program?.programID !== programID || r.program.week !== w || r.program.isDeload) continue;
-      for (const l of r.exercises) if (workingSets(l).length) out.set(l.slotID ?? l.exerciseID, l);
+      if (r.date < since || r.program?.programID !== programID || r.program.week !== w || r.program.isDeload) continue;
+      for (const l of r.exercises) {
+        const key = l.slotID ?? l.exerciseID;
+        const seen = out.get(key);
+        if (workingSets(l).length && (!seen || r.date > seen.date)) out.set(key, { l, date: r.date });
+      }
     }
-    return out;
+    return new Map([...out].map(([k, v]) => [k, v.l]));
   };
   const now = byWeek(week), before = byWeek(week - 1);
   const keys: string[] = [];
@@ -198,8 +248,8 @@ export function repsDropped(history: WorkoutRecord[], programID: string, week: n
 }
 
 /** The automatic flag: reps dropped at the same load on 2+ exercises. */
-export function repsDroppedFlag(history: WorkoutRecord[], programID: string, week: number): boolean {
-  return repsDropped(history, programID, week).length >= 2;
+export function repsDroppedFlag(history: WorkoutRecord[], programID: string, week: number, since?: number): boolean {
+  return repsDropped(history, programID, week, since).length >= 2;
 }
 
 export const ProgramProgression = { stepKg, round: roundFor, suggest, isStalled, repsDropped, repsDroppedFlag, format: formatLoad };

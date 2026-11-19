@@ -47,7 +47,7 @@ export function workoutLog(state: SessionState, id: string, endedAt: number): Wo
 export function newRecords(exercises: LoggedExercise[], bestOneRM: ReadonlyMap<string, number>): PersonalRecord[] {
   const records: PersonalRecord[] = [];
   for (const ex of exercises) {
-    if (isMobility(ex.exerciseID)) continue;
+    if (!hasOneRM(ex.exerciseID)) continue;
     const values = workingSets(ex).filter((s) => s.weight > 0).map((s) => oneRM(s.weight, s.reps, s.rir));
     const top = values.length ? Math.max(...values) : 0;
     const previous = bestOneRM.get(ex.exerciseID);
@@ -58,6 +58,15 @@ export function newRecords(exercises: LoggedExercise[], bestOneRM: ReadonlyMap<s
 
 /** Warm-up drills and stretches: logged, but not lifting, so they never make a record or finish a program day. */
 export const isMobility = (exerciseID: string): boolean => Catalog.exercise(exerciseID).pattern === 'mobility';
+
+/**
+ * Whether an exercise gets an estimated 1RM. Not mobility drills, and not timed holds (farmer's carry,
+ * a held bridge): their "reps" are seconds, so 40 kg × 60 s would read as a 60 kg max.
+ */
+export const hasOneRM = (exerciseID: string): boolean => {
+  const e = Catalog.exercise(exerciseID);
+  return e.pattern !== 'mobility' && !e.isTimed;
+};
 
 /** A program day counts as done once it has at least one working set of real lifting (not a warm-up drill or stretch). */
 export const completesProgramDay = (log: WorkoutLog | null): boolean =>

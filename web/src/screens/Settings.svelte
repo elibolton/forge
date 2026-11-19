@@ -1,6 +1,7 @@
 <script lang="ts">
   // The small settings pages pushed from You: gym editor, workout style, injuries, preferences, custom exercises.
-  import { Catalog, EQUIPMENT, type Equipment, JOINTS, type LoadKind, VARIABILITIES, gymIncrement, muscleName } from '../engine';
+  import { Catalog, EQUIPMENT, type Equipment, JOINTS, VARIABILITIES, gymIncrement, muscleName } from '../engine';
+  import { gymLoadKinds, nextStep } from '../lib/loadSteps';
   import { Check, ChevronRight, Plus, Trash2 } from '@lucide/svelte';
   import BackBar from '../components/BackBar.svelte';
   import CustomExerciseEditor from '../components/CustomExerciseEditor.svelte';
@@ -30,20 +31,6 @@
     });
   }
 
-  /** Step settings for the loads this gym actually has. */
-  function loadKinds(equipment: Equipment[]): LoadKind[] {
-    const has = (e: Equipment) => equipment.includes(e);
-    const kinds: LoadKind[] = [];
-    if (has('barbell') || has('ezBar') || has('trapBar')) kinds.push('barbell');
-    if (has('dumbbell')) kinds.push('dumbbell');
-    if (has('kettlebell')) kinds.push('kettlebell');
-    if (has('dipBelt')) kinds.push('plates');
-    if (has('cableDual') || has('cableColumn') || has('lowRow')) kinds.push('cable');
-    if (has('latPulldown')) kinds.push('latPulldown');
-    if (has('hackSquat') && !has('dipBelt')) kinds.push('plates');
-    if (['seatedLegCurl', 'calfMachine', 'hipAbductorMachine', 'pecDeck', 'lateralRaiseMachine', 'rowMachine'].some((e) => has(e as Equipment))) kinds.push('machine');
-    return kinds;
-  }
 </script>
 
 {#if route.name === 'gym'}
@@ -73,16 +60,17 @@
       {/each}
       <div class="section"><div class="head">Weight Steps</div>
         <div class="list">
-          {#each loadKinds(gym.equipment) as eq (eq)}
+          {#each gymLoadKinds(gym) as eq (eq)}
             {@const step = gymIncrement(gym, eq)}
-            {@const delta = gym.usesPounds ? 2.5 : 0.5}
+            {@const down = nextStep(step, -1, gym.usesPounds)}
+            {@const up = nextStep(step, 1, gym.usesPounds)}
             <div class="item">
               <span class="grow">{loadTitle[eq]}: {step} {gym.usesPounds ? 'lb' : 'kg'} steps</span>
               <div class="segmented" style="width:110px">
-                <button aria-label="Smaller {loadTitle[eq]} step" disabled={step - delta < (gym.usesPounds ? 1 : 0.5)}
-                  onclick={() => updateGym(gym.id, (g) => { g.increments[eq] = step - delta; })}>−</button>
-                <button aria-label="Larger {loadTitle[eq]} step" disabled={step + delta > (gym.usesPounds ? 20 : 10)}
-                  onclick={() => updateGym(gym.id, (g) => { g.increments[eq] = step + delta; })}>+</button>
+                <button aria-label="Smaller {loadTitle[eq]} step" disabled={down === undefined}
+                  onclick={() => updateGym(gym.id, (g) => { if (down !== undefined) g.increments[eq] = down; })}>−</button>
+                <button aria-label="Larger {loadTitle[eq]} step" disabled={up === undefined}
+                  onclick={() => updateGym(gym.id, (g) => { if (up !== undefined) g.increments[eq] = up; })}>+</button>
               </div>
             </div>
           {/each}
