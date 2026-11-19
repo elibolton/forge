@@ -13,7 +13,7 @@
   const PRESETS = [
     { title: 'Full Gym', detail: 'Barbells, racks, cables and machines', icon: Building2, gym: Gyms.commercial },
     { title: 'Home Gym (Barbell + Cables)', detail: 'Barbell, rack, dumbbells, bench, dip station, pulldown and row', icon: Dumbbell, gym: Gyms.homeBarbell },
-    { title: 'Home Gym', detail: 'Dumbbells, adjustable bench, pull-up bar, bands', icon: House, gym: Gyms.home },
+    { title: 'Home Gym', detail: 'Dumbbells, kettlebell, adjustable bench, pull-up bar, bands', icon: House, gym: Gyms.home },
     { title: 'No Equipment', detail: 'Bodyweight moves only', icon: Footprints, gym: Gyms.bodyweight },
   ];
 
@@ -29,7 +29,7 @@
   const gymName = $derived(gym.name.trim() || PRESETS[preset].gym().name);
   /** No way to pull: say so up front rather than let pull days quietly come up nearly empty. */
   const cantPull = $derived(!canPull(gym));
-  const summary = $derived(`${goalTitle[plan.goal]} · ${splitTitle[plan.split]} · ${plan.sessionMinutes} min · ${levelTitle[plan.experience]} · ${gymName}`);
+  const summary = $derived(`${goalTitle[plan.goal]} · ${days} days a week · ${splitTitle[plan.split]} · ${plan.sessionMinutes} min · ${levelTitle[plan.experience]} · ${gymName}`);
 
   function finish() {
     const g = { ...withGymUnits($state.snapshot(gym), pounds), id: uuid(), name: gymName, increments: {} };
@@ -56,7 +56,7 @@
   <div class="dots">
     <span class="brand eyebrow" aria-hidden="true">Forge</span>
     <span class="sr-only">Step {page + 1} of {PAGES.length}</span>
-    {#each PAGES as _, i (i)}<span class:on={i <= page} class:now={i === page} aria-hidden="true"></span>{/each}
+    {#each PAGES as _, i (i)}<span class="dot" class:on={i <= page} class:now={i === page} aria-hidden="true"></span>{/each}
     {#if page < 4}<button class="skip muted" onclick={() => (page = 4)}>Skip</button>{/if}
   </div>
 
@@ -169,9 +169,10 @@
   .onboarding { min-height: 100dvh; display: flex; flex-direction: column; max-width: 620px; margin: 0 auto; padding: calc(var(--safe-top) + 8px) 20px calc(var(--safe-bottom) + 12px);
     position: relative; }
   .dots { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px 0 18px; position: relative; min-height: 48px; }
-  .dots span:not(.brand):not(.sr-only) { width: 6px; height: 6px; border-radius: 3px; background: var(--surface-3); transition: width 0.35s var(--ease), background 0.3s; }
-  .dots span.on { background: var(--ember-2); }
-  .dots span.now { width: 24px; background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
+  /* Plain class selectors, so the on/now states below win (a :not() chain here used to outrank them and hide progress). */
+  .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--surface-3); transition: width 0.35s var(--ease), background 0.3s; }
+  .dot.on { background: var(--ember-2); }
+  .dot.now { width: 24px; background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
   .brand { position: absolute; left: 0; color: var(--ember-2) !important; letter-spacing: 0.3em; }
   .skip { position: absolute; right: 0; min-height: 44px; font-weight: 600; }
   .body { flex: 1; padding-bottom: 24px; animation: screen-in 0.35s var(--ease); }

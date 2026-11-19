@@ -14,7 +14,7 @@
   import { type SessionExercise, exerciseOf, isComplete, session, setProgress, supersetOf } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
-  import { minSec } from '../lib/units';
+  import { durationText, minSec } from '../lib/units';
   import { saving } from '../lib/saving.svelte';
   import { liveRecords } from '../lib/records';
   import { groupLabel, linkedToNext, members, nextInRound } from '../lib/groups';
@@ -101,7 +101,7 @@
       announced.add(id);
       const r = live.get(id)!;
       navigator.vibrate?.([30, 40, 30, 40, 60]);
-      toasts.show(`New PR · ${exerciseOf(r.x).name} · est. 1RM ${app.units.format(r.e1rm)}`);
+      toasts.show(`New PR · ${exerciseOf(r.x).name} · est. 1RM ${app.units.estimate(r.e1rm)}`);
     }
   });
 
@@ -195,7 +195,7 @@
     {#snippet leading()}<button class="link" onclick={() => (reviewing = false)}>Keep Going</button>{/snippet}
     <div class="stack" style="--gap:18px">
       <div class="card tight row stats">
-        <div><b class="num">{Math.floor((session.endedAt(tick) - ws.startedAt) / 60000)} min</b><span class="caption muted">duration</span></div>
+        <div><b class="num">{durationText((session.endedAt(tick) - ws.startedAt) / 1000)}</b><span class="caption muted">duration</span></div>
         <div><b class="num">{done.length}</b><span class="caption muted">sets logged</span></div>
         <div><b class="num">{volume > 0 ? app.units.format(volume) : '–'}</b><span class="caption muted">volume</span></div>
       </div>
@@ -293,12 +293,12 @@
   .center { text-align: center; min-width: 0; }
   .title { font-weight: 650; font-size: 0.95rem; }
   .elapsed { font-size: 0.78rem; color: var(--text-3); }
-  .finish { min-height: 40px; padding: 8px 16px; }
+  .finish { min-height: 44px; padding: 8px 16px; }
   .pos { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 2px; }
   .step { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--surface-2); }
   .strip { display: flex; gap: 5px; padding: 0 18px; }
   /* Thin bars, tall enough to tap. */
-  .strip button { flex: 1; padding: 14px 0; }
+  .strip button { flex: 1; padding: 20px 0; margin: -6px 0; }
   .seg { display: block; height: 4px; border-radius: 3px; background: var(--surface-3); transition: background 0.3s, box-shadow 0.3s; }
   .seg.now { background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
   .seg.complete { background: var(--fresh); }

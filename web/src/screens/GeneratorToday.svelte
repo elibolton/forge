@@ -29,7 +29,7 @@
   import { session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
-  import { isSameDay } from '../lib/units';
+  import { durationText, isSameDay } from '../lib/units';
 
   /** "A, B and C". */
   const listText = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] ?? '');
@@ -213,7 +213,7 @@
     {#if trainedToday && !session.isActive}
       {@const sets = trainedToday.exercises.reduce((t, e) => t + e.sets.filter((s) => !s.isWarmup && s.reps > 0).length, 0)}
       {@const count = sets > 0 ? sets : trainedToday.exercises.length}
-      <TrainedCard detail="{trainedToday.focus ? `${focusTitle[trainedToday.focus]} · ` : ''}{Math.max(1, Math.floor(trainedToday.durationSeconds / 60))} min · {count} {sets > 0 ? (count === 1 ? 'set' : 'sets') : count === 1 ? 'exercise' : 'exercises'}. Recover well; here's what's next." />
+      <TrainedCard detail="{trainedToday.focus ? `${focusTitle[trainedToday.focus]} · ` : ''}{durationText(trainedToday.durationSeconds)} · {count} {sets > 0 ? (count === 1 ? 'set' : 'sets') : count === 1 ? 'exercise' : 'exercises'}. Recover well; here's what's next." />
     {/if}
 
     {#if app.activeProgram}
@@ -251,7 +251,8 @@
       </div>
     {/if}
 
-    {@const blockLabel = workout.block ? (workout.block.isDeload ? ' · Deload week' : ` · Week ${workout.block.week} of ${workout.block.weeks}`) : ''}
+    <!-- Non-breaking spaces keep "Week 1 of 6" together, so a narrow screen doesn't strand the "6" on its own line. -->
+    {@const blockLabel = workout.block ? (workout.block.isDeload ? ' · Deload week' : ` · Week ${workout.block.week} of ${workout.block.weeks}`) : ''}
     <HeroCard eyebrow={trainedToday ? `Next up${blockLabel}` : `Today · ${goalTitle[profile.plan.goal]}${blockLabel}`} title={dayTitle(workout.focus)}
       stats={[{ value: `${estimate}`, label: 'Minutes' }, { value: `${workout.exercises.length}`, label: 'Exercises' }, { value: `${totalSets}`, label: 'Sets' }]}
       startLabel={trainedToday ? 'Start next workout' : 'Start workout'} showStart={!session.isActive} onstart={() => session.start(workout, (st) => addMobility(st, workout.targetMuscles, profile.mobility))}>
@@ -278,7 +279,8 @@
         <TimerOff size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
         <div class="stack grow" style="--gap:6px">
           <div class="sub bold">{workout.exercises.length ? 'Some muscles get no work today' : 'Nothing fits today'}</div>
-          <p class="caption muted">{workout.exercises.length ? `Nothing for ${listText(workout.uncovered.map(muscleName))} fits` : `No ${focusTitle[workout.focus].toLowerCase()} exercise fits`} {app.activeGym.name}'s equipment, your injuries and excluded exercises. Add equipment in Settings, or swap to another day.</p>
+          <p class="caption muted">{workout.exercises.length ? `Nothing for ${listText(workout.uncovered.map(muscleName))} fits` : `No ${focusTitle[workout.focus].toLowerCase()} exercise fits`} your equipment at {app.activeGym.name}, your injuries and excluded exercises. Add equipment, or switch to another day.</p>
+          <button class="link sub" style="text-align:left;min-height:44px;margin:-10px 0" onclick={() => nav.push({ name: 'gym', id: app.activeGym.id })}>Edit equipment</button>
         </div>
       </div>
     {/if}

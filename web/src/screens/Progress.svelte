@@ -13,6 +13,7 @@
   import { currentTime } from '../lib/clock.svelte';
   import { app } from '../lib/store.svelte';
   import { goalStreak, weeklyCounts } from '../lib/weeks';
+  import { count } from '../lib/labels';
 
   const BENCHMARKS = ['bb-squat', 'bb-bench', 'bb-deadlift', 'bb-ohp'];
 
@@ -74,7 +75,7 @@
         <span class="goal-line" style="bottom:{(goal / maxBar) * 100}%"></span>
         {#each weeksBars as n, i (i)}<i class:now={i === 7} class:hit={n >= goal} style="height:{Math.max(6, (n / maxBar) * 100)}%" title="{n} workouts"></i>{/each}
       </div>
-      <span class="caption faint">{streak === 1 ? 'week' : 'weeks'} in a row hitting {goal} workouts</span>
+      <span class="caption faint">{streak === 1 ? 'week' : 'weeks'} in a row hitting {count(goal, 'workout')}</span>
     </div>
     <div class="tile">
       <span class="eyebrow">This week</span>
@@ -104,7 +105,7 @@
 
   <section class="stack" style="--gap:12px">
     <div class="row between head-row"><h2 class="eyebrow">Calendar</h2>
-      <button class="link caption" onclick={() => nav.push({ name: 'history' })}>All {app.logs.length} workouts</button></div>
+      {#if app.logs.length}<button class="link caption all" onclick={() => nav.push({ name: 'history' })}>{app.logs.length === 1 ? 'See workout' : `All ${app.logs.length} workouts`}</button>{/if}</div>
     <WorkoutCalendar />
   </section>
 
@@ -130,7 +131,7 @@
     <div class="row between head-row"><h2 class="eyebrow">Strength</h2><span class="caption faint">Estimated 1RM</span></div>
     <div class="card stack" style="--gap:6px">
       {#if !series.length}
-        <p class="sub muted" style="padding-bottom:8px">Log squat, bench, deadlift or overhead press to see your estimated 1RM trend.</p>
+        <p class="sub muted" style="padding-bottom:8px">Log squat, bench, deadlift or overhead press to see your estimated 1RM trend: the most you could lift for one rep, worked out from your sets.</p>
       {:else}
         <LineChart {series} unit={app.units.symbol} label="Estimated one rep max trend" />
       {/if}
@@ -139,7 +140,7 @@
         <button class="lift row" onclick={() => nav.push({ name: 'exercise', id })}>
           <ExerciseThumb exercise={e} size={38} />
           <span class="sub semibold grow" style="text-align:left">{e.name}</span>
-          <span class="num">{best(id) ? app.units.format(best(id)) : '–'}</span>
+          <span class="num">{app.units.estimate(best(id))}</span>
           <ChevronRight size={16} color="var(--text-3)" />
         </button>
       {/each}
@@ -158,8 +159,8 @@
               <span class="caption faint">{new Date(pr.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · est. 1RM</span>
             </span>
             <span class="stack" style="--gap:2px;align-items:flex-end">
-              <span class="num">{app.units.format(pr.oneRM)}</span>
-              <span class="caption" style="color:var(--fresh)">+{app.units.format(pr.oneRM - pr.previous)}</span>
+              <span class="num">{app.units.estimate(pr.oneRM)}</span>
+              <span class="caption" style="color:var(--fresh)">+{app.units.estimate(pr.oneRM - pr.previous)}</span>
             </span>
           </button>
         {/each}
@@ -196,6 +197,8 @@
   .bars i.now { background: var(--ember-gradient); box-shadow: 0 0 12px var(--ember-glow); }
   .figure { padding: 8px 0; background: radial-gradient(55% 60% at 50% 45%, rgba(255, 255, 255, 0.04), transparent 70%); }
   .head-row { padding: 0 4px; }
+  /* A small text link, with a full-height tap area. */
+  .all { min-height: 44px; margin: -12px 0; }
   .vol { display: grid; grid-template-columns: 92px 1fr 26px; align-items: center; gap: 12px; }
   .vol .num { text-align: right; }
   .track { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }

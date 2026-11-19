@@ -21,7 +21,7 @@
 {:else if note}
   <button class="note has" onclick={() => (editing = true)} aria-label="Your note: {note}. Edit"><NotebookPen size={14} /> <span>{note}</span></button>
 {:else}
-  <button class="note" onclick={() => (editing = true)}><NotebookPen size={14} /> Add a note</button>
+  <button class="note add" onclick={() => (editing = true)}><NotebookPen size={14} /> Add a note</button>
 {/if}
 
 <style>
@@ -29,4 +29,6 @@
   .note.has { color: var(--text); padding: 9px 12px; border-radius: 12px; background: rgba(255, 187, 69, 0.08); border: 1px solid rgba(255, 187, 69, 0.22); width: 100%; }
   .note.has :global(svg) { color: var(--recovering); flex: none; margin-top: 2px; }
   .note-field { font-size: 0.9rem; min-height: 0; }
+  /* A one-line link with a full-height tap area that doesn't push the layout. */
+  .note.add { align-items: center; min-height: 44px; margin: -11px 0; }
 </style>

@@ -171,6 +171,8 @@
 <style>
   .top-stack { position: fixed; top: calc(var(--safe-top) + 10px); left: 12px; right: 12px; z-index: 100; pointer-events: none;
     display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  /* A screen sliding in from the side mustn't widen the page (it left a sideways scroll at phone size). */
+  main { overflow-x: clip; }
   .nav-screen { will-change: transform; }
   .nav-screen.forward { animation: in-right 0.38s var(--ease); }
   .nav-screen.back { animation: in-left 0.38s var(--ease); }

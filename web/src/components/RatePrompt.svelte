@@ -33,6 +33,6 @@
 <style>
   .prompt { display: flex; flex-direction: column; gap: 10px; margin: 0 12px 8px; padding: 12px 12px 12px 16px; border-radius: var(--r-lg);
     animation: rise 0.3s var(--ease); }
-  .skip { width: 36px; height: 36px; margin: -6px -4px -6px 0; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); flex: none; }
+  .skip { width: 44px; height: 44px; margin: -10px -8px -10px 0; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); flex: none; }
   @keyframes rise { from { transform: translateY(20px); opacity: 0; } }
 </style>

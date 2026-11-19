@@ -178,8 +178,8 @@
     </div>
     <div class="section"><div class="head">Stretching</div>
       <div class="list">
-        <Toggle label="Warm-up drills" checked={p.mobility.warmup} onchange={(v) => app.updateProfile((x) => { x.mobility.warmup = v; })} />
-        <Toggle label="Cool-down stretches" checked={p.mobility.cooldown} onchange={(v) => app.updateProfile((x) => { x.mobility.cooldown = v; })} />
+        <Toggle label="Warm-Up Drills" checked={p.mobility.warmup} onchange={(v) => app.updateProfile((x) => { x.mobility.warmup = v; })} />
+        <Toggle label="Cool-Down Stretches" checked={p.mobility.cooldown} onchange={(v) => app.updateProfile((x) => { x.mobility.cooldown = v; })} />
       </div>
       <div class="foot">Adds three drills before and three stretches after each workout, chosen for the muscles you're training. They don't count toward fatigue.</div>
     </div>

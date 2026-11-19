@@ -91,7 +91,7 @@
     <div class="section">
       <div class="head">Personal records</div>
       <div class="prs">
-        {#if records.oneRM && !e.isTimed}{@render pr('Est. 1RM', app.units.format(records.oneRM.value), `${app.units.format(records.oneRM.weight)} × ${records.oneRM.reps}`, records.oneRM.date)}{/if}
+        {#if records.oneRM && !e.isTimed}{@render pr('Est. 1RM', app.units.estimate(records.oneRM.value), `${app.units.format(records.oneRM.weight)} × ${records.oneRM.reps}`, records.oneRM.date)}{/if}
         {#if records.heaviest}{@render pr('Heaviest', app.units.format(records.heaviest.value), `× ${reps(records.heaviest.reps)}`, records.heaviest.date)}{/if}
         {#if records.mostReps}{@render pr(e.isTimed ? 'Longest set' : 'Most reps', reps(records.mostReps.value), records.mostReps.weight > 0 ? `at ${app.units.format(records.mostReps.weight)}` : 'bodyweight', records.mostReps.date)}{/if}
         {#if records.volume}{@render pr('Best session', app.units.format(records.volume.value), 'total moved', records.volume.date)}{/if}
@@ -104,7 +104,7 @@
       <div class="head">Estimated 1RM</div>
       <div class="card stack">
         <LineChart series={[{ name: e.name, points }]} height={180} unit={app.units.symbol} label="Estimated one rep max for {e.name}" />
-        <div class="row between sub"><span>Best</span><span class="bold">{app.units.format(top)}</span></div>
+        <div class="row between sub"><span>Best</span><span class="bold">{app.units.estimate(top)}</span></div>
       </div>
     </div>
   {/if}

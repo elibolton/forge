@@ -104,9 +104,10 @@
 
   function chips(rule: WeekRule): string[] {
     const out: string[] = [];
-    if (rule.compoundRIR) out.push(`Compounds RIR ${rirText(rule.compoundRIR)}`);
-    if (rule.isolationRIR) out.push(`Isolations RIR ${rirText(rule.isolationRIR)}`);
-    if (!rule.compoundRIR && !rule.isolationRIR) out.push('Base RIR targets');
+    // In plain words: "RIR" (reps in reserve) means nothing to a newcomer; the logger asks "reps left" too.
+    if (rule.compoundRIR) out.push(`Big lifts: ${rirText(rule.compoundRIR)} reps left`);
+    if (rule.isolationRIR) out.push(`Small lifts: ${rirText(rule.isolationRIR)} reps left`);
+    if (!rule.compoundRIR && !rule.isolationRIR) out.push('Usual effort');
     return out;
   }
 

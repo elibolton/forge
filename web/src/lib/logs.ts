@@ -1,7 +1,7 @@
 import { dayTitle } from './labels';
 import { type WorkoutLog, app, logVolume } from './store.svelte';
 import { toasts } from './toasts.svelte';
-import type { WeightUnits } from './units';
+import { type WeightUnits, durationText } from './units';
 
 export function logSummary(log: WorkoutLog, units: WeightUnits): string {
   const count = log.exercises.length;
@@ -9,7 +9,7 @@ export function logSummary(log: WorkoutLog, units: WeightUnits): string {
   return [
     count === 1 ? '1 exercise' : `${count} exercises`,
     // Imported workouts have no duration.
-    log.durationSeconds > 0 ? `${Math.max(1, Math.floor(log.durationSeconds / 60))} min` : null,
+    log.durationSeconds > 0 ? durationText(log.durationSeconds) : null,
     volume > 0 ? `${units.format(volume)} moved` : null,
   ].filter(Boolean).join(' · ');
 }

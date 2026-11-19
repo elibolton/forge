@@ -13,7 +13,9 @@
   <span class="semibold mono grow">{set.weight > 0 ? app.units.format(set.weight) : 'BW'} × {reps}</span>
   {#if set.type === 'failure'}<span class="caption failure">failure</span>
   {:else if set.type === 'drop'}<span class="caption muted">drop</span>
-  {:else if set.rir != null && !set.isWarmup}<span class="caption muted mono">RIR {set.rir}</span>{/if}
+  {:else if set.rir != null && !set.isWarmup}
+    <!-- Plain words rather than "RIR": the logger asks "Reps left on set N". -->
+    <span class="caption muted mono" title="Reps in reserve: how many more you could have done">{set.rir >= 4 ? '4+' : set.rir} left</span>{/if}
   {#if selected}<ChevronUp size={16} color="var(--accent)" />{/if}
 </span>
 

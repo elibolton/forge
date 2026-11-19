@@ -124,7 +124,7 @@ h1, h2, h3, p { margin: 0; }
 @keyframes screen-in { from { opacity: 0.4; transform: translateY(6px); } }
 .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 48px; gap: 8px; }
 .topbar .title { font-weight: 650; text-align: center; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.icon-btn { width: 42px; height: 42px; display: inline-grid; place-items: center; border-radius: 50%; color: var(--text);
+.icon-btn { width: 44px; height: 44px; display: inline-grid; place-items: center; border-radius: 50%; color: var(--text);
   background: var(--surface-2); border: 1px solid var(--hairline); flex: none; }
 .icon-btn.plain { background: transparent; border-color: transparent; color: var(--text-2); }
 .link { color: var(--ember-2); font-weight: 600; }
@@ -141,6 +141,9 @@ h1, h2, h3, p { margin: 0; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 999px; background: var(--surface-2);
   border: 1px solid var(--hairline); font-size: 0.86rem; font-weight: 580; white-space: nowrap; color: var(--text); }
 .chip.on { background: var(--ember-soft); border-color: rgba(255, 106, 46, 0.35); color: var(--ember-2); }
+/* Chips look slim but take a 44px-tall tap. */
+button.chip { position: relative; }
+button.chip::after { content: ''; position: absolute; inset: -4px 0; }
 
 .fab { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px); z-index: 20;
   display: inline-flex; align-items: center; gap: 10px; padding: 17px 30px; border-radius: 999px; background: var(--ember-gradient);
@@ -166,7 +169,10 @@ input[type='text'], input[type='number'], input[type='search'], input[type='date
   background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 14px; padding: 11px 14px; min-height: 46px; width: 100%;
   font-size: 1rem; outline: none; transition: border-color 0.2s; }
 input:focus, select:focus, textarea:focus { border-color: rgba(255, 106, 46, 0.55); }
-select { appearance: none; -webkit-appearance: none; }
+/* Native arrows are hidden, so draw one: without it a picker reads as plain text. */
+select { appearance: none; -webkit-appearance: none; padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 14px; }
 input[type='range'] { width: 100%; accent-color: var(--ember); }
 
 .toggle { position: relative; width: 50px; height: 30px; flex: none; }
@@ -179,7 +185,7 @@ input[type='range'] { width: 100%; accent-color: var(--ember); }
 .toggle input:focus-visible + span { outline: 2px solid var(--ember-2); outline-offset: 2px; }
 
 .segmented { display: flex; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 999px; padding: 3px; gap: 2px; }
-.segmented button { flex: 1; padding: 8px 10px; border-radius: 999px; font-weight: 600; font-size: 0.88rem; color: var(--text-2); }
+.segmented button { flex: 1; min-height: 38px; padding: 8px 10px; border-radius: 999px; font-weight: 600; font-size: 0.88rem; color: var(--text-2); }
 .segmented button.on { background: var(--text); color: #0b0b0d; }
 
 .divider { height: 1px; background: var(--hairline); }
