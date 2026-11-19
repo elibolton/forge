@@ -120,7 +120,7 @@
   const repsLabel = (reps: number) => (e.isTimed ? `${reps}s` : `${reps}`);
   const setText = (s: SessionSet) => (isBodyweight(e) ? `${repsLabel(s.reps)} reps` : `${units.format(s.weight)} × ${repsLabel(s.reps)}`);
   const lastText = (s: LoggedSet) => (isBodyweight(e) || s.weight <= 0 ? `${repsLabel(s.reps)} reps` : `${units.format(s.weight)} × ${repsLabel(s.reps)}`);
-  const lastShort = (s: LoggedSet) => (isBodyweight(e) || s.weight <= 0 ? `${s.reps}` : `${fmtNum(units.display(s.weight))}×${s.reps}`);
+  const lastShort = (s: LoggedSet) => (isBodyweight(e) || s.weight <= 0 ? `${s.reps}` : `${fmtNum(units.display(s.weight), 2)}×${s.reps}`);
 
 </script>
 

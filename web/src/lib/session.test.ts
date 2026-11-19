@@ -210,7 +210,7 @@ describe('Finishing', async () => {
     start([exercise('a', [newSet(80, 8, { done: true })])]);
     const [first, second] = await Promise.all([session.finish(), session.finish()]);
     expect(first).toEqual([]);
-    expect(second).toBeNull();
+    expect(second).toBeUndefined();
     expect(app.logs.length).toBe(1);
   });
 });
