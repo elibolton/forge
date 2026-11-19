@@ -62,13 +62,18 @@ export function fallingLifts(records: WorkoutRecord[]): string[] {
   return falling.sort();
 }
 
-export function blockStatus(history: WorkoutRecord[], now: number): BlockStatus {
-  const records = history.filter((r) => r.date <= now).sort((a, b) => a.date - b.date);
+/**
+ * Walks a history (oldest first) one record at a time, keeping the block it's in. `blockStatus` feeds
+ * it the records up to a date; `deloadDates` feeds it the whole history once and notes each record's week.
+ */
+function blockWalker(records: WorkoutRecord[]) {
   let start: number | undefined;
   let number = 0;
   let weeks = BLOCK_WEEKS;
   let earlyReason: string | undefined;
   let checked = 1;
+  let prev: number | undefined;
+  let fed = 0;
 
   const begin = (t: number) => { start = dayStart(t); number++; weeks = BLOCK_WEEKS; earlyReason = undefined; checked = 1; };
 
@@ -80,7 +85,9 @@ export function blockStatus(history: WorkoutRecord[], now: number): BlockStatus 
         checked++;
         if (checked < 3) continue;
         const boundary = start + (checked - 1) * WEEK;
-        const falling = fallingLifts(records.filter((r) => r.date >= start! && r.date < boundary));
+        // Only records already fed can be before the boundary (boundary <= t), so this is the same
+        // set blockStatus would see when cut off at any later date.
+        const falling = fallingLifts(records.slice(0, fed).filter((r) => r.date >= start! && r.date < boundary));
         if (falling.length >= 2) {
           weeks = checked;
           earlyReason = `Estimated maxes dropped on ${falling.length} lifts`;
@@ -92,17 +99,51 @@ export function blockStatus(history: WorkoutRecord[], now: number): BlockStatus 
     }
   };
 
-  let prev: number | undefined;
-  for (const r of records) {
-    if (start === undefined || (prev !== undefined && r.date - prev > BREAK)) begin(r.date);
-    else advance(r.date);
-    prev = r.date;
-  }
-  if (start === undefined || (prev !== undefined && now - prev > BREAK)) begin(now);
-  else advance(now);
+  return {
+    /** Feeds the next record (records must be fed in order). */
+    feed(r: WorkoutRecord) {
+      fed++;
+      if (start === undefined || (prev !== undefined && r.date - prev > BREAK)) begin(r.date);
+      else advance(r.date);
+      prev = r.date;
+    },
+    /** The block at `now`, which must be at or after the last record fed. */
+    at(now: number): BlockStatus {
+      if (start === undefined || (prev !== undefined && now - prev > BREAK)) begin(now);
+      else advance(now);
+      const week = Math.min(weeks, Math.floor((now - start!) / WEEK) + 1);
+      return { number, week, weeks, isDeload: week === weeks, startedAt: start!, ...(earlyReason ? { earlyReason } : {}) };
+    },
+  };
+}
 
-  const week = Math.min(weeks, Math.floor((now - start!) / WEEK) + 1);
-  return { number, week, weeks, isDeload: week === weeks, startedAt: start!, ...(earlyReason ? { earlyReason } : {}) };
+export function blockStatus(history: WorkoutRecord[], now: number): BlockStatus {
+  const records = history.filter((r) => r.date <= now).sort((a, b) => a.date - b.date);
+  const walker = blockWalker(records);
+  for (const r of records) walker.feed(r);
+  return walker.at(now);
+}
+
+const deloadCache = new WeakMap<readonly WorkoutRecord[], Set<number>>();
+
+/**
+ * Dates of the workouts in `history` that fell in a deload week: the same answer as
+ * `blockStatus(history, r.date).isDeload` for every record, in one pass. Cached per history array,
+ * so treat the array as immutable (the app's history is a fresh derived array on every change).
+ */
+export function deloadDates(history: readonly WorkoutRecord[]): Set<number> {
+  let out = deloadCache.get(history);
+  if (out) return out;
+  out = new Set<number>();
+  const records = [...history].sort((a, b) => a.date - b.date);
+  const walker = blockWalker(records);
+  for (const r of records) {
+    walker.feed(r);
+    // A record never starts a 14-day break from itself, so `at` only advances to its own date here.
+    if (walker.at(r.date).isDeload) out.add(r.date);
+  }
+  deloadCache.set(history, out);
+  return out;
 }
 
 /**

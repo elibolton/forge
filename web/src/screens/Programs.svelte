@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    Programs, dayOrder, deloadNow, deloadWeek, effortText, isDone, newProgress, programDay, resolveSession, restText,
+    Programs, dayOrder, deloadNow, deloadWeek, effortText, isDone, jumpToWeek, newProgress, programDay, resolveSession, restText,
     ruleFor, rxExercise, setsText,
   } from '../engine';
   import { BadgeCheck, ChevronRight, CircleCheck, Flame, Info } from '@lucide/svelte';
@@ -22,9 +22,15 @@
   const weeks = $derived(program ? Array.from({ length: program.weeks }, (_, i) => i + 1) : []);
 
   function start(w: number) {
+    const before = current ? $state.snapshot(current) : null;
+    if (before && !before.isFinished) {
+      const name = Programs.byID(before.programID)?.name ?? 'your current program';
+      const what = before.programID === program!.id ? `Restart ${name}` : `Start ${program!.name}`;
+      if (!confirm(`${what}? This replaces ${name} and its progress (week ${before.week}). Your logged workouts stay in history.`)) return;
+    }
     app.setProgramProgress(newProgress(program!.id, Date.now(), w));
     pickedWeek = w;
-    toasts.show(`${program!.name} started`);
+    toasts.show(`${program!.name} started`, before ? () => { app.setProgramProgress(before); pickedWeek = null; } : undefined);
   }
 
   function update(change: (p: NonNullable<typeof progress>) => void) {
@@ -94,7 +100,7 @@
               {/if}
               <button class="item link" onclick={() => update((p) => deloadNow(p, program))}>Deload Now</button>
             {/if}
-            <ActionMenu label="Jump to Week" class="item link" items={weeks.map((w) => ({ label: `Week ${w}`, action: () => update((p) => { p.week = w; p.isFinished = false; }) }))}>Jump to Week…</ActionMenu>
+            <ActionMenu label="Jump to Week" class="item link" items={weeks.map((w) => ({ label: `Week ${w}`, action: () => update((p) => jumpToWeek(p, w, program)) }))}>Jump to Week…</ActionMenu>
           {/if}
           <button class="item" style="color:var(--fatigued)" onclick={end}>End Program</button>
         {:else}

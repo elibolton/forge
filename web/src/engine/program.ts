@@ -300,19 +300,38 @@ export function nextSession(p: ProgramProgress, program: WorkoutProgram): Resolv
 }
 
 function advanceIfWeekDone(p: ProgramProgress, program: WorkoutProgram) {
-  if (!dayOrder(program).every((d) => isDone(p, d))) return;
-  const wasDeload = ruleFor(program, p.week).isDeload;
-  if (wasDeload || p.week >= program.weeks) {
-    p.isFinished = true;
-    return;
+  // Loops so landing on a week that's already done (old state from a jump) moves on too, rather than
+  // leaving a week with no next day and no way forward.
+  for (let guard = 0; guard <= program.weeks && !p.isFinished; guard++) {
+    if (!dayOrder(program).every((d) => isDone(p, d))) return;
+    const wasDeload = ruleFor(program, p.week).isDeload;
+    if (wasDeload || p.week >= program.weeks) {
+      p.isFinished = true;
+      return;
+    }
+    const deload = deloadWeek(program);
+    if (p.deloadNext && deload !== undefined) {
+      p.week = deload;
+      p.deloadNext = false;
+    } else {
+      p.week += 1;
+    }
   }
-  const deload = deloadWeek(program);
-  if (p.deloadNext && deload !== undefined) {
-    p.week = deload;
-    p.deloadNext = false;
-  } else {
-    p.week += 1;
+}
+
+/**
+ * "Jump to Week": carry on from week `w` as if from there on hadn't been done yet. Clears the
+ * completed and skipped days of week `w` and every week after it, so the jump always lands on a
+ * week with a next session. Mutates `p`.
+ */
+export function jumpToWeek(p: ProgramProgress, w: number, program: WorkoutProgram) {
+  const week = Math.min(Math.max(1, Math.trunc(w)), program.weeks);
+  for (let k = week; k <= program.weeks; k++) {
+    delete p.completed[k];
+    delete p.skipped[k];
   }
+  p.week = week;
+  p.isFinished = false;
 }
 
 /** Mutates `p`. */
