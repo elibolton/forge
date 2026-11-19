@@ -46,6 +46,7 @@ export function readPlan(v: unknown): UserPlan {
     sessionMinutes: num(v.sessionMinutes, d.sessionMinutes),
     variability: oneOf(VARIABILITIES, v.variability, d.variability),
     warmUpSets: bool(v.warmUpSets, d.warmUpSets),
+    supersets: bool(v.supersets, d.supersets),
     preferences: prefs,
     injuries: known(JOINTS, v.injuries),
   };

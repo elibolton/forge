@@ -27,6 +27,8 @@ export interface PlannedExercise {
   targetRIR: number;
   /** Short human-readable reasons this exercise and load were picked. */
   reasons: string[];
+  /** Exercises sharing a group are done as a superset, alternating sets. */
+  supersetGroup?: string;
 }
 
 export const plannedWorkingSets = (p: PlannedExercise) => p.sets.filter((s) => !s.isWarmup);
@@ -121,6 +123,61 @@ const avg = (recovery: MuscleMap, muscles: Muscle[]) =>
 
 const setKey = (ms: Muscle[]) => [...new Set(ms)].sort().join(',');
 
+const ANTAGONISTS: [string, string][] = [
+  ['horizontalPush', 'horizontalPull'], ['verticalPush', 'verticalPull'], ['biceps', 'triceps'], ['quads', 'hamstrings'], ['chest', 'upperBack'],
+];
+
+/** Rest between the two exercises of a pair; the full rest comes after the pair. */
+export const SUPERSET_REST_BETWEEN = 30;
+
+/**
+ * Pairs exercises that don't compete for the same muscles into supersets, placed back to back.
+ * The first exercise (the main lift) and anything with long rests or timed sets stays on its own.
+ * Opposing movements (push with pull, biceps with triceps) are preferred.
+ */
+export function pairSupersets(list: PlannedExercise[]): PlannedExercise[] {
+  const canPair = (p: PlannedExercise, i: number) =>
+    i > 0 && !p.exercise.isTimed && p.exercise.pattern !== 'mobility' && p.restSeconds < 180 && !p.supersetGroup;
+  const muscles = (p: PlannedExercise) => [...p.exercise.primary, ...p.exercise.secondary];
+  const clash = (a: PlannedExercise, b: PlannedExercise) =>
+    a.exercise.primary.some((m) => muscles(b).includes(m)) || b.exercise.primary.some((m) => muscles(a).includes(m));
+  const tags = (p: PlannedExercise) => [p.exercise.pattern as string, ...p.exercise.primary];
+  const antagonist = (a: PlannedExercise, b: PlannedExercise) =>
+    ANTAGONISTS.some(([x, y]) => (tags(a).includes(x) && tags(b).includes(y)) || (tags(a).includes(y) && tags(b).includes(x)));
+
+  const used = new Set<number>();
+  const out: PlannedExercise[] = [];
+  let group = 0;
+  list.forEach((a, i) => {
+    if (used.has(i)) return;
+    used.add(i);
+    let best = -1, bestScore = -1;
+    if (canPair(a, i)) {
+      list.forEach((b, j) => {
+        if (j <= i || used.has(j) || !canPair(b, j) || clash(a, b)) return;
+        const score = (antagonist(a, b) ? 2 : 0) + (a.exercise.isCompound === b.exercise.isCompound ? 1 : 0);
+        if (score > bestScore) { best = j; bestScore = score; }
+      });
+    }
+    if (best < 0) { out.push(a); return; }
+    used.add(best);
+    const b = list[best];
+    const name = String.fromCharCode(65 + group++);
+    out.push({ ...a, restSeconds: SUPERSET_REST_BETWEEN, supersetGroup: name },
+      { ...b, restSeconds: Math.max(a.restSeconds, b.restSeconds), supersetGroup: name });
+  });
+  return out;
+}
+
+/** Breaks a pair up again (its partner was dropped), giving the one left its normal rest. */
+function unpair(list: PlannedExercise[], group: string): PlannedExercise[] {
+  return list.map((p) => {
+    if (p.supersetGroup !== group) return p;
+    const { supersetGroup: _, ...rest } = p;
+    return { ...rest, restSeconds: Math.max(p.restSeconds, 60) };
+  });
+}
+
 /** Seconds a planned exercise takes, including rest and warm-ups. */
 export function plannedSeconds(p: PlannedExercise): number {
   const working = plannedWorkingSets(p).length;
@@ -186,7 +243,10 @@ export class Planner {
     const hitsPerMuscle: MuscleMap = {};
     let seconds = 0;
     const budget = this.plan.sessionMinutes * 60;
-    const maxExercises = Math.min(8, Math.max(3, Math.floor(this.plan.sessionMinutes / 9)));
+    const supersets = this.plan.supersets;
+    // Pairing saves rest, so with supersets on there's room for more work in the same time.
+    const selectBudget = supersets ? budget * 1.4 : budget;
+    const maxExercises = Math.min(supersets ? 10 : 8, Math.max(3, Math.floor(this.plan.sessionMinutes / (supersets ? 7 : 9))));
     const targetSet = new Set(targets);
 
     while (chosen.length < maxExercises) {
@@ -204,7 +264,7 @@ export class Planner {
 
       const planned = this.prescribeWith(best.exercise, scheme, now, best.reasons);
       const cost = plannedSeconds(planned);
-      if (seconds + cost > budget && chosen.length >= 3) break;
+      if (seconds + cost > selectBudget && chosen.length >= 3) break;
 
       chosen.push(planned);
       seconds += cost;
@@ -215,6 +275,21 @@ export class Planner {
       }
       for (const m of best.exercise.secondary) plannedSets[m] = (plannedSets[m] ?? 0) + setCount * 0.5;
       if (best.exercise.pattern !== 'isolation' && best.exercise.pattern !== 'core') usedPatterns.add(best.exercise.pattern);
+    }
+
+    // Loaded compounds first, then bodyweight compounds, isolations, core.
+    const rank = (e: Exercise) => (e.pattern === 'core' ? 3 : !e.isCompound ? 2 : isBodyweight(e) ? 1 : 0);
+    chosen = [...chosen].sort((a, b) => rank(a.exercise) - rank(b.exercise));
+
+    if (supersets) {
+      chosen = pairSupersets(chosen);
+      seconds = chosen.reduce((t, p) => t + plannedSeconds(p), 0);
+      // Selected against a looser budget: drop from the end until it fits.
+      while (seconds > budget && chosen.length > 3) {
+        const dropped = chosen.pop()!;
+        if (dropped.supersetGroup) chosen = unpair(chosen, dropped.supersetGroup);
+        seconds = chosen.reduce((t, p) => t + plannedSeconds(p), 0);
+      }
     }
 
     // The 3-exercise minimum can overrun short sessions with long rests: trim sets until it fits.
@@ -231,10 +306,6 @@ export class Planner {
       chosen[i] = { ...chosen[i], sets: sets.filter((_, k) => k !== last) };
       seconds = chosen.reduce((t, p) => t + plannedSeconds(p), 0);
     }
-
-    // Loaded compounds first, then bodyweight compounds, isolations, core.
-    const rank = (e: Exercise) => (e.pattern === 'core' ? 3 : !e.isCompound ? 2 : isBodyweight(e) ? 1 : 0);
-    chosen = [...chosen].sort((a, b) => rank(a.exercise) - rank(b.exercise));
 
     return {
       focus,

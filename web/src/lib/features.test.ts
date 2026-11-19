@@ -88,3 +88,80 @@ describe('Rest timer', () => {
     session.discard();
   });
 });
+
+describe('Supersets', async () => {
+  const { pairSupersets, SUPERSET_REST_BETWEEN, Catalog, plannedWorkingSets } = await import('../engine');
+  const { newSet: makeSet } = await import('./session.svelte');
+  const p = (id: string) => planner.prescribe(Catalog.byID.get(id)!);
+
+  test('pairs non-competing exercises back to back, preferring opposites; the main lift stays alone', () => {
+    const out = pairSupersets([p('bb-bench'), p('db-curl'), p('db-row'), p('tricep-pushdown'), p('db-lateral-raise')]);
+    expect(out[0].supersetGroup).toBeUndefined();
+    const groups = out.filter((x) => x.supersetGroup).map((x) => `${x.supersetGroup}:${x.exercise.id}`);
+    expect(groups).toContain('A:db-curl');
+    expect(groups).toContain('A:tricep-pushdown'); // biceps with triceps beats biceps with a row (shared biceps)
+    for (let i = 0; i < out.length; i++) {
+      const g = out[i].supersetGroup;
+      if (!g) continue;
+      const partner = out.findIndex((x, j) => j !== i && x.supersetGroup === g);
+      expect(Math.abs(partner - i)).toBe(1);
+    }
+    const first = out.find((x) => x.supersetGroup === 'A')!;
+    expect(first.restSeconds).toBe(SUPERSET_REST_BETWEEN);
+  });
+
+  test('never pairs exercises that work the same muscles', () => {
+    const out = pairSupersets([p('bb-squat'), p('leg-extension'), p('goblet-squat')]);
+    expect(out.every((x) => !x.supersetGroup)).toBe(true);
+  });
+
+  test('a generated workout with supersets on still fits the session and has pairs', () => {
+    for (const focus of ['push', 'pull', 'upper', 'fullBody'] as const) {
+      const w = new Planner({ plan: defaultPlan({ supersets: true, sessionMinutes: 45 }), gym: Gyms.commercial(), history: [] }).generate({ now: Date.now(), seed: 3, focus });
+      expect(w.estimatedMinutes, focus).toBeLessThanOrEqual(46);
+      if (focus === 'upper' || focus === 'fullBody') expect(w.exercises.some((x) => x.supersetGroup), focus).toBe(true);
+      expect(w.exercises.every((x) => plannedWorkingSets(x).length >= 2)).toBe(true);
+    }
+  });
+
+  test('the logger alternates generated supersets', () => {
+    app.createProfile(defaultPlan(), Gyms.commercial(), false);
+    const a = [makeSet(12, 12), makeSet(12, 12)], b = [makeSet(30, 12), makeSet(30, 12)];
+    session.startPrepared({ startedAt: Date.now(), focus: null, currentIndex: 0, exercises: [
+      { id: 'a', exerciseID: 'db-curl', sets: a, restSeconds: 30, targetRIR: 2, targetReps: 12, rir: null, reasons: [], supersetGroup: 'A' },
+      { id: 'b', exerciseID: 'tricep-pushdown', sets: b, restSeconds: 75, targetRIR: 2, targetReps: 12, rir: null, reasons: [], supersetGroup: 'A' },
+    ] });
+    session.logSet(a[0].id, 'a');
+    expect(session.state!.currentIndex).toBe(1);
+    expect(session.restTotal).toBe(30);
+    session.logSet(b[0].id, 'b');
+    expect(session.state!.currentIndex).toBe(0);
+    expect(session.restTotal).toBe(75);
+    session.discard();
+  });
+});
+
+describe('Bodyweight', async () => {
+  const { bodyweightTrend, readBodyweight } = await import('./bodyweight');
+  const DAY = 86_400_000;
+  const now = Date.now();
+
+  test('trend compares with the weigh-in nearest a month ago', () => {
+    const t = bodyweightTrend([
+      { id: '1', date: now, kg: 80 }, { id: '2', date: now - 3 * DAY, kg: 81 },
+      { id: '3', date: now - 29 * DAY, kg: 82.5 }, { id: '4', date: now - 60 * DAY, kg: 85 },
+    ], now)!;
+    expect(t.latest.kg).toBe(80);
+    expect(t.change).toBeCloseTo(-2.5);
+  });
+
+  test('no change shown until there is a week-old weigh-in', () => {
+    expect(bodyweightTrend([{ id: '1', date: now, kg: 80 }, { id: '2', date: now - 2 * DAY, kg: 79 }], now)?.change).toBeUndefined();
+    expect(bodyweightTrend([], now)).toBeUndefined();
+  });
+
+  test('stored weigh-ins load tolerantly', () => {
+    expect(readBodyweight({ id: 'a', date: 1, kg: 80 })).toEqual({ id: 'a', date: 1, kg: 80 });
+    expect(readBodyweight({ id: 'a', date: 1, kg: 4 })).toBeUndefined();
+  });
+});

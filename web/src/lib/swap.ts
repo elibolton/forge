@@ -29,6 +29,8 @@ export function swapInSession(state: SessionState, id: string, replacement: Exer
     next = { ...old, id: uuid(), exerciseID: replacement.id, sets, rir: null, reasons: [`Swapped in for ${old.exerciseID}`] };
   } else {
     next = sessionExerciseFrom(planned);
+    // Stay in the same superset, with the same rest, as the exercise it replaces.
+    if (old.supersetGroup) { next.supersetGroup = old.supersetGroup; next.restSeconds = old.restSeconds; }
     if (done.length && pending.length) {
       // Keep the number of sets that were left, at the new exercise's prescription.
       const working = next.sets.filter((s) => !s.isWarmup);

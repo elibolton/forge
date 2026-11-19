@@ -34,7 +34,7 @@ export function planBasis(p: Profile): string {
   const increments = Object.entries(gym?.increments ?? {}).map(([k, v]) => `${k}=${v}`).sort();
   const overrides = p.overrides.map((o) => `${o.muscle}=${o.recovery}@${Math.trunc(o.date / 1000)}`).sort();
   return [
-    plan.goal, plan.experience, plan.split, plan.sessionMinutes, plan.variability, plan.warmUpSets,
+    plan.goal, plan.experience, plan.split, plan.sessionMinutes, plan.variability, plan.warmUpSets, plan.supersets,
     [...plan.injuries].sort().join(','), gym?.id, [...(gym?.equipment ?? [])].sort().join(','), gym?.usesPounds,
     increments.join(','), overrides.join(','), p.activities.map((a) => a.id).sort().join(','),
   ].join('|');

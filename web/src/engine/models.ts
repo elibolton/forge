@@ -192,6 +192,8 @@ export interface UserPlan {
   sessionMinutes: number;
   variability: Variability;
   warmUpSets: boolean;
+  /** Pair non-competing exercises back to back, resting after each pair. */
+  supersets: boolean;
   preferences: Record<string, ExercisePreference>;
   injuries: Joint[];
 }
@@ -199,7 +201,7 @@ export interface UserPlan {
 export function defaultPlan(over: Partial<UserPlan> = {}): UserPlan {
   return {
     goal: 'buildMuscle', experience: 'intermediate', split: 'pushPullLegs', sessionMinutes: 60,
-    variability: 'balanced', warmUpSets: true, preferences: {}, injuries: [], ...over,
+    variability: 'balanced', warmUpSets: true, supersets: false, preferences: {}, injuries: [], ...over,
   };
 }
 

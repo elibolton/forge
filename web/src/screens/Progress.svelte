@@ -5,6 +5,7 @@
   import LineChart from '../components/LineChart.svelte';
   import BodyMap from '../components/BodyMap.svelte';
   import Report from '../components/Report.svelte';
+  import Bodyweight from '../components/Bodyweight.svelte';
   import RecoveryRing from '../components/RecoveryRing.svelte';
   import Sheet from '../components/Sheet.svelte';
   import WorkoutCalendar from '../components/WorkoutCalendar.svelte';
@@ -121,6 +122,8 @@
       {/each}
     </div>
   </section>
+
+  <Bodyweight />
 
   <section class="stack" style="--gap:12px">
     <div class="row between head-row"><h2 class="eyebrow">Strength</h2><span class="caption faint">Estimated 1RM</span></div>

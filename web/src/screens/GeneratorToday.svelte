@@ -61,6 +61,14 @@
     if (!t) return;
     const next = structuredClone($state.snapshot(t)) as TodayPlan;
     change(next);
+    // A superset whose partner was removed becomes a normal exercise again.
+    const scheme = planner.scheme;
+    for (const x of next.workout.exercises) {
+      if (x.supersetGroup && next.workout.exercises.filter((y) => y.supersetGroup === x.supersetGroup).length < 2) {
+        delete x.supersetGroup;
+        x.restSeconds = x.exercise.isCompound ? scheme.restCompound : scheme.restIsolation;
+      }
+    }
     app.set('todayPlan', next);
   }
 
@@ -74,7 +82,10 @@
   function replace(p: PlannedExercise, e: Exercise) {
     edit((t) => {
       const i = t.workout.exercises.findIndex((x) => x.exercise.id === p.exercise.id);
-      if (i >= 0) t.workout.exercises[i] = planner.prescribe(e);
+      if (i < 0) return;
+      const old = t.workout.exercises[i];
+      // Keep its place in a superset, with the same rest.
+      t.workout.exercises[i] = { ...planner.prescribe(e), ...(old.supersetGroup ? { supersetGroup: old.supersetGroup, restSeconds: old.restSeconds } : {}) };
     });
   }
 
@@ -217,12 +228,17 @@
     <div class="stack" style="--gap:10px">
       {#each workout.exercises as p, i (p.exercise.id)}
         {@const reason = p.reasons[1] ?? p.reasons[0]}
-        <ExerciseCard index={i} exercise={p.exercise} pills={summary(p)}
-          tag={i === 0 && p.exercise.isCompound ? [{ text: 'MAIN LIFT', tone: 'amber' }] : plannedWorkingSets(p).some((s) => s.isAMRAP) ? [{ text: 'MAX EFFORT' }] : []}
-          onopen={() => nav.push({ name: 'exercise', id: p.exercise.id })}>
-          {#snippet menu()}<ActionMenu items={rowMenu(p)} label="{p.exercise.name} options"><Ellipsis size={18} /></ActionMenu>{/snippet}
-          {#snippet detail()}{#if reason}<p class="caption muted">{reason}</p>{/if}{/snippet}
-        </ExerciseCard>
+        {@const first = !!p.supersetGroup && workout.exercises[i + 1]?.supersetGroup === p.supersetGroup}
+        {@const second = !!p.supersetGroup && workout.exercises[i - 1]?.supersetGroup === p.supersetGroup}
+        {#if first}<div class="pair-label"><span class="kicker">SUPERSET {p.supersetGroup}</span><span class="caption faint">alternate sets · rest after each pair</span></div>{/if}
+        <div class="paired" class:first class:second>
+          <ExerciseCard index={i} exercise={p.exercise} pills={summary(p)}
+            tag={i === 0 && p.exercise.isCompound ? [{ text: 'MAIN LIFT', tone: 'amber' }] : plannedWorkingSets(p).some((s) => s.isAMRAP) ? [{ text: 'MAX EFFORT' }] : []}
+            onopen={() => nav.push({ name: 'exercise', id: p.exercise.id })}>
+            {#snippet menu()}<ActionMenu items={rowMenu(p)} label="{p.exercise.name} options"><Ellipsis size={18} /></ActionMenu>{/snippet}
+            {#snippet detail()}{#if reason}<p class="caption muted">{reason}</p>{/if}{/snippet}
+          </ExerciseCard>
+        </div>
       {/each}
       <button class="add" onclick={() => (adding = true)}><Plus size={18} /> Add an exercise</button>
     </div>
@@ -248,6 +264,12 @@
 <style>
   .notice { border-color: rgba(255, 106, 46, 0.35); }
   .section-row { margin-top: 10px; padding: 0 4px; }
+  .pair-label { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 -2px 14px; color: var(--ember-2); }
+  /* A rail joins the two cards of a superset. */
+  .paired { position: relative; }
+  .paired.first::after, .paired.second::before { content: ''; position: absolute; left: -7px; width: 3px; border-radius: 2px; background: var(--ember-gradient); }
+  .paired.first::after { top: 22px; bottom: -10px; }
+  .paired.second::before { top: -10px; bottom: 22px; }
   .add { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; border-radius: var(--r-lg);
     border: 1px dashed var(--hairline-2); color: var(--text-2); font-weight: 600; }
   :global(.glass-chip) { background: rgba(0, 0, 0, 0.28) !important; border-color: rgba(255, 255, 255, 0.12) !important;

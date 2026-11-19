@@ -10,7 +10,7 @@
   import RestTimerBar from '../components/RestTimerBar.svelte';
   import Sheet from '../components/Sheet.svelte';
   import { dayTitle } from '../lib/labels';
-  import { exerciseOf, isComplete, session, sessionExerciseFrom } from '../lib/session.svelte';
+  import { exerciseOf, isComplete, session, sessionExerciseFrom, supersetOf } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { minSec } from '../lib/units';
@@ -122,8 +122,8 @@
     {#each ws.exercises as x, i (x.id)}
       <button role="tab" aria-selected={i === index} aria-label="{exerciseOf(x).name}{isComplete(x) ? ', done' : ''}" onclick={() => go(i)}>
         <span class="seg" class:now={i === index} class:complete={isComplete(x)}
-          class:pair-start={!!x.program?.supersetGroup && ws.exercises[i + 1]?.program?.supersetGroup === x.program?.supersetGroup}
-          class:pair-end={!!x.program?.supersetGroup && ws.exercises[i - 1]?.program?.supersetGroup === x.program?.supersetGroup}></span>
+          class:pair-start={!!supersetOf(x) && ws.exercises[i + 1] && supersetOf(ws.exercises[i + 1]) === supersetOf(x)}
+          class:pair-end={!!supersetOf(x) && ws.exercises[i - 1] && supersetOf(ws.exercises[i - 1]) === supersetOf(x)}></span>
       </button>
     {/each}
   </div>
@@ -139,8 +139,8 @@
       </div>
     {:else if current}
       {#key current.id}
-        {@const group = current.program?.supersetGroup}
-        {@const partnerIndex = group ? ws.exercises.findIndex((x, i) => i !== index && x.program?.supersetGroup === group) : -1}
+        {@const group = supersetOf(current)}
+        {@const partnerIndex = group ? ws.exercises.findIndex((x, i) => i !== index && supersetOf(x) === group) : -1}
         <ExercisePage exercise={current} nextName={ws.exercises[index + 1] ? exerciseOf(ws.exercises[index + 1]).name : undefined}
           onswap={() => (swapping = true)}
           partner={partnerIndex >= 0 ? { name: exerciseOf(ws.exercises[partnerIndex]).name, go: () => go(partnerIndex) } : undefined}

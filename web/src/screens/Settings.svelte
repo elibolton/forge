@@ -86,6 +86,10 @@
       <div class="list"><Toggle label="Warm-Up Sets" checked={p.plan.warmUpSets} onchange={(v) => app.updatePlan((x) => { x.warmUpSets = v; })} /></div>
       <div class="foot">Adds lighter ramp-up sets before heavy compound lifts.</div>
     </div>
+    <div class="section">
+      <div class="list"><Toggle label="Supersets" checked={p.plan.supersets} onchange={(v) => app.updatePlan((x) => { x.supersets = v; })} /></div>
+      <div class="foot">Generated workouts pair exercises that don't compete for the same muscles (push with pull, biceps with triceps) and alternate their sets. More work in the same time. The main lift stays on its own.</div>
+    </div>
     <div class="section"><div class="head">Stretching</div>
       <div class="list">
         <Toggle label="Warm-up drills" checked={p.mobility.warmup} onchange={(v) => app.updateProfile((x) => { x.mobility.warmup = v; })} />

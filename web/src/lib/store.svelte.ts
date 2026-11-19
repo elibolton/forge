@@ -9,6 +9,7 @@ import { WeightUnits } from './units';
 import { type Activity, readActivity, toExternal } from './activities';
 import { prTimeline } from './records';
 import { type WorkoutTemplate, readTemplate } from './templates';
+import { type BodyweightEntry, readBodyweight } from './bodyweight';
 
 // MARK: - Stored shapes
 
@@ -33,6 +34,8 @@ export interface Profile {
   templates: WorkoutTemplate[];
   /** Stretches added before and after a workout. */
   mobility: { warmup: boolean; cooldown: boolean };
+  /** Weigh-ins, newest first. */
+  bodyweights: BodyweightEntry[];
 }
 
 export interface WorkoutLog {
@@ -72,6 +75,7 @@ function readProfile(v: unknown): Profile | null {
       : {},
     activities: lossy(v.activities, readActivity).sort((a, b) => b.date - a.date),
     templates: lossy(v.templates, readTemplate),
+    bodyweights: lossy(v.bodyweights, readBodyweight).sort((a, b) => b.date - a.date),
     mobility: {
       warmup: isObj(v.mobility) && typeof v.mobility.warmup === 'boolean' ? v.mobility.warmup : false,
       cooldown: isObj(v.mobility) && typeof v.mobility.cooldown === 'boolean' ? v.mobility.cooldown : false,
@@ -174,7 +178,7 @@ class AppStore {
   createProfile(plan: UserPlan, gym: Gym, usesPounds: boolean, weeklyGoal = 3) {
     this.setProfile({
       plan, gyms: [gym], overrides: [], activeGymID: gym.id, usesPounds, createdAt: Date.now(), customExercises: [],
-      programProgress: null, exerciseNotes: {}, activities: [], weeklyGoal, templates: [], mobility: { warmup: false, cooldown: false },
+      programProgress: null, exerciseNotes: {}, activities: [], weeklyGoal, templates: [], mobility: { warmup: false, cooldown: false }, bodyweights: [],
     });
   }
 
@@ -224,6 +228,14 @@ class AppStore {
 
   removeActivity(id: string) {
     this.updateProfile((p) => { p.activities = p.activities.filter((x) => x.id !== id); });
+  }
+
+  addBodyweight(e: BodyweightEntry) {
+    this.updateProfile((p) => { p.bodyweights = [e, ...p.bodyweights.filter((x) => x.id !== e.id)].sort((a, b) => b.date - a.date); });
+  }
+
+  removeBodyweight(id: string) {
+    this.updateProfile((p) => { p.bodyweights = p.bodyweights.filter((x) => x.id !== id); });
   }
 
   saveTemplate(t: WorkoutTemplate) {

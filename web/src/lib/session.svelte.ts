@@ -49,7 +49,12 @@ export interface SessionExercise {
   rir: number | null;
   reasons: string[];
   program?: ProgramSlotInfo;
+  /** Superset pairing from the workout generator; program days use `program.supersetGroup`. */
+  supersetGroup?: string;
 }
+
+/** The superset this exercise belongs to, whichever way it was paired. */
+export const supersetOf = (e: SessionExercise): string | undefined => e.supersetGroup ?? e.program?.supersetGroup;
 
 export interface SessionState {
   startedAt: number;
@@ -81,7 +86,7 @@ export function sessionExerciseFrom(p: PlannedExercise): SessionExercise {
     id: uuid(), exerciseID: p.exercise.id,
     sets: p.sets.map((s) => newSet(s.weight, s.reps, { isWarmup: s.isWarmup, isAMRAP: s.isAMRAP })),
     restSeconds: p.restSeconds, targetRIR: p.targetRIR, targetReps: plannedWorkingSets(p)[0]?.reps ?? null, rir: null,
-    reasons: p.reasons,
+    reasons: p.reasons, supersetGroup: p.supersetGroup,
   };
 }
 
@@ -181,18 +186,16 @@ class WorkoutSession {
     const set = after.sets[si];
     if (wasDone || set.isWarmup) return;
     const info = after.program;
-    if (!info) restFor = after.restSeconds;
-    else if (isPerSide(info.laterality) && set.side === 'left' && after.sets.some((x) => x.side === 'right' && !x.done && !x.isWarmup)) {
+    const group = supersetOf(after);
+    if (info && isPerSide(info.laterality) && set.side === 'left' && after.sets.some((x) => x.side === 'right' && !x.done && !x.isWarmup)) {
       // First side of a per-side set: short (or no) rest, then the other side.
       if (info.sideRest) restFor = info.sideRest;
-    } else if (info.supersetGroup) {
+    } else if (group) {
       // Supersets: alternate between the pair, short rest in between, full rest after the pair.
       const exercises = this.state!.exercises;
-      const partner = exercises.findIndex((x, i) => i !== ei && x.program?.supersetGroup === info.supersetGroup);
-      if (partner >= 0) {
-        restFor = info.supersetRestBetween ?? after.restSeconds;
-        if (exercises[partner].sets.some((x) => !x.isWarmup && !x.done)) jumpTo = partner;
-      } else restFor = after.restSeconds;
+      const partner = exercises.findIndex((x, i) => i !== ei && supersetOf(x) === group);
+      restFor = partner >= 0 ? (info?.supersetRestBetween ?? after.restSeconds) : after.restSeconds;
+      if (partner >= 0 && exercises[partner].sets.some((x) => !x.isWarmup && !x.done)) jumpTo = partner;
     } else restFor = after.restSeconds;
 
     if (jumpTo !== undefined) this.update((s) => { s.currentIndex = jumpTo!; });
