@@ -4,7 +4,7 @@
 import { placeholderName } from './catalog';
 import {
   type DayFocus, type Exercise, type MovementPattern, type Muscle, type Gym, type LoggedExercise, type LoggedSet, type RecoveryOverride, type RepRange,
-  type UserPlan, type WorkoutRecord, DAY_FOCUSES, EQUIPMENT, GOALS, JOINTS, LEVELS, MUSCLES, PATTERNS, PREFERENCES,
+  type UserPlan, type WorkoutRecord, type Equipment, DAY_FOCUSES, EQUIPMENT, LOAD_KINDS, NEEDS, GOALS, JOINTS, LEVELS, MUSCLES, PATTERNS, PREFERENCES,
   SPLITS, VARIABILITIES, defaultPlan, uuid,
 } from './models';
 import type { ProgramRef } from './models';
@@ -52,17 +52,43 @@ export function readPlan(v: unknown): UserPlan {
   };
 }
 
+/** The equipment list before it was split into specific pieces (bench, cable, ...). */
+const OLD_EQUIPMENT = [
+  'barbell', 'ezBar', 'trapBar', 'dumbbell', 'kettlebell', 'bench', 'squatRack', 'pullUpBar', 'dipStation', 'cable', 'latPulldown',
+  'legPress', 'legCurl', 'legExtension', 'chestPressMachine', 'shoulderPressMachine', 'smithMachine', 'resistanceBand',
+];
+const ATTACHMENTS: Equipment[] = ['rope', 'straightBar', 'singleHandle', 'vBar', 'ankleStrap'];
+
+/**
+ * Converts an older gym's broad list: "bench" becomes both benches, "cable" a single adjustable column
+ * with every attachment, and a dip station with dumbbells keeps weighted dips (now a dip belt). A gym
+ * that had everything becomes a full gym. Anything else is kept, and the gym is flagged for a review.
+ */
+function upgradeEquipment(raw: unknown[]): { equipment: Equipment[]; review: boolean } {
+  const old = new Set(raw.filter((x): x is string => typeof x === 'string'));
+  if (OLD_EQUIPMENT.every((e) => old.has(e))) return { equipment: [...EQUIPMENT], review: false };
+  const out = new Set<Equipment>(known(EQUIPMENT, [...old]));
+  if (old.has('bench')) { out.add('flatBench'); out.add('adjustableBench'); }
+  if (old.has('cable')) { out.add('cableColumn'); for (const a of ATTACHMENTS) out.add(a); }
+  if (old.has('dipStation') && old.has('dumbbell')) out.add('dipBelt');
+  return { equipment: EQUIPMENT.filter((e) => out.has(e)), review: old.size > 0 };
+}
+
 export function readGym(v: unknown): Gym | undefined {
   if (!isObj(v)) return undefined;
   const increments: Gym['increments'] = {};
   if (isObj(v.increments)) {
     for (const [k, n] of Object.entries(v.increments)) {
-      if ((EQUIPMENT as readonly string[]).includes(k) && typeof n === 'number' && n > 0) (increments as Record<string, number>)[k] = n;
+      if ((LOAD_KINDS as readonly string[]).includes(k) && typeof n === 'number' && n > 0) (increments as Record<string, number>)[k] = n;
     }
   }
+  const raw = Array.isArray(v.equipment) ? v.equipment : [];
+  // Lists saved before version 2 used the broad names.
+  const upgraded = num(v.equipmentVersion, 1) < 2 ? upgradeEquipment(raw) : { equipment: known(EQUIPMENT, raw), review: false };
+  const review = upgraded.review || bool(v.reviewEquipment, false);
   return {
-    id: str(v.id, uuid()), name: str(v.name, 'Gym'), equipment: known(EQUIPMENT, v.equipment),
-    usesPounds: bool(v.usesPounds, false), increments,
+    id: str(v.id, uuid()), name: str(v.name, 'Gym'), equipment: upgraded.equipment, equipmentVersion: 2,
+    usesPounds: bool(v.usesPounds, false), increments, ...(review ? { reviewEquipment: true } : {}),
   };
 }
 
@@ -131,7 +157,8 @@ export function readExercise(v: unknown): Exercise | undefined {
   return {
     id: v.id, name: str(v.name, placeholderName(v.id)),
     primary: readMuscles(v.primary, pattern, false), secondary: readMuscles(v.secondary, pattern, true),
-    equipment: known(EQUIPMENT, v.equipment), pattern,
+    // Custom exercises saved with the broad "cable" ask for an adjustable pulley.
+    equipment: known(NEEDS, Array.isArray(v.equipment) ? v.equipment.map((x) => (x === 'cable' ? 'cableAdjustable' : x)) : []), pattern,
     isCompound: bool(v.isCompound, false), level: oneOf(LEVELS, v.level, 'beginner'), starterOneRM: num(v.starterOneRM, 0),
     jointsStressed: known(JOINTS, v.jointsStressed), isTimed: bool(v.isTimed, false),
     notes: typeof v.notes === 'string' ? v.notes : undefined,

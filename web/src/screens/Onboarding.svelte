@@ -3,7 +3,7 @@
   import { Building2, ChevronLeft, ChevronRight, Circle, CircleCheck, Footprints, House, Zap, Share, SquarePlus, Download } from '@lucide/svelte';
   import Sheet from '../components/Sheet.svelte';
   import Toggle from '../components/Toggle.svelte';
-  import { equipmentTitle, goalBlurb, goalTitle, levelBlurb, levelTitle, splitBlurb, splitTitle } from '../lib/labels';
+  import { EQUIPMENT_GROUPS, equipmentTitle, goalBlurb, goalTitle, levelBlurb, levelTitle, splitBlurb, splitTitle } from '../lib/labels';
   import { app } from '../lib/store.svelte';
 
   /** First-run setup: one decision per page, every page pre-filled so Next always works. */
@@ -11,7 +11,7 @@
   const recommendedSplit = (days: number): Split => (days <= 3 ? 'fullBody' : days === 4 ? 'upperLower' : 'pushPullLegs');
   const PRESETS = [
     { title: 'Full Gym', detail: 'Barbells, racks, cables and machines', icon: Building2, gym: Gyms.commercial },
-    { title: 'Home Gym', detail: 'Dumbbells, bench, pull-up bar, bands', icon: House, gym: Gyms.home },
+    { title: 'Home Gym', detail: 'Dumbbells, adjustable bench, pull-up bar, bands', icon: House, gym: Gyms.home },
     { title: 'No Equipment', detail: 'Bodyweight moves only', icon: Footprints, gym: Gyms.bodyweight },
   ];
 
@@ -134,16 +134,21 @@
   <Sheet title="Equipment" onclose={() => (editingGym = false)}>
     {#snippet leading()}<span></span>{/snippet}
     {#snippet trailing()}<button class="link bold" onclick={() => (editingGym = false)}>Done</button>{/snippet}
-    <div class="list">
-      {#each EQUIPMENT as eq (eq)}
-        <Toggle label={equipmentTitle[eq]} checked={gym.equipment.includes(eq)}
-          onchange={(on) => (gym.equipment = on ? [...gym.equipment, eq] : gym.equipment.filter((x) => x !== eq))} />
-      {/each}
-    </div>
+    {#each EQUIPMENT_GROUPS as group (group.title)}
+      <div class="section-title">{group.title}</div>
+      <div class="list">
+        {#each group.items as eq (eq)}
+          <Toggle label={equipmentTitle[eq]} checked={gym.equipment.includes(eq)}
+            onchange={(on) => (gym.equipment = EQUIPMENT.filter((x) => (x === eq ? on : gym.equipment.includes(x))))} />
+        {/each}
+      </div>
+      {#if group.foot}<p class="caption muted">{group.foot}</p>{/if}
+    {/each}
   </Sheet>
 {/if}
 
 <style>
+  .section-title { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 14px 0 6px; }
   .onboarding { min-height: 100dvh; display: flex; flex-direction: column; max-width: 620px; margin: 0 auto; padding: calc(var(--safe-top) + 8px) 20px calc(var(--safe-bottom) + 12px);
     position: relative; }
   .dots { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px 0 18px; position: relative; min-height: 48px; }

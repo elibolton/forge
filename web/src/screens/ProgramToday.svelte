@@ -1,7 +1,7 @@
 <script lang="ts">
   import TemplatePicker from '../components/TemplatePicker.svelte';
   import { addMobility } from '../lib/mobility';
-  import { focusMuscles } from '../engine';
+  import { focusMuscles, gymHas } from '../engine';
   import {
     type Exercise, type FatigueCheckIn, type WeekRule, Programs, checkInDue, nextDayID, programDay, rirText, rxExercise,
     scheduledOn, setsText, effortText, restText, skipDay, dayOrder, isDone, ruleFor,
@@ -227,7 +227,7 @@
                 <span class="caption muted">{s.reason}</span>
                 {#if p.lastSetNote}<span class="caption row" style="--gap:6px;color:var(--recovering)"><Flame size={13} /> {p.lastSetNote}</span>{/if}
                 {#each [...p.slot.notes, ...(p.weekNote ? [p.weekNote] : [])] as n (n)}<span class="caption faint">• {n}</span>{/each}
-                {#if !e.equipment.every((x) => app.activeGym.equipment.includes(x))}
+                {#if !gymHas(app.activeGym, e)}
                   <span class="caption row" style="--gap:6px;color:var(--recovering)"><TriangleAlert size={13} /> {app.activeGym.name} doesn't list all the equipment</span>
                 {/if}
                 {#if item.isSwapped}<span class="caption faint">Swapped for today</span>{/if}

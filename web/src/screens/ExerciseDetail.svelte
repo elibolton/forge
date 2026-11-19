@@ -7,7 +7,7 @@
   import ExerciseNote from '../components/ExerciseNote.svelte';
   import LineChart from '../components/LineChart.svelte';
   import { removeCustomExercise } from '../lib/customExercises';
-  import { equipmentTitle } from '../lib/labels';
+  import { needTitle } from '../lib/labels';
   import { fmtDate } from '../lib/logs';
   import { nav } from '../lib/nav.svelte';
   import { app } from '../lib/store.svelte';
@@ -74,7 +74,7 @@
     <div class="list">
       <div class="item">Primary <span class="value">{e.primary.map(muscleName).join(', ')}</span></div>
       {#if e.secondary.length}<div class="item">Secondary <span class="value">{e.secondary.map(muscleName).join(', ')}</span></div>{/if}
-      <div class="item">Equipment <span class="value">{e.equipment.length ? e.equipment.map((x) => equipmentTitle[x]).sort().join(', ') : 'None'}</span></div>
+      <div class="item">Equipment <span class="value">{e.equipment.length ? e.equipment.map((x) => needTitle[x]).join(', ') : 'None'}</span></div>
       <label class="item">Recommend
         <select value={pref} onchange={(ev) => setPref((ev.currentTarget as HTMLSelectElement).value)} style="width:auto;margin-left:auto">
           <option value="">Normally</option><option value="more">More often</option><option value="less">Less often</option><option value="exclude">Never</option>

@@ -1,4 +1,4 @@
-import { CUSTOM_PREFIX, type Equipment, type Exercise, type Muscle, isBodyweight, loadEquipment } from './models';
+import { CUSTOM_PREFIX, type Exercise, type Muscle, type Need, isBodyweight, loadEquipment } from './models';
 import * as data from './catalogData';
 
 /** Exercises shipped with the app. */
@@ -44,7 +44,7 @@ export const Catalog = {
   },
 
   /** A reasonable starting 1RM for a new custom exercise: the median of similar built-ins. */
-  suggestedStarterOneRM(primary: Muscle[], equipment: Equipment[], isCompound: boolean): number {
+  suggestedStarterOneRM(primary: Muscle[], equipment: Need[], isCompound: boolean): number {
     const probe: Exercise = { ...Catalog.exercise('probe'), primary, equipment, isCompound, starterOneRM: 1 };
     const probeLoad = loadEquipment(probe);
     const loaded = builtIn.filter((e) => !isBodyweight(e));

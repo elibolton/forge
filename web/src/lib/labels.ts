@@ -1,5 +1,5 @@
 // Display names for engine enums.
-import type { DayFocus, Equipment, ExercisePreference, Goal, Joint, Level, LoggedSet, Split, Variability } from '../engine';
+import type { DayFocus, Equipment, ExercisePreference, LoadKind, Need, Goal, Joint, Level, LoggedSet, Split, Variability } from '../engine';
 
 export const goalTitle: Record<Goal, string> = {
   buildMuscle: 'Build Muscle', getLean: 'Get Lean', getStronger: 'Get Stronger',
@@ -45,11 +45,40 @@ export function dayTitle(f: DayFocus): string {
 }
 
 export const equipmentTitle: Record<Equipment, string> = {
-  barbell: 'Barbell', ezBar: 'EZ Bar', trapBar: 'Trap Bar', dumbbell: 'Dumbbells', kettlebell: 'Kettlebells',
-  bench: 'Bench', squatRack: 'Squat Rack', pullUpBar: 'Pull-Up Bar', dipStation: 'Dip Station', cable: 'Cable Machine',
-  latPulldown: 'Lat Pulldown', legPress: 'Leg Press', legCurl: 'Leg Curl', legExtension: 'Leg Extension',
-  chestPressMachine: 'Chest Press Machine', shoulderPressMachine: 'Shoulder Press Machine', smithMachine: 'Smith Machine',
-  resistanceBand: 'Resistance Bands',
+  barbell: 'Barbell and plates', ezBar: 'EZ bar', trapBar: 'Trap bar', dumbbell: 'Dumbbells', kettlebell: 'Kettlebells',
+  dipBelt: 'Dip belt or weight vest', flatBench: 'Flat bench', adjustableBench: 'Adjustable bench (incline/decline)',
+  squatRack: 'Squat or power rack', pullUpBar: 'Pull-up bar', dipStation: 'Dip station', preacherBench: 'Preacher bench',
+  backExtension: 'Back extension / GHD', cableDual: 'Dual adjustable cables (crossover)', cableColumn: 'Single adjustable cable',
+  latPulldown: 'Lat pulldown (high pulley)', lowRow: 'Seated row (low pulley)', rope: 'Rope', straightBar: 'Straight bar',
+  singleHandle: 'Single handle', vBar: 'V-bar', ankleStrap: 'Ankle strap', legPress: 'Leg press', legExtension: 'Leg extension',
+  legCurl: 'Leg curl', chestPressMachine: 'Chest press machine', shoulderPressMachine: 'Shoulder press machine',
+  smithMachine: 'Smith machine', resistanceBand: 'Resistance bands', abWheel: 'Ab wheel',
+};
+
+/** The setup screens' groups, in the order you'd look around a gym. */
+export const EQUIPMENT_GROUPS: { title: string; items: Equipment[]; foot?: string }[] = [
+  { title: 'Free weights', items: ['barbell', 'ezBar', 'trapBar', 'dumbbell', 'kettlebell', 'dipBelt'] },
+  { title: 'Benches and racks', items: ['flatBench', 'adjustableBench', 'squatRack', 'pullUpBar', 'dipStation', 'preacherBench', 'backExtension'],
+    foot: 'An adjustable bench also works for preacher curls.' },
+  { title: 'Cables', items: ['cableDual', 'cableColumn', 'latPulldown', 'lowRow'],
+    foot: 'A pulldown/row combo station is both a lat pulldown and a seated row.' },
+  { title: 'Cable attachments', items: ['rope', 'straightBar', 'singleHandle', 'vBar', 'ankleStrap'] },
+  { title: 'Machines', items: ['legPress', 'legExtension', 'legCurl', 'chestPressMachine', 'shoulderPressMachine', 'smithMachine'] },
+  { title: 'Small gear', items: ['resistanceBand', 'abWheel'] },
+];
+
+/** What an exercise needs, in words. */
+export const needTitle: Record<Need, string> = {
+  ...(equipmentTitle as unknown as Record<Need, string>),
+  bench: 'Bench', adjustableBench: 'Adjustable bench', preacherBench: 'Preacher bench (or adjustable bench)',
+  cableHigh: 'Cable, high pulley', cableLow: 'Cable, low pulley', cableAdjustable: 'Cable, adjustable height',
+  latPulldown: 'Lat pulldown',
+};
+
+export const loadTitle: Record<LoadKind, string> = {
+  barbell: 'Barbell', trapBar: 'Trap bar', ezBar: 'EZ bar', smithMachine: 'Smith machine', dumbbell: 'Dumbbells',
+  kettlebell: 'Kettlebells', plates: 'Plates', cable: 'Cables', latPulldown: 'Lat pulldown', legPress: 'Leg press',
+  legCurl: 'Leg curl', legExtension: 'Leg extension', chestPressMachine: 'Chest press', shoulderPressMachine: 'Shoulder press',
 };
 
 export const jointTitle = (j: Joint) => (j === 'lowerBack' ? 'Lower Back' : j.charAt(0).toUpperCase() + j.slice(1));

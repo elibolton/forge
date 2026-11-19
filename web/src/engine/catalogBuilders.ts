@@ -1,8 +1,8 @@
-import type { Equipment, Exercise, Joint, Level, MovementPattern, Muscle } from './models';
+import type { Exercise, Joint, Level, MovementPattern, Muscle, Need } from './models';
 
 interface Opts { compound: boolean; level?: Level; oneRM: number; joints?: Joint[]; timed?: boolean }
 
-export function ex(id: string, name: string, primary: Muscle[], secondary: Muscle[], equipment: Equipment[],
+export function ex(id: string, name: string, primary: Muscle[], secondary: Muscle[], equipment: Need[],
                    pattern: MovementPattern, o: Opts): Exercise {
   return {
     id, name, primary, secondary, equipment, pattern, isCompound: o.compound, level: o.level ?? 'beginner',
