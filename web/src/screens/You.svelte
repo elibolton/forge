@@ -4,9 +4,9 @@
   import { ChevronRight, MapPin, Trash2 } from '@lucide/svelte';
   import ActionMenu from '../components/ActionMenu.svelte';
   import BackBar from '../components/BackBar.svelte';
-  import { goalTitle, levelTitle, splitTitle, variabilityTitle } from '../lib/labels';
+  import { count, goalTitle, levelTitle, splitTitle, variabilityTitle } from '../lib/labels';
   import { type Route, nav } from '../lib/nav.svelte';
-  import { app } from '../lib/store.svelte';
+  import { app, restoreGym } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
 
   /** Pushed from Today rather than shown as its own tab. */
@@ -31,12 +31,16 @@
   function deleteGym(id: string) {
     // Always keep at least one gym.
     if (p.gyms.length <= 1) return toasts.show('You need at least one gym');
-    const before = structuredClone(p);
+    const index = p.gyms.findIndex((g) => g.id === id);
+    if (index === -1) return;
+    const gym = structuredClone($state.snapshot(p.gyms[index]));
+    const wasActive = p.activeGymID === id;
     app.updateProfile((x) => {
       x.gyms = x.gyms.filter((g) => g.id !== id);
       if (!x.gyms.some((g) => g.id === x.activeGymID)) x.activeGymID = x.gyms[0].id;
     });
-    toasts.show('Gym deleted', () => app.updateProfile((x) => { x.gyms = before.gyms; x.activeGymID = before.activeGymID; }));
+    // Undo puts back just this gym, where it was, leaving edits made to other gyms since.
+    toasts.show('Gym deleted', () => app.updateProfile((x) => { restoreGym(x, gym, index, wasActive); }));
   }
 
   function setPounds(pounds: boolean) {
@@ -67,7 +71,7 @@
       <div><span class="num">{levelTitle[p.plan.experience].slice(0, 3)}</span><span class="eyebrow">level</span></div>
       <div><span class="num">{app.logs.length}</span><span class="eyebrow">workouts</span></div>
     </div>
-    <div class="row caption muted" style="--gap:6px"><MapPin size={13} /> {app.activeGym.name} · {app.activeGym.equipment.length} pieces of equipment</div>
+    <div class="row caption muted" style="--gap:6px"><MapPin size={13} /> {app.activeGym.name} · {count(app.activeGym.equipment.length, 'piece of equipment', 'pieces of equipment')}</div>
   </section>
 
   <div class="section">

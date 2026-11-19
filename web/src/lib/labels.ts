@@ -9,7 +9,7 @@ export const goalBlurb: Record<Goal, string> = {
   buildMuscle: 'Add size with moderate weights and plenty of volume.',
   getLean: 'Keep your muscle while you lose fat.',
   getStronger: 'Lift heavier with lower reps and longer rests.',
-  reduceBodyweight: 'Burn more with circuits and shorter rests.',
+  reduceBodyweight: 'Burn more with higher reps and shorter rests.',
   improveFitness: 'All-round strength, stamina and movement.',
   powerlifting: 'Peak your squat, bench press and deadlift.',
 };
@@ -96,3 +96,6 @@ export function setLabels(sets: Pick<LoggedSet, 'isWarmup' | 'type'>[]): string[
   let n = 0;
   return sets.map((s) => (s.isWarmup ? 'W' : s.type === 'drop' ? 'D' : String(++n)));
 }
+
+/** "1 workout", "3 workouts"; `many` for irregular plurals ("pieces of equipment"). */
+export function count(n: number, one: string, many = `${one}s`): string { return `${n} ${n === 1 ? one : many}`; }

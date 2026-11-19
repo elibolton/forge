@@ -39,7 +39,13 @@
     <BackBar title={gym?.name ?? 'Gym'} />
     {#if gym}
       <div class="section" style="margin-top:12px">
-        <input type="text" aria-label="Gym name" value={gym.name} onchange={(e) => updateGym(gym.id, (g) => { g.name = (e.currentTarget as HTMLInputElement).value.trim() || g.name; })} />
+        <input type="text" aria-label="Gym name" value={gym.name} onchange={(e) => {
+          const input = e.currentTarget as HTMLInputElement;
+          const name = input.value.trim();
+          // An empty name keeps the old one; show it again rather than leave the field blank.
+          if (!name) { input.value = gym.name; return; }
+          updateGym(gym.id, (g) => { g.name = name; });
+        }} />
       </div>
       {#if gym.reviewEquipment}
         <div class="section"><div class="card stack notice" style="--gap:8px">

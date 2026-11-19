@@ -1,7 +1,7 @@
 <script lang="ts">
   import { EQUIPMENT, GOALS, type Gym, Gyms, LEVELS, SPLITS, type Split, defaultPlan, uuid } from '../engine';
   import { canPull } from '../lib/gymFit';
-  import { Building2, ChevronLeft, ChevronRight, Circle, CircleCheck, Footprints, House, TriangleAlert, Zap, Share, SquarePlus, Download } from '@lucide/svelte';
+  import { Building2, ChevronLeft, Dumbbell, ChevronRight, Circle, CircleCheck, Footprints, House, TriangleAlert, Zap, Share, SquarePlus, Download } from '@lucide/svelte';
   import Sheet from '../components/Sheet.svelte';
   import Toggle from '../components/Toggle.svelte';
   import { EQUIPMENT_GROUPS, equipmentTitle, goalBlurb, goalTitle, levelBlurb, levelTitle, splitBlurb, splitTitle } from '../lib/labels';
@@ -12,6 +12,7 @@
   const recommendedSplit = (days: number): Split => (days <= 3 ? 'fullBody' : days === 4 ? 'upperLower' : 'pushPullLegs');
   const PRESETS = [
     { title: 'Full Gym', detail: 'Barbells, racks, cables and machines', icon: Building2, gym: Gyms.commercial },
+    { title: 'Home Gym (Barbell + Cables)', detail: 'Barbell, rack, dumbbells, bench, dip station, pulldown and row', icon: Dumbbell, gym: Gyms.homeBarbell },
     { title: 'Home Gym', detail: 'Dumbbells, adjustable bench, pull-up bar, bands', icon: House, gym: Gyms.home },
     { title: 'No Equipment', detail: 'Bodyweight moves only', icon: Footprints, gym: Gyms.bodyweight },
   ];
@@ -37,10 +38,10 @@
 </script>
 
 {#snippet option(title: string, detail: string, selected: boolean, onclick: () => void, Icon?: typeof Zap)}
-  <button class="card option" class:selected aria-pressed={selected} {onclick}>
+  <button class="card option" class:selected role="radio" aria-checked={selected} {onclick}>
     {#if Icon}<span class="ico"><Icon size={22} /></span>{/if}
     <span class="grow" style="text-align:left"><span class="bold">{title}</span><br /><span class="sub muted">{detail}</span></span>
-    {#if selected}<CircleCheck size={24} color="var(--accent)" />{:else}<Circle size={24} color="var(--muted)" />{/if}
+    {#if selected}<CircleCheck size={24} color="var(--accent)" aria-hidden="true" />{:else}<Circle size={24} color="var(--muted)" aria-hidden="true" />{/if}
   </button>
 {/snippet}
 
@@ -52,23 +53,26 @@
 {/snippet}
 
 <div class="onboarding">
-  <div class="dots" aria-label="Step {page + 1} of {PAGES.length}">
+  <div class="dots">
     <span class="brand eyebrow" aria-hidden="true">Forge</span>
-    {#each PAGES as _, i (i)}<span class:on={i <= page} class:now={i === page}></span>{/each}
+    <span class="sr-only">Step {page + 1} of {PAGES.length}</span>
+    {#each PAGES as _, i (i)}<span class:on={i <= page} class:now={i === page} aria-hidden="true"></span>{/each}
     {#if page < 4}<button class="skip muted" onclick={() => (page = 4)}>Skip</button>{/if}
   </div>
 
   <div class="body stack">
     {#if PAGES[page] === 'goal'}
       {@render pageTitle("What's your goal?", 'Forge builds every workout around it. You can change this anytime in You.')}
-      {#each GOALS as g (g)}{@render option(goalTitle[g], goalBlurb[g], plan.goal === g, () => (plan.goal = g))}{/each}
+      <div class="stack" role="radiogroup" aria-label="Goal">
+        {#each GOALS as g (g)}{@render option(goalTitle[g], goalBlurb[g], plan.goal === g, () => (plan.goal = g))}{/each}
+      </div>
     {:else if PAGES[page] === 'schedule'}
       {@render pageTitle('Your schedule', 'How often and how long you can train.')}
       <div class="card stack">
         <div class="bold">Days per week</div>
-        <div class="row" style="--gap:8px">
+        <div class="row" style="--gap:8px" role="radiogroup" aria-label="Days per week">
           {#each [2, 3, 4, 5, 6] as n (n)}
-            <button class="day" class:on={days === n} aria-pressed={days === n} aria-label="{n} days"
+            <button class="day" class:on={days === n} role="radio" aria-checked={days === n} aria-label="{n} days"
               onclick={() => { days = n; plan.split = recommendedSplit(n); }}>{n}</button>
           {/each}
         </div>
@@ -76,8 +80,8 @@
       <div class="card stack">
         <div class="bold">Split</div>
         <p class="sub muted">We recommend {splitTitle[recommendedSplit(days)]} for {days} days a week.</p>
-        <div class="row wrap" style="--gap:8px">
-          {#each SPLITS as s (s)}<button class="chip" class:on={plan.split === s} aria-pressed={plan.split === s} onclick={() => (plan.split = s)}>{splitTitle[s]}</button>{/each}
+        <div class="row wrap" style="--gap:8px" role="radiogroup" aria-label="Split">
+          {#each SPLITS as s (s)}<button class="chip" class:on={plan.split === s} role="radio" aria-checked={plan.split === s} onclick={() => (plan.split = s)}>{splitTitle[s]}</button>{/each}
         </div>
         <p class="caption muted">{splitBlurb[plan.split]}</p>
       </div>
@@ -88,10 +92,14 @@
       </div>
     {:else if PAGES[page] === 'experience'}
       {@render pageTitle('How experienced are you?', 'Sets starting volume and how hard Forge pushes progression.')}
-      {#each LEVELS as l (l)}{@render option(levelTitle[l], levelBlurb[l], plan.experience === l, () => (plan.experience = l))}{/each}
+      <div class="stack" role="radiogroup" aria-label="Experience">
+        {#each LEVELS as l (l)}{@render option(levelTitle[l], levelBlurb[l], plan.experience === l, () => (plan.experience = l))}{/each}
+      </div>
     {:else if PAGES[page] === 'gym'}
       {@render pageTitle('Where do you train?', 'Forge only suggests exercises you have the equipment for.')}
-      {#each PRESETS as p, i (i)}{@render option(p.title, p.detail, preset === i, () => { preset = i; gym = p.gym(); }, p.icon)}{/each}
+      <div class="stack" role="radiogroup" aria-label="Gym">
+        {#each PRESETS as p, i (i)}{@render option(p.title, p.detail, preset === i, () => { preset = i; gym = p.gym(); }, p.icon)}{/each}
+      </div>
       <div class="list">
         <label class="item"><span class="muted">Name</span><input type="text" bind:value={gym.name} placeholder={PRESETS[preset].gym().name} style="text-align:right;background:transparent" /></label>
         <button class="item" onclick={() => (editingGym = true)}>Customize equipment <span class="value mono">{gym.equipment.length}</span><ChevronRight size={16} color="var(--muted)" /></button>
@@ -161,7 +169,7 @@
   .onboarding { min-height: 100dvh; display: flex; flex-direction: column; max-width: 620px; margin: 0 auto; padding: calc(var(--safe-top) + 8px) 20px calc(var(--safe-bottom) + 12px);
     position: relative; }
   .dots { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px 0 18px; position: relative; min-height: 48px; }
-  .dots span:not(.brand) { width: 6px; height: 6px; border-radius: 3px; background: var(--surface-3); transition: width 0.35s var(--ease), background 0.3s; }
+  .dots span:not(.brand):not(.sr-only) { width: 6px; height: 6px; border-radius: 3px; background: var(--surface-3); transition: width 0.35s var(--ease), background 0.3s; }
   .dots span.on { background: var(--ember-2); }
   .dots span.now { width: 24px; background: var(--ember-gradient); box-shadow: 0 0 10px var(--ember-glow); }
   .brand { position: absolute; left: 0; color: var(--ember-2) !important; letter-spacing: 0.3em; }

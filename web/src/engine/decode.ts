@@ -74,12 +74,19 @@ function upgradeEquipment(raw: unknown[]): { equipment: Equipment[]; review: boo
   return { equipment: EQUIPMENT.filter((e) => out.has(e)), review: old.size > 0 };
 }
 
-export function readGym(v: unknown): Gym | undefined {
+/** Weight steps above this are corrupt or a typo (they'd round every suggestion to the starting weight). */
+const MAX_INCREMENT = 50;
+
+/**
+ * A stored gym. One saved without an id gets `fallbackID` (stable, e.g. from its place in the list) so it
+ * keeps the same id from one read to the next; with none given it gets a random one.
+ */
+export function readGym(v: unknown, fallbackID?: string): Gym | undefined {
   if (!isObj(v)) return undefined;
   const increments: Gym['increments'] = {};
   if (isObj(v.increments)) {
     for (const [k, n] of Object.entries(v.increments)) {
-      if ((LOAD_KINDS as readonly string[]).includes(k) && typeof n === 'number' && n > 0) (increments as Record<string, number>)[k] = n;
+      if ((LOAD_KINDS as readonly string[]).includes(k) && typeof n === 'number' && n > 0 && n <= MAX_INCREMENT) (increments as Record<string, number>)[k] = n;
     }
   }
   const raw = Array.isArray(v.equipment) ? v.equipment : [];
@@ -87,7 +94,7 @@ export function readGym(v: unknown): Gym | undefined {
   const upgraded = num(v.equipmentVersion, 1) < 2 ? upgradeEquipment(raw) : { equipment: known(EQUIPMENT, raw), review: false };
   const review = upgraded.review || bool(v.reviewEquipment, false);
   return {
-    id: str(v.id, uuid()), name: str(v.name, 'Gym'), equipment: upgraded.equipment, equipmentVersion: 2,
+    id: str(v.id, fallbackID ?? uuid()), name: str(v.name, 'Gym'), equipment: upgraded.equipment, equipmentVersion: 2,
     usesPounds: bool(v.usesPounds, false), increments, ...(review ? { reviewEquipment: true } : {}),
   };
 }
@@ -95,7 +102,8 @@ export function readGym(v: unknown): Gym | undefined {
 export function readSet(v: unknown): LoggedSet | undefined {
   if (!isObj(v)) return undefined;
   return {
-    weight: num(v.weight, 0), reps: Math.trunc(num(v.reps, 0)), rir: optNum(v.rir), isWarmup: bool(v.isWarmup, false),
+    // Never negative: a negative weight or rep count would only lower volume totals.
+    weight: Math.max(0, num(v.weight, 0)), reps: Math.max(0, Math.trunc(num(v.reps, 0))), rir: optNum(v.rir), isWarmup: bool(v.isWarmup, false),
     side: v.side === 'left' || v.side === 'right' ? v.side : null,
     ...(v.type === 'drop' || v.type === 'failure' ? { type: v.type } : {}),
   };

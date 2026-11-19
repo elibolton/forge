@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { openOverlay } from '../lib/overlays';
   import { portal } from '../lib/portal';
 
   let { title = '', onclose, children, trailing, leading, full = false }: {
@@ -67,17 +68,12 @@
     };
   });
 
+  // Escape closes only the top-most sheet or menu; the page stays locked until the last sheet closes;
+  // focus goes back to what opened it.
   $effect(() => {
-    const previous = document.activeElement as HTMLElement | null;
+    const close = openOverlay(() => onclose(), { lockScroll: true });
     panel?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onclose(); };
-    document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
-      previous?.focus?.();
-    };
+    return () => close();
   });
 </script>
 
@@ -105,7 +101,8 @@
   .grabber { width: 38px; height: 5px; border-radius: 3px; background: var(--surface-3); margin: 8px auto 0; flex: none; }
   header { padding: 2px 18px 0; flex: none; }
   .title { font-family: var(--font-display); font-stretch: 112%; font-weight: 750; }
-  .side { width: 84px; display: flex; }
+  /* At least 84px so the title stays centred, wider for a longer label ("Keep Going") rather than wrapping it. */
+  .side { min-width: 84px; display: flex; white-space: nowrap; }
   .side.end { justify-content: flex-end; }
   .body { overscroll-behavior: contain; overflow-y: auto; padding: 10px 18px calc(var(--safe-bottom) + 28px); -webkit-overflow-scrolling: touch; flex: 1; }
   @keyframes rise { from { transform: translateY(60px); opacity: 0; } }

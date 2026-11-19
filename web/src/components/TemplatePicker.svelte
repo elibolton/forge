@@ -3,6 +3,7 @@
   import { Bookmark, Ellipsis } from '@lucide/svelte';
   import type { WorkoutTemplate } from '../lib/templates';
   import { sessionFromTemplate } from '../lib/templateStart';
+  import { count } from '../lib/labels';
   import { addMobility } from '../lib/mobility';
   import { session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
@@ -51,7 +52,7 @@
           <button class="grow stack" style="--gap:4px;text-align:left" onclick={() => start(t)}>
             <span class="bold">{t.name}</span>
             <span class="caption muted one-line">{t.exercises.map((x) => Catalog.exercise(x.exerciseID).name).join(' · ')}</span>
-            <span class="caption faint">{t.exercises.length} exercises · {t.exercises.reduce((n, x) => n + x.sets, 0)} sets{t.lastUsed ? ` · last done ${new Date(t.lastUsed).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</span>
+            <span class="caption faint">{count(t.exercises.length, 'exercise')} · {count(t.exercises.reduce((n, x) => n + x.sets, 0), 'set')}{t.lastUsed ? ` · last done ${new Date(t.lastUsed).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</span>
           </button>
           <ActionMenu label="{t.name} options" items={[
             { label: 'Start', action: () => start(t) },

@@ -1,4 +1,4 @@
-import { focusTitle } from './labels';
+import { dayTitle } from './labels';
 import { type WorkoutLog, app, logVolume } from './store.svelte';
 import { toasts } from './toasts.svelte';
 import type { WeightUnits } from './units';
@@ -14,7 +14,8 @@ export function logSummary(log: WorkoutLog, units: WeightUnits): string {
   ].filter(Boolean).join(' · ');
 }
 
-export const logTitle = (log: WorkoutLog) => (log.focus ? `${focusTitle[log.focus]} Day` : 'Workout');
+/** The same name Today and the logger used: a saved workout's name, a program day, or the day's focus. */
+export const logTitle = (log: WorkoutLog) => log.title ?? (log.focus ? dayTitle(log.focus) : 'Workout');
 
 /** Deletes with an Undo banner that restores the identical workout. */
 export function deleteLog(log: WorkoutLog) {

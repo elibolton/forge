@@ -16,6 +16,8 @@
     const elapsed = minSec((now - ws.startedAt) / 1000);
     if (!current) return elapsed;
     const working = numberedSets(current.sets);
+    // Nothing to count (no working sets yet): "Set 0 of 0" would read as broken.
+    if (!working.length) return elapsed;
     const next = Math.min(working.filter((s) => s.done).length + 1, working.length);
     return `Set ${next} of ${working.length} · ${elapsed}`;
   });

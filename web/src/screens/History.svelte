@@ -51,9 +51,9 @@
         <Search size={17} color="var(--text-3)" />
         <input type="search" placeholder="Search by exercise" bind:value={query} aria-label="Search workouts by exercise" />
       </label>
-      <div class="row" style="--gap:6px;overflow-x:auto">
+      <div class="row" style="--gap:6px;overflow-x:auto" role="radiogroup" aria-label="Show">
         {#each [['all', 'All'], ['program', 'Program'], ['generated', 'Generated'], ['imported', 'Imported']] as [k, label] (k)}
-          <button class="chip" class:on={kind === k} aria-pressed={kind === k} onclick={() => { kind = k as Kind; shown = 60; }}>{label}</button>
+          <button class="chip" class:on={kind === k} role="radio" aria-checked={kind === k} onclick={() => { kind = k as Kind; shown = 60; }}>{label}</button>
         {/each}
       </div>
       <p class="caption faint" aria-live="polite">{filtered.length} {filtered.length === 1 ? 'workout' : 'workouts'}</p>

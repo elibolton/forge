@@ -1,5 +1,5 @@
 import {
-  Catalog, type DayFocus, type Exercise, type Gym, Gyms, type LoggedExercise, type LoggedSet, Planner, Programs,
+  Catalog, DAY_FOCUSES, type DayFocus, type Exercise, type Gym, Gyms, type LoggedExercise, type LoggedSet, Planner, Programs,
   type ProgramProgress, type ProgramRef, type RecoveryOverride, type UserPlan, type WorkoutProgram, type WorkoutRecord,
   completeDay, defaultPlan, lossy, oneRM, readExercise, readGym, readLogged, readOverrides, readPlan, readProgramRef,
   readProgress, uuid, workingSets, loadEquipment, POUNDS_PER_KG, gymIncrement,
@@ -75,9 +75,20 @@ export interface WorkoutLog {
   exercises: LoggedExercise[];
   /** The program day this was, if any. */
   program: ProgramRef | null;
+  /** What the logger called it, e.g. a saved workout's name or "Week 2 · Pull". */
+  title?: string;
 }
 
-export const logRecord = (l: WorkoutLog): WorkoutRecord => ({ date: l.date, focus: l.focus, exercises: l.exercises, program: l.program });
+/**
+ * Undo for deleting a gym: puts back just that gym at its old place (and makes it active again if it
+ * was), leaving any change made to other gyms since.
+ */
+export function restoreGym(p: Profile, gym: Gym, index: number, wasActive: boolean) {
+  if (!p.gyms.some((g) => g.id === gym.id)) p.gyms.splice(Math.min(index, p.gyms.length), 0, gym);
+  if (wasActive) p.activeGymID = gym.id;
+}
+
+export const logRecord =(l: WorkoutLog): WorkoutRecord => ({ date: l.date, focus: l.focus, exercises: l.exercises, program: l.program });
 
 /** Total weight moved in working sets (kg). */
 export const logVolume = (l: WorkoutLog) =>
@@ -88,7 +99,8 @@ const isObj = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !
 
 function readProfile(v: unknown): Profile | null {
   if (!isObj(v)) return null;
-  const gyms = lossy(v.gyms, readGym);
+  // A gym stored without an id gets one from its place in the list, the same on every read.
+  const gyms = Array.isArray(v.gyms) ? v.gyms.flatMap((g, i) => readGym(g, `gym-${i + 1}`) ?? []) : [];
   const safeGyms = gyms.length ? gyms : [Gyms.commercial()];
   return {
     plan: readPlan(v.plan),
@@ -161,10 +173,12 @@ function readLog(v: unknown): WorkoutLog | undefined {
   return {
     id: typeof v.id === 'string' ? v.id : uuid(),
     date: v.date,
-    focus: typeof v.focus === 'string' ? (v.focus as DayFocus) : null,
+    // A focus this version doesn't know would title the workout "undefined Day".
+    focus: (DAY_FOCUSES as readonly unknown[]).includes(v.focus) ? (v.focus as DayFocus) : null,
     durationSeconds: typeof v.durationSeconds === 'number' ? v.durationSeconds : 0,
     exercises: lossy(v.exercises, readLogged),
     program: readProgramRef(v.program),
+    ...(typeof v.title === 'string' && v.title.trim() ? { title: v.title.trim() } : {}),
   };
 }
 

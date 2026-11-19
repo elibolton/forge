@@ -17,6 +17,7 @@
   import BackupNudge from '../components/BackupNudge.svelte';
   import WeekStrip from '../components/WeekStrip.svelte';
   import ActivitySheet from '../components/ActivitySheet.svelte';
+  import { currentTime } from '../lib/clock.svelte';
   import { nav } from '../lib/nav.svelte';
   import {
     type ProgramDayEdits, type ProgramDayItem, dayPlanMinutes, editsKey, loadEdits, makeDayPlan, saveEdits, startDayPlan,
@@ -37,8 +38,8 @@
   const active = $derived(app.activeProgram!);
   // Re-reads day-of edits and history whenever either changes.
   const plan = $derived.by(() => { void app.kv; void app.logs; return makeDayPlan(active.program, active.progress); });
-  const trainedToday = $derived(app.logs[0] && isSameDay(app.logs[0].date, Date.now()) ? app.logs[0] : undefined);
-  const isRestDay = $derived(scheduledOn(active.program, new Date()) === null);
+  const trainedToday = $derived(app.logs[0] && isSameDay(app.logs[0].date, currentTime()) ? app.logs[0] : undefined);
+  const isRestDay = $derived(scheduledOn(active.program, new Date(currentTime())) === null);
   const showRest = $derived(isRestDay && !trainedToday && !trainOnRestDay);
   const dueWeek = $derived(checkInDue(active.progress, active.program));
 

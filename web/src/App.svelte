@@ -33,6 +33,7 @@
   ];
 
   import { tick } from 'svelte';
+  import { portal } from './lib/portal';
 
   const route = $derived(nav.top);
 
@@ -91,7 +92,13 @@
     if (go) {
       el.style.transform = `translateX(${innerWidth}px)`;
       el.style.opacity = '0';
-      setTimeout(() => { nav.pop(); el.style.transition = el.style.transform = el.style.opacity = ''; }, 200);
+      // Leave the departing screen off to the side: going back through history swaps it out a moment
+      // later, and resetting it now would flash it back into view first. Only if it's somehow still
+      // here after that (the pop didn't happen) put it back.
+      setTimeout(() => {
+        nav.pop();
+        setTimeout(() => { if (el.isConnected) el.style.transition = el.style.transform = el.style.opacity = ''; }, 500);
+      }, 200);
     } else {
       el.style.transform = '';
       el.style.opacity = '';
@@ -152,13 +159,18 @@
 {/snippet}
 </svelte:boundary>
 
-<ToastHost />
-{#if saving.error}<SaveErrorBanner />{/if}
-<!-- Never interrupt a set: the banner waits until the logger is closed. -->
-{#if sync.stale && app.ready && !(session.isActive && session.isExpanded)}<StaleBanner />
-{:else if updates.ready && !(session.isActive && session.isExpanded)}<UpdateBanner />{/if}
+<!-- Banners and toasts share one column at the top, so none covers another's buttons. On <body>, above any open sheet. -->
+<div class="top-stack" use:portal>
+  {#if saving.error}<SaveErrorBanner />{/if}
+  <!-- Never interrupt a set: the banner waits until the logger is closed. -->
+  {#if sync.stale && app.ready && !(session.isActive && session.isExpanded)}<StaleBanner />
+  {:else if updates.ready && !(session.isActive && session.isExpanded)}<UpdateBanner />{/if}
+  <ToastHost />
+</div>
 
 <style>
+  .top-stack { position: fixed; top: calc(var(--safe-top) + 10px); left: 12px; right: 12px; z-index: 100; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .nav-screen { will-change: transform; }
   .nav-screen.forward { animation: in-right 0.38s var(--ease); }
   .nav-screen.back { animation: in-left 0.38s var(--ease); }

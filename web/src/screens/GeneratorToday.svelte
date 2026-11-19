@@ -18,7 +18,8 @@
   import BackupNudge from '../components/BackupNudge.svelte';
   import WeekStrip from '../components/WeekStrip.svelte';
   import ActivitySheet from '../components/ActivitySheet.svelte';
-  import { dayTitle, focusTitle, goalTitle, swappableFocuses } from '../lib/labels';
+  import { clock, currentTime } from '../lib/clock.svelte';
+  import { count, dayTitle, focusTitle, goalTitle, swappableFocuses } from '../lib/labels';
   import { nav } from '../lib/nav.svelte';
   import { type TodayPlan, buildToday, isTodayPlanCurrent, planBasis, withoutDuplicateExercises } from '../lib/plans';
   import { session } from '../lib/session.svelte';
@@ -39,7 +40,7 @@
   const saved = $derived(app.get<TodayPlan>('todayPlan'));
   // A plan saved with an exercise twice would crash the list; show it once, and save it that way.
   const today = $derived(saved && withoutDuplicateExercises(saved));
-  const trainedToday = $derived(app.logs[0] && isSameDay(app.logs[0].date, Date.now()) ? app.logs[0] : undefined);
+  const trainedToday = $derived(app.logs[0] && isSameDay(app.logs[0].date, currentTime()) ? app.logs[0] : undefined);
   const chosenMinutes = $derived(today?.minutes ?? profile.plan.sessionMinutes);
   const planner = $derived(app.planner(today?.minutes));
 
@@ -47,7 +48,9 @@
     if (saved && today && today !== saved) app.set('todayPlan', $state.snapshot(today));
   });
   // Keeps the saved plan if it's still today's and nothing was logged since; otherwise builds the next one.
+  // Re-checked at midnight too, so an app left open overnight doesn't keep yesterday's plan.
   $effect(() => {
+    void clock.today;
     if (!today || !isTodayPlanCurrent(today, app.logs.length)) rebuild(null, null, null);
   });
   // Coming back to the app on a new day.
@@ -281,7 +284,7 @@
 
     <div class="row between section-row">
       <h2 class="eyebrow">The session</h2>
-      <span class="caption faint">{workout.exercises.length} exercises{app.profile?.mobility.warmup || app.profile?.mobility.cooldown ? ' + stretches' : ''}</span>
+      <span class="caption faint">{count(workout.exercises.length, 'exercise')}{app.profile?.mobility.warmup || app.profile?.mobility.cooldown ? ' + stretches' : ''}</span>
     </div>
     <div class="stack" style="--gap:10px">
       {#each workout.exercises as p, i (p.exercise.id)}
