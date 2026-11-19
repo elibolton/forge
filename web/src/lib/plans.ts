@@ -36,7 +36,7 @@ export function planBasis(p: Profile): string {
   return [
     plan.goal, plan.experience, plan.split, plan.sessionMinutes, plan.variability, plan.warmUpSets,
     [...plan.injuries].sort().join(','), gym?.id, [...(gym?.equipment ?? [])].sort().join(','), gym?.usesPounds,
-    increments.join(','), overrides.join(','),
+    increments.join(','), overrides.join(','), p.activities.map((a) => a.id).sort().join(','),
   ].join('|');
 }
 

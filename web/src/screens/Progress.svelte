@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Catalog, MUSCLES, type Muscle, Planner, computeRecovery, muscleName, oneRM, workingSets } from '../engine';
-  import { ChevronRight } from '@lucide/svelte';
+  import { ChevronRight, Trophy } from '@lucide/svelte';
   import ExerciseThumb from '../components/ExerciseThumb.svelte';
   import LineChart from '../components/LineChart.svelte';
   import BodyMap from '../components/BodyMap.svelte';
@@ -9,6 +9,7 @@
   import WorkoutCalendar from '../components/WorkoutCalendar.svelte';
   import { nav } from '../lib/nav.svelte';
   import { app } from '../lib/store.svelte';
+  import { goalStreak, weeklyCounts } from '../lib/weeks';
 
   const BENCHMARKS = ['bb-squat', 'bb-bench', 'bb-deadlift', 'bb-ohp'];
 
@@ -16,7 +17,7 @@
   let adjustValue = $state(1);
 
   const planner = $derived(app.planner());
-  const recovery = $derived(computeRecovery({ history: app.records, overrides: app.profile!.overrides, now: Date.now() }));
+  const recovery = $derived(computeRecovery({ history: app.records, external: app.external, overrides: app.profile!.overrides, now: Date.now() }));
   const weekly = $derived(planner.weeklySets());
   const fresh = $derived(Planner.freshGroupNames(recovery));
 
@@ -27,25 +28,14 @@
 
   const daysSinceLast = $derived(app.logs[0] ? Math.round((startOfDay(Date.now()) - startOfDay(app.logs[0].date)) / DAY) : null);
   const thisWeek = $derived(app.logs.filter((l) => l.date >= weekStart(Date.now())).length);
-  /** Consecutive weeks (including this one or last) with at least one workout. */
-  const streak = $derived.by(() => {
-    const weeks = new Set(app.logs.map((l) => weekStart(l.date)));
-    let week = weekStart(Date.now());
-    if (!weeks.has(week)) week = weekStart(week - 3 * DAY);
-    let n = 0;
-    while (weeks.has(week)) { n++; week = weekStart(week - 3 * DAY); }
-    return n;
-  });
-
+  const goal = $derived(app.profile!.weeklyGoal);
+  const dates = $derived(app.logs.map((l) => l.date));
+  /** Consecutive weeks that hit the weekly goal. */
+  const streak = $derived(goalStreak(dates, goal));
   /** Workouts in each of the last 8 weeks, oldest first. */
-  const weeksBars = $derived.by(() => {
-    const start = weekStart(Date.now());
-    return Array.from({ length: 8 }, (_, i) => {
-      const from = weekStart(start - (7 - i) * 7 * DAY + DAY), to = from + 7 * DAY;
-      return app.logs.filter((l) => l.date >= from && l.date < to).length;
-    });
-  });
-  const maxBar = $derived(Math.max(3, ...weeksBars));
+  const weeksBars = $derived(weeklyCounts(dates, 8));
+  const maxBar = $derived(Math.max(goal + 1, ...weeksBars));
+  const recentPRs = $derived(app.prEvents.slice(0, 5));
   const overall = $derived(MUSCLES.reduce((t, m) => t + (recovery[m] ?? 1), 0) / MUSCLES.length);
 
   const best = (id: string) => app.derivedHistory.bestOneRM.get(id);
@@ -75,17 +65,18 @@
 
   <div class="bento">
     <div class="tile streak">
-      <span class="eyebrow">Week streak</span>
+      <span class="eyebrow">Goal streak</span>
       <span class="num huge gradient-text">{streak}</span>
       <div class="bars" aria-label="Workouts per week, last 8 weeks">
-        {#each weeksBars as n, i (i)}<i class:now={i === 7} style="height:{Math.max(6, (n / maxBar) * 100)}%" title="{n} workouts"></i>{/each}
+        <span class="goal-line" style="bottom:{(goal / maxBar) * 100}%"></span>
+        {#each weeksBars as n, i (i)}<i class:now={i === 7} class:hit={n >= goal} style="height:{Math.max(6, (n / maxBar) * 100)}%" title="{n} workouts"></i>{/each}
       </div>
-      <span class="caption faint">{streak === 1 ? 'week' : 'weeks'} in a row with a workout</span>
+      <span class="caption faint">{streak === 1 ? 'week' : 'weeks'} in a row hitting {goal} workouts</span>
     </div>
     <div class="tile">
       <span class="eyebrow">This week</span>
-      <span class="num big">{thisWeek}</span>
-      <span class="caption faint">{thisWeek === 1 ? 'workout' : 'workouts'}</span>
+      <span class="num big">{thisWeek}<span class="of" style="margin-left:4px">/ {goal}</span></span>
+      <span class="caption" style="color:{thisWeek >= goal ? 'var(--fresh)' : 'var(--text-3)'}">{thisWeek >= goal ? 'goal met' : `${goal - thisWeek} to go`}</span>
     </div>
     <div class="tile">
       <span class="eyebrow">Last workout</span>
@@ -147,6 +138,27 @@
       {/each}
     </div>
   </section>
+
+  {#if recentPRs.length}
+    <section class="stack" style="--gap:12px">
+      <div class="row between head-row"><h2 class="eyebrow">Recent records</h2><span class="caption faint">{app.prEvents.length} all time</span></div>
+      <div class="card stack" style="--gap:0">
+        {#each recentPRs as pr (pr.logID + pr.exerciseID)}
+          <button class="lift row" onclick={() => nav.push({ name: 'log', id: pr.logID })}>
+            <span class="trophy"><Trophy size={16} /></span>
+            <span class="grow stack" style="--gap:2px;text-align:left">
+              <span class="sub semibold">{Catalog.exercise(pr.exerciseID).name}</span>
+              <span class="caption faint">{new Date(pr.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · est. 1RM</span>
+            </span>
+            <span class="stack" style="--gap:2px;align-items:flex-end">
+              <span class="num">{app.units.format(pr.oneRM)}</span>
+              <span class="caption" style="color:var(--fresh)">+{app.units.format(pr.oneRM - pr.previous)}</span>
+            </span>
+          </button>
+        {/each}
+      </div>
+    </section>
+  {/if}
 </div>
 
 {#if adjusting}
@@ -168,9 +180,12 @@
   .streak { grid-row: span 2; background: radial-gradient(90% 60% at 100% 0%, rgba(255, 90, 31, 0.22), transparent 70%), linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)); }
   .huge { font-size: 3.6rem; font-stretch: 125%; font-weight: 800; line-height: 0.95; }
   .big { font-size: 2.1rem; font-stretch: 125%; font-weight: 800; line-height: 1; }
+  .of { font-size: 1.1rem; color: var(--text-3); }
   .pct { font-size: 1rem; opacity: 0.7; margin-left: 2px; }
-  .bars { display: flex; align-items: flex-end; gap: 4px; flex: 1; min-height: 54px; margin: 8px 0 4px; }
+  .bars { position: relative; display: flex; align-items: flex-end; gap: 4px; flex: 1; min-height: 54px; margin: 8px 0 4px; }
   .bars i { flex: 1; border-radius: 3px; background: rgba(255, 255, 255, 0.12); }
+  .bars i.hit { background: rgba(255, 166, 70, 0.55); }
+  .goal-line { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(255, 255, 255, 0.35); pointer-events: none; }
   .bars i.now { background: var(--ember-gradient); box-shadow: 0 0 12px var(--ember-glow); }
   .figure { padding: 8px 0; background: radial-gradient(55% 60% at 50% 45%, rgba(255, 255, 255, 0.04), transparent 70%); }
   .head-row { padding: 0 4px; }
@@ -181,5 +196,6 @@
   .track i.full { background: linear-gradient(90deg, rgba(60, 239, 176, 0.6), var(--fresh)); }
   .lift { padding: 10px 0; border-top: 1px solid var(--hairline); }
   .lift:first-of-type { border-top: 0; }
+  .trophy { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; color: var(--recovering); background: rgba(255, 187, 69, 0.14); flex: none; }
   .lift:active { transform: none; opacity: 0.7; }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Catalog } from '../engine';
-  import { ChevronRight } from '@lucide/svelte';
+  import { ChevronRight, Trophy } from '@lucide/svelte';
   import BackBar from '../components/BackBar.svelte';
   import LogEditor from '../components/LogEditor.svelte';
   import SetLine from '../components/SetLine.svelte';
@@ -33,8 +33,10 @@
     </div>
     {#each log.exercises as logged, i (i)}
       {@const e = Catalog.exercise(logged.exerciseID)}
+      {@const isPR = app.prEvents.some((p) => p.logID === log.id && p.exerciseID === e.id)}
       <div class="section">
-        <button class="head row link" style="--gap:4px;text-transform:none;font-size:0.95rem" onclick={() => nav.push({ name: 'exercise', id: e.id })}>{e.name} <ChevronRight size={14} /></button>
+        <button class="head row link" style="--gap:6px;text-transform:none;font-size:0.95rem" onclick={() => nav.push({ name: 'exercise', id: e.id })}>
+          {e.name} {#if isPR}<span class="kicker prbadge"><Trophy size={11} /> PR</span>{/if} <ChevronRight size={14} /></button>
         <div class="list">
           {#each logged.sets as set, j (j)}
             <div class="item"><SetLine {set} exercise={e} label={set.isWarmup ? 'W' : `${logged.sets.slice(0, j).filter((s) => !s.isWarmup).length + 1}`} /></div>
@@ -48,3 +50,7 @@
 {#if editing && log}
   <LogEditor {log} onclose={() => (editing = false)} ondelete={remove} />
 {/if}
+
+<style>
+  .prbadge { display: inline-flex; align-items: center; gap: 3px; padding: 3px 7px; border-radius: 6px; color: var(--recovering); background: rgba(255, 187, 69, 0.14); }
+</style>

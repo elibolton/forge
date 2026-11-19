@@ -12,6 +12,8 @@
   import FatigueCheckInSheet from '../components/FatigueCheckInSheet.svelte';
   import TrainedCard from '../components/TrainedCard.svelte';
   import BackupNudge from '../components/BackupNudge.svelte';
+  import WeekStrip from '../components/WeekStrip.svelte';
+  import ActivitySheet from '../components/ActivitySheet.svelte';
   import { nav } from '../lib/nav.svelte';
   import {
     type ProgramDayEdits, type ProgramDayItem, dayPlanMinutes, editsKey, loadEdits, makeDayPlan, saveEdits, startDayPlan,
@@ -21,6 +23,7 @@
   import { toasts } from '../lib/toasts.svelte';
   import { isSameDay } from '../lib/units';
 
+  let loggingActivity = $state(false);
   let { onUseGenerator }: { onUseGenerator: () => void } = $props();
 
   let replacing = $state<ProgramDayItem | null>(null);
@@ -117,6 +120,7 @@
     { label: 'Skip This Day', action: skipToday },
     { label: 'Use Generator Today', action: onUseGenerator },
     { label: 'Empty Workout', action: () => session.startEmpty() },
+    { label: 'Log Cardio or Activity', action: () => (loggingActivity = true) },
   ]);
 </script>
 
@@ -176,6 +180,8 @@
       {/snippet}
     </HeroCard>
 
+    <WeekStrip />
+
     {#if rule.notes.length}
       <div class="card tight stack" style="--gap:8px">
         {#each rule.notes as n (n)}<div class="row sub" style="--gap:10px;align-items:flex-start"><Info size={16} color="var(--ember-2)" style="flex:none;margin-top:2px" /> {n}</div>{/each}
@@ -234,6 +240,7 @@
   {/if}
 </div>
 
+{#if loggingActivity}<ActivitySheet onclose={() => (loggingActivity = false)} />{/if}
 {#if replacing}
   {@const r = replacing}
   <ExercisePicker title="Swap {rxExercise(r.prescription).name}" exercises={app.planner().alternatives(rxExercise(r.prescription))}

@@ -42,6 +42,7 @@
     app.updateProfile((x) => { x.usesPounds = pounds; x.gyms = x.gyms.map((g) => ({ ...g, usesPounds: pounds, increments: {} })); });
   }
 
+  const goalStep = (by: number) => app.updateProfile((x) => { x.weeklyGoal = Math.min(7, Math.max(1, x.weeklyGoal + by)); });
   const sessionStep = (by: number) => app.updatePlan((x) => { x.sessionMinutes = Math.min(90, Math.max(15, x.sessionMinutes + by)); });
 </script>
 
@@ -90,6 +91,13 @@
         <div class="segmented" style="width:110px">
           <button aria-label="Shorter session" disabled={p.plan.sessionMinutes <= 15} onclick={() => sessionStep(-5)}>−</button>
           <button aria-label="Longer session" disabled={p.plan.sessionMinutes >= 90} onclick={() => sessionStep(5)}>+</button>
+        </div>
+      </div>
+      <div class="item">
+        <span class="grow">Weekly goal: {p.weeklyGoal} {p.weeklyGoal === 1 ? 'workout' : 'workouts'}</span>
+        <div class="segmented" style="width:110px">
+          <button aria-label="Fewer workouts per week" disabled={p.weeklyGoal <= 1} onclick={() => goalStep(-1)}>−</button>
+          <button aria-label="More workouts per week" disabled={p.weeklyGoal >= 7} onclick={() => goalStep(1)}>+</button>
         </div>
       </div>
     </div>

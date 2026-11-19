@@ -12,6 +12,8 @@
   import TargetMuscles from '../components/TargetMuscles.svelte';
   import TrainedCard from '../components/TrainedCard.svelte';
   import BackupNudge from '../components/BackupNudge.svelte';
+  import WeekStrip from '../components/WeekStrip.svelte';
+  import ActivitySheet from '../components/ActivitySheet.svelte';
   import { dayTitle, focusTitle, goalTitle, swappableFocuses } from '../lib/labels';
   import { nav } from '../lib/nav.svelte';
   import { type TodayPlan, buildToday, isTodayPlanCurrent, planBasis } from '../lib/plans';
@@ -20,6 +22,7 @@
   import { toasts } from '../lib/toasts.svelte';
   import { isSameDay } from '../lib/units';
 
+  let loggingActivity = $state(false);
   let replacing = $state<PlannedExercise | null>(null);
   let adding = $state(false);
 
@@ -109,6 +112,7 @@
     { label: 'New Variation', action: () => rebuild(today?.focus ?? null, today?.minutes ?? null, (today?.seed ?? 0) + 1) },
     { label: 'Add Exercise', action: () => (adding = true) },
     { label: 'Empty Workout', action: () => session.startEmpty() },
+    { label: 'Log Cardio or Activity', action: () => (loggingActivity = true) },
   ]);
   const switchMenu = $derived<MenuItem[]>([
     { label: 'Follow My Plan', checked: !today?.focus, action: () => rebuild(null, today?.minutes ?? null, today?.seed) },
@@ -194,6 +198,8 @@
       </div>
     {/if}
 
+    <WeekStrip />
+
     <TargetMuscles targets={workout.targetMuscles} recovery={workout.recovery} />
 
     <div class="row between section-row">
@@ -215,6 +221,7 @@
   {/if}
 </div>
 
+{#if loggingActivity}<ActivitySheet onclose={() => (loggingActivity = false)} />{/if}
 {#if replacing}
   {@const r = replacing}
   <ExercisePicker title="Swap {r.exercise.name}"

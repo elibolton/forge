@@ -11,6 +11,7 @@
   import { fmtDate } from '../lib/logs';
   import { nav } from '../lib/nav.svelte';
   import { app } from '../lib/store.svelte';
+  import { exerciseRecords } from '../lib/records';
 
   let { id }: { id: string } = $props();
   let editing = $state(false);
@@ -26,6 +27,7 @@
     return v.length ? Math.max(...v) : undefined;
   };
   const points = $derived(sessions.flatMap((s) => { const b = best(s.logged); return b ? [{ x: s.date, y: app.units.display(b) }] : []; }));
+  const records = $derived(exerciseRecords(sessions));
   const top = $derived(Math.max(0, ...sessions.map((s) => best(s.logged) ?? 0)));
 
   function setPref(v: string) {
@@ -56,7 +58,7 @@
       <div class="head">How To</div>
       <div class="card stack">
         {#each guide.steps as step, i (i)}
-          <div class="row" style="align-items:flex-start"><span class="num">{i + 1}</span><span class="sub">{step}</span></div>
+          <div class="row" style="align-items:flex-start"><span class="step-num">{i + 1}</span><span class="sub">{step}</span></div>
         {/each}
         {#if guide.mistake}
           <div class="row" style="align-items:flex-start"><TriangleAlert size={18} color="var(--recovering)" style="flex:none;margin:1px 2px 0" /><span class="sub"><b>Avoid: </b>{guide.mistake}</span></div>
@@ -80,6 +82,19 @@
       </label>
     </div>
   </div>
+
+  {#if records.oneRM || records.mostReps}
+    {@const reps = (n: number) => (e.isTimed ? `${n}s` : `${n}`)}
+    <div class="section">
+      <div class="head">Personal records</div>
+      <div class="prs">
+        {#if records.oneRM}{@render pr('Est. 1RM', app.units.format(records.oneRM.value), `${app.units.format(records.oneRM.weight)} × ${records.oneRM.reps}`, records.oneRM.date)}{/if}
+        {#if records.heaviest}{@render pr('Heaviest', app.units.format(records.heaviest.value), `× ${reps(records.heaviest.reps)}`, records.heaviest.date)}{/if}
+        {#if records.mostReps}{@render pr(e.isTimed ? 'Longest set' : 'Most reps', reps(records.mostReps.value), records.mostReps.weight > 0 ? `at ${app.units.format(records.mostReps.weight)}` : 'bodyweight', records.mostReps.date)}{/if}
+        {#if records.volume}{@render pr('Best session', app.units.format(records.volume.value), 'total moved', records.volume.date)}{/if}
+      </div>
+    </div>
+  {/if}
 
   {#if !isBodyweight(e) && points.length}
     <div class="section">
@@ -115,10 +130,22 @@
   {/if}
 </div>
 
+{#snippet pr(label: string, value: string, detail: string, date: number)}
+  <div class="pr">
+    <span class="eyebrow">{label}</span>
+    <span class="num pr-value">{value}</span>
+    <span class="caption faint">{detail} · {fmtDate(date, { month: 'short', day: 'numeric' })}</span>
+  </div>
+{/snippet}
+
 {#if editing}
   <CustomExerciseEditor existing={e} onsave={() => {}} onclose={() => (editing = false)} />
 {/if}
 
 <style>
-  .num { width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 0.75rem; font-weight: 700; display: grid; place-items: center; flex: none; }
+  .prs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pr { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: var(--r-md); border: 1px solid var(--hairline);
+    background: radial-gradient(90% 90% at 100% 0%, rgba(255, 187, 69, 0.1), transparent 70%), var(--surface); }
+  .pr-value { font-size: 1.35rem; font-stretch: 125%; font-weight: 800; }
+  .step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 0.75rem; font-weight: 700; display: grid; place-items: center; flex: none; }
 </style>

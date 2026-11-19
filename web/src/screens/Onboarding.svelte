@@ -29,7 +29,7 @@
 
   function finish() {
     const g = { ...$state.snapshot(gym), id: uuid(), usesPounds: pounds, name: gymName, increments: {} };
-    app.createProfile($state.snapshot(plan), g, pounds);
+    app.createProfile($state.snapshot(plan), g, pounds, days);
   }
 </script>
 

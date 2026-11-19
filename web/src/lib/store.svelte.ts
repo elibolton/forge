@@ -6,6 +6,8 @@ import {
 } from '../engine';
 import { db, requestPersistence } from './db';
 import { WeightUnits } from './units';
+import { type Activity, readActivity, toExternal } from './activities';
+import { prTimeline } from './records';
 
 // MARK: - Stored shapes
 
@@ -22,6 +24,10 @@ export interface Profile {
   programProgress: ProgramProgress | null;
   /** Your own sticky note per exercise ("seat on 4", "use the blue band"). */
   exerciseNotes: Record<string, string>;
+  /** Cardio and sport sessions, newest first. */
+  activities: Activity[];
+  /** Lifting workouts you aim for each week (Monday to Sunday). */
+  weeklyGoal: number;
 }
 
 export interface WorkoutLog {
@@ -59,6 +65,8 @@ function readProfile(v: unknown): Profile | null {
     exerciseNotes: isObj(v.exerciseNotes)
       ? Object.fromEntries(Object.entries(v.exerciseNotes).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].trim() !== ''))
       : {},
+    activities: lossy(v.activities, readActivity).sort((a, b) => b.date - a.date),
+    weeklyGoal: typeof v.weeklyGoal === 'number' && v.weeklyGoal >= 1 && v.weeklyGoal <= 7 ? Math.round(v.weeklyGoal) : 3,
   };
 }
 
@@ -108,6 +116,9 @@ class AppStore {
     return { lastWorkingSets, bestOneRM, sessions };
   });
 
+  /** Every new best e1RM, newest first. */
+  prEvents = $derived(prTimeline(this.logs));
+
   units = $derived(new WeightUnits(this.profile?.usesPounds ?? false));
 
   activeGym = $derived.by((): Gym => {
@@ -142,10 +153,10 @@ class AppStore {
 
   // MARK: Profile
 
-  createProfile(plan: UserPlan, gym: Gym, usesPounds: boolean) {
+  createProfile(plan: UserPlan, gym: Gym, usesPounds: boolean, weeklyGoal = 3) {
     this.setProfile({
       plan, gyms: [gym], overrides: [], activeGymID: gym.id, usesPounds, createdAt: Date.now(), customExercises: [],
-      programProgress: null, exerciseNotes: {},
+      programProgress: null, exerciseNotes: {}, activities: [], weeklyGoal,
     });
   }
 
@@ -186,6 +197,17 @@ class AppStore {
     });
   }
 
+  /** Logged activities in the form the recovery model reads. */
+  external = $derived(toExternal(this.profile?.activities ?? []));
+
+  addActivity(a: Activity) {
+    this.updateProfile((p) => { p.activities = [a, ...p.activities.filter((x) => x.id !== a.id)].sort((x, y) => y.date - x.date); });
+  }
+
+  removeActivity(id: string) {
+    this.updateProfile((p) => { p.activities = p.activities.filter((x) => x.id !== id); });
+  }
+
   setExerciseNote(id: string, text: string) {
     this.updateProfile((p) => { if (text.trim()) p.exerciseNotes[id] = text.trim(); else delete p.exerciseNotes[id]; });
   }
@@ -194,7 +216,7 @@ class AppStore {
     const p = this.profile;
     const plan = { ...(p?.plan ?? defaultPlan()) };
     if (minutes) plan.sessionMinutes = minutes;
-    return new Planner({ plan, gym: this.activeGym, history: this.records, overrides: p?.overrides ?? [] });
+    return new Planner({ plan, gym: this.activeGym, history: this.records, overrides: p?.overrides ?? [], external: this.external });
   }
 
   /** One loadable step for this exercise at the active gym, in display units. */
