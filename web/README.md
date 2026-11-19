@@ -21,7 +21,7 @@ npm run build      # production build in dist/
 ## Put it on your iPhone
 
 1. Push the repo to GitHub and set **Settings → Pages → Source** to **GitHub Actions**. The workflow in
-   `.github/workflows/pages.yml` builds and publishes on every push to `main` that touches `web/`.
+   `.github/workflows/pages.yml` builds and publishes on every push to `main`, merged pull requests included.
 2. Open the Pages URL in Safari on the iPhone, tap **Share → Add to Home Screen**, and open Forge from there.
 
 Data lives only on the device, inside the Home Screen app's own storage. Use **You → Backup, Import & Export**
