@@ -12,7 +12,8 @@
     min?: number; max?: number;
   } = $props();
 
-  const round = (v: number) => (decimals ? Math.round(v * 10) / 10 : Math.round(v));
+  // Hundredths, so a 1.25 kg microplate step or a converted load is kept as typed.
+  const round = (v: number) => (decimals ? Math.round(v * 100) / 100 : Math.round(v));
   const clamp = (v: number) => Math.min(max, Math.max(min, round(v)));
   const shown = $derived(String(round(value)));
 
