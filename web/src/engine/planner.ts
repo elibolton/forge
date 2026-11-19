@@ -2,7 +2,7 @@ import { Catalog } from './catalog';
 import {
   type DayFocus, type Exercise, type ExternalActivity, type Goal, type Gym, type Level, type LoggedExercise,
   type Muscle, type MuscleMap, type RecoveryOverride, type UserPlan, type WorkoutRecord,
-  DAY_MS, focusMuscles, gymBaseLoadKg, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
+  type Need, DAY_MS, focusMuscles, gymBaseLoadKg, provides, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
   straightSets, workingSets,
 } from './models';
 import { type BlockStatus, blockRIR, blockStatus } from './block';
@@ -292,6 +292,10 @@ export class Planner {
     this.catalog = args.catalog ?? Catalog.all;
   }
 
+  private _provided?: Set<Need>;
+  /** What this gym's equipment lets you do (any bench, a high pulley, ...). */
+  get provided(): Set<Need> { return (this._provided ??= provides(this.gym.equipment)); }
+
   private byID(): Map<string, Exercise> {
     return new Map(this.catalog.map((e) => [e.id, e]));
   }
@@ -566,7 +570,7 @@ export class Planner {
   // MARK: Exercise selection
 
   isEligible(e: Exercise): boolean {
-    if (!e.equipment.every((eq) => this.gym.equipment.includes(eq))) return false;
+    if (!e.equipment.every((n) => this.provided.has(n))) return false;
     if (this.plan.preferences[e.id] === 'exclude') return false;
     if (e.jointsStressed.some((j) => this.plan.injuries.includes(j))) return false;
     return levelRank(e.level) <= levelRank(this.plan.experience) + 1;

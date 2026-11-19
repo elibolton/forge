@@ -183,7 +183,8 @@ export class NameMatcher {
     if (!named.length) return true;
     const uses = new Set([...NameMatcher.tokens(e.name)].filter((w) => NameMatcher.equipmentWords.has(w)));
     for (const eq of e.equipment) {
-      const w = eq === 'barbell' ? 'barbell' : eq === 'dumbbell' ? 'dumbbell' : eq === 'cable' || eq === 'latPulldown' ? 'cable'
+      const w = eq === 'barbell' ? 'barbell' : eq === 'dumbbell' ? 'dumbbell'
+        : eq === 'cableHigh' || eq === 'cableLow' || eq === 'cableAdjustable' || eq === 'latPulldown' ? 'cable'
         : eq === 'kettlebell' ? 'kettlebell' : eq === 'smithMachine' ? 'smith' : eq === 'resistanceBand' ? 'band'
         : eq === 'ezBar' ? 'ez'
         : ['legPress', 'legCurl', 'legExtension', 'chestPressMachine', 'shoulderPressMachine'].includes(eq) ? 'machine' : undefined;

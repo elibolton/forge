@@ -284,7 +284,9 @@ describe('Storage compatibility', () => {
   test('reads gyms', () => {
     const g = readGym({ equipment: ['dumbbell', 'bench', 'hoverboard'], id: 'x', increments: { dumbbell: 2.5 }, name: 'Home', usesPounds: true })!;
     expect(g.name).toBe('Home');
-    expect(g.equipment).toEqual(['dumbbell', 'bench']);
+    // An older gym's broad "bench" becomes both benches, and the gym asks to be checked.
+    expect(g.equipment).toEqual(['dumbbell', 'flatBench', 'adjustableBench']);
+    expect(g.reviewEquipment).toBe(true);
     expect(g.increments.dumbbell).toBe(2.5);
     expect(g.usesPounds).toBe(true);
   });

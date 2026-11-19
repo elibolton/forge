@@ -161,6 +161,14 @@
 
   <BackupNudge />
 
+  {#if app.activeGym.reviewEquipment}
+    <button class="card tight row" style="text-align:left" onclick={() => nav.push({ name: 'gym', id: app.activeGym.id })}>
+      <MapPin size={18} color="var(--ember-2)" aria-hidden="true" />
+      <span class="grow"><span class="sub bold">Check {app.activeGym.name}'s equipment</span><br /><span class="caption muted">Forge now asks which bench, cables and attachments you have, so it only suggests what you can do.</span></span>
+      <ChevronRight size={16} color="var(--text-3)" />
+    </button>
+  {/if}
+
   {#if today}
     {@const workout = today.workout}
     {@const estimate = estimatedMinutes(workout.exercises)}

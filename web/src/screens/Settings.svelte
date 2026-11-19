@@ -1,13 +1,13 @@
 <script lang="ts">
   // The small settings pages pushed from You: gym editor, workout style, injuries, preferences, custom exercises.
-  import { Catalog, EQUIPMENT, type Equipment, JOINTS, VARIABILITIES, gymIncrement, muscleName } from '../engine';
+  import { Catalog, EQUIPMENT, type Equipment, JOINTS, type LoadKind, VARIABILITIES, gymIncrement, muscleName } from '../engine';
   import { Check, ChevronRight, Plus, Trash2 } from '@lucide/svelte';
   import BackBar from '../components/BackBar.svelte';
   import CustomExerciseEditor from '../components/CustomExerciseEditor.svelte';
   import ExerciseThumb from '../components/ExerciseThumb.svelte';
   import Toggle from '../components/Toggle.svelte';
   import { removeCustomExercise } from '../lib/customExercises';
-  import { equipmentTitle, jointTitle, preferenceTitle, variabilityTitle } from '../lib/labels';
+  import { EQUIPMENT_GROUPS, equipmentTitle, jointTitle, loadTitle, preferenceTitle, variabilityTitle } from '../lib/labels';
   import { type Route, nav } from '../lib/nav.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
@@ -18,16 +18,30 @@
   const p = $derived(app.profile!);
   let creating = $state(false);
 
-  const GROUPS: [string, Equipment[]][] = [
-    ['Free Weights', ['barbell', 'ezBar', 'trapBar', 'dumbbell', 'kettlebell', 'resistanceBand']],
-    ['Stations', ['bench', 'squatRack', 'pullUpBar', 'dipStation', 'smithMachine']],
-    ['Machines', ['cable', 'latPulldown', 'legPress', 'legCurl', 'legExtension', 'chestPressMachine', 'shoulderPressMachine']],
-  ];
-
   function updateGym(id: string, change: (g: (typeof p.gyms)[number]) => void) {
     app.updateProfile((x) => { const g = x.gyms.find((y) => y.id === id); if (g) change(g); });
   }
-  void EQUIPMENT;
+
+  /** Changing the list counts as checking it. */
+  function toggleEquipment(id: string, eq: Equipment, on: boolean) {
+    updateGym(id, (g) => {
+      g.equipment = EQUIPMENT.filter((x) => (x === eq ? on : g.equipment.includes(x)));
+      delete g.reviewEquipment;
+    });
+  }
+
+  /** Step settings for the loads this gym actually has. */
+  function loadKinds(equipment: Equipment[]): LoadKind[] {
+    const has = (e: Equipment) => equipment.includes(e);
+    const kinds: LoadKind[] = [];
+    if (has('barbell') || has('ezBar') || has('trapBar')) kinds.push('barbell');
+    if (has('dumbbell')) kinds.push('dumbbell');
+    if (has('kettlebell')) kinds.push('kettlebell');
+    if (has('dipBelt')) kinds.push('plates');
+    if (has('cableDual') || has('cableColumn') || has('lowRow')) kinds.push('cable');
+    if (has('latPulldown')) kinds.push('latPulldown');
+    return kinds;
+  }
 </script>
 
 {#if route.name === 'gym'}
@@ -38,27 +52,34 @@
       <div class="section" style="margin-top:12px">
         <input type="text" aria-label="Gym name" value={gym.name} onchange={(e) => updateGym(gym.id, (g) => { g.name = (e.currentTarget as HTMLInputElement).value.trim() || g.name; })} />
       </div>
-      {#each GROUPS as [title, items] (title)}
-        <div class="section"><div class="head">{title}</div>
+      {#if gym.reviewEquipment}
+        <div class="section"><div class="card stack notice" style="--gap:8px">
+          <div class="sub bold">Check your equipment</div>
+          <p class="caption muted">Forge now asks about specific pieces, like which bench or cable setup you have. We filled this in from your old list; untick anything you don't have.</p>
+          <button class="btn primary" onclick={() => updateGym(gym.id, (g) => { delete g.reviewEquipment; })}>Looks right</button>
+        </div></div>
+      {/if}
+      {#each EQUIPMENT_GROUPS as group (group.title)}
+        <div class="section"><div class="head">{group.title}</div>
           <div class="list">
-            {#each items as eq (eq)}
-              <Toggle label={equipmentTitle[eq]} checked={gym.equipment.includes(eq)}
-                onchange={(on) => updateGym(gym.id, (g) => { g.equipment = on ? [...g.equipment, eq] : g.equipment.filter((x) => x !== eq); })} />
+            {#each group.items as eq (eq)}
+              <Toggle label={equipmentTitle[eq]} checked={gym.equipment.includes(eq)} onchange={(on) => toggleEquipment(gym.id, eq, on)} />
             {/each}
           </div>
+          {#if group.foot}<div class="foot">{group.foot}</div>{/if}
         </div>
       {/each}
       <div class="section"><div class="head">Weight Steps</div>
         <div class="list">
-          {#each ['barbell', 'dumbbell', 'kettlebell', 'cable'] as const as eq (eq)}
+          {#each loadKinds(gym.equipment) as eq (eq)}
             {@const step = gymIncrement(gym, eq)}
             {@const delta = gym.usesPounds ? 2.5 : 0.5}
             <div class="item">
-              <span class="grow">{equipmentTitle[eq]}: {step} {gym.usesPounds ? 'lb' : 'kg'} steps</span>
+              <span class="grow">{loadTitle[eq]}: {step} {gym.usesPounds ? 'lb' : 'kg'} steps</span>
               <div class="segmented" style="width:110px">
-                <button aria-label="Smaller {equipmentTitle[eq]} step" disabled={step - delta < (gym.usesPounds ? 1 : 0.5)}
+                <button aria-label="Smaller {loadTitle[eq]} step" disabled={step - delta < (gym.usesPounds ? 1 : 0.5)}
                   onclick={() => updateGym(gym.id, (g) => { g.increments[eq] = step - delta; })}>−</button>
-                <button aria-label="Larger {equipmentTitle[eq]} step" disabled={step + delta > (gym.usesPounds ? 20 : 10)}
+                <button aria-label="Larger {loadTitle[eq]} step" disabled={step + delta > (gym.usesPounds ? 20 : 10)}
                   onclick={() => updateGym(gym.id, (g) => { g.increments[eq] = step + delta; })}>+</button>
               </div>
             </div>

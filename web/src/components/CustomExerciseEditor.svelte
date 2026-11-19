@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { Catalog, EQUIPMENT, type Equipment, type Exercise, MUSCLES, type Muscle, type MovementPattern, isBodyweight, isCustom, muscleName } from '../engine';
+  import { Catalog, NEEDS, type Need, type Exercise, MUSCLES, type Muscle, type MovementPattern, isBodyweight, isCustom, muscleName } from '../engine';
   import { MOVEMENTS, likelyJoints, makeCustomID } from '../lib/customExercises';
-  import { equipmentTitle } from '../lib/labels';
+  import { needTitle } from '../lib/labels';
   import { app } from '../lib/store.svelte';
   import Sheet from './Sheet.svelte';
 
@@ -18,7 +18,7 @@
   let movement = $state<MovementPattern>(start?.pattern ?? 'isolation');
   let primary = $state<Muscle[]>([...(start?.primary ?? [])]);
   let secondary = $state<Muscle[]>([...(start?.secondary ?? [])]);
-  let equipment = $state<Equipment[]>([...(start?.equipment ?? ['dumbbell'])]);
+  let equipment = $state<Need[]>([...(start?.equipment ?? ['dumbbell'])]);
   let tracking = $state<Tracking>(start ? (start.isTimed ? 'time' : isBodyweight(start) ? 'bodyweight' : 'weight') : 'weight');
   let notes = $state(start?.notes ?? '');
 
@@ -33,7 +33,7 @@
     if (!canSave) return;
     const orderedPrimary = MUSCLES.filter((m) => primary.includes(m));
     const isCompound = !['isolation', 'core', 'mobility'].includes(movement);
-    const eq = EQUIPMENT.filter((e) => equipment.includes(e));
+    const eq = NEEDS.filter((e) => equipment.includes(e));
     const starter = tracking === 'weight'
       ? (start && !isBodyweight(start) ? start.starterOneRM : Catalog.suggestedStarterOneRM(orderedPrimary, eq, isCompound))
       : 0;
@@ -89,11 +89,11 @@
     <div class="section-title">Equipment</div>
     <div class="row wrap" style="--gap:8px">
       <button class="chip" class:on={!equipment.length} aria-pressed={!equipment.length} onclick={() => (equipment = [])}>None</button>
-      {#each EQUIPMENT as e (e)}
-        <button class="chip" class:on={equipment.includes(e)} aria-pressed={equipment.includes(e)} onclick={() => (equipment = toggle(equipment, e))}>{equipmentTitle[e]}</button>
+      {#each NEEDS as e (e)}
+        <button class="chip" class:on={equipment.includes(e)} aria-pressed={equipment.includes(e)} onclick={() => (equipment = toggle(equipment, e))}>{needTitle[e]}</button>
       {/each}
     </div>
-    <p class="caption muted">Forge only suggests this exercise when your gym has all of the equipment listed.</p>
+    <p class="caption muted">Forge only suggests this exercise when your gym has everything listed. Pick a pulley position for cable work, since gyms differ.</p>
 
     <label class="stack" style="--gap:6px">
       <span class="section-title">How to (optional)</span>

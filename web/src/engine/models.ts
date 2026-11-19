@@ -17,19 +17,55 @@ export function muscleName(m: Muscle): string {
   return m.charAt(0).toUpperCase() + m.slice(1);
 }
 
+/** Equipment a gym can own. The setup screens list these in groups; exercises ask for `Need`s instead. */
 export const EQUIPMENT = [
-  'barbell', 'ezBar', 'trapBar', 'dumbbell', 'kettlebell',
-  'bench', 'squatRack', 'pullUpBar', 'dipStation',
-  'cable', 'latPulldown', 'legPress', 'legCurl', 'legExtension',
-  'chestPressMachine', 'shoulderPressMachine', 'smithMachine',
-  'resistanceBand',
+  'barbell', 'ezBar', 'trapBar', 'dumbbell', 'kettlebell', 'dipBelt',
+  'flatBench', 'adjustableBench', 'squatRack', 'pullUpBar', 'dipStation', 'preacherBench', 'backExtension',
+  'cableDual', 'cableColumn', 'latPulldown', 'lowRow',
+  'rope', 'straightBar', 'singleHandle', 'vBar', 'ankleStrap',
+  'legPress', 'legExtension', 'legCurl', 'chestPressMachine', 'shoulderPressMachine', 'smithMachine',
+  'resistanceBand', 'abWheel',
 ] as const;
 export type Equipment = (typeof EQUIPMENT)[number];
 
+/**
+ * What an exercise needs. Most are pieces of equipment; a few are things several pieces provide:
+ * any bench, a high pulley, a low pulley, or a pulley you can set at any height.
+ */
+export const NEEDS = [
+  'barbell', 'ezBar', 'trapBar', 'dumbbell', 'kettlebell', 'dipBelt',
+  'bench', 'adjustableBench', 'squatRack', 'pullUpBar', 'dipStation', 'preacherBench', 'backExtension',
+  'cableHigh', 'cableLow', 'cableAdjustable', 'latPulldown',
+  'rope', 'straightBar', 'singleHandle', 'vBar', 'ankleStrap',
+  'legPress', 'legExtension', 'legCurl', 'chestPressMachine', 'shoulderPressMachine', 'smithMachine',
+  'resistanceBand', 'abWheel',
+] as const;
+export type Need = (typeof NEEDS)[number];
+
+/** Everything a set of equipment lets you do. */
+export function provides(equipment: readonly Equipment[]): Set<Need> {
+  const has = (e: Equipment) => equipment.includes(e);
+  const out = new Set<Need>(equipment.filter((e): e is Equipment & Need => (NEEDS as readonly string[]).includes(e)));
+  if (has('flatBench') || has('adjustableBench')) out.add('bench');
+  // Preacher curls work over the back pad of an incline bench.
+  if (has('adjustableBench')) out.add('preacherBench');
+  if (has('cableDual') || has('cableColumn')) for (const n of ['cableHigh', 'cableLow', 'cableAdjustable'] as const) out.add(n);
+  if (has('latPulldown')) out.add('cableHigh');
+  if (has('lowRow')) out.add('cableLow');
+  return out;
+}
+
+/** Load-step settings are per kind of load: all cables share one stack step, for example. */
+export const LOAD_KINDS = [
+  'barbell', 'trapBar', 'ezBar', 'smithMachine', 'dumbbell', 'kettlebell', 'plates',
+  'cable', 'latPulldown', 'legPress', 'legCurl', 'legExtension', 'chestPressMachine', 'shoulderPressMachine',
+] as const;
+export type LoadKind = (typeof LOAD_KINDS)[number];
+
 /** Default load step in kg when a gym doesn't specify one. */
-export function defaultIncrement(e: Equipment): number {
+export function defaultIncrement(e: LoadKind): number {
   switch (e) {
-    case 'barbell': case 'ezBar': case 'trapBar': case 'smithMachine': return 2.5;
+    case 'barbell': case 'ezBar': case 'trapBar': case 'smithMachine': case 'plates': return 2.5;
     case 'dumbbell': return 2;
     case 'kettlebell': return 4;
     default: return 5;
@@ -37,20 +73,20 @@ export function defaultIncrement(e: Equipment): number {
 }
 
 /** Default load step in lb. */
-export function defaultIncrementPounds(e: Equipment): number {
+export function defaultIncrementPounds(e: LoadKind): number {
   switch (e) {
-    case 'barbell': case 'ezBar': case 'trapBar': case 'smithMachine': case 'dumbbell': return 5;
+    case 'barbell': case 'ezBar': case 'trapBar': case 'smithMachine': case 'dumbbell': case 'plates': return 5;
     case 'kettlebell': return 9;
     default: return 10;
   }
 }
 
 /** Bar weight in kg, used for warm-ups and rounding. */
-export function baseLoad(e: Equipment): number {
+export function baseLoad(e: LoadKind): number {
   return e === 'barbell' || e === 'trapBar' ? 20 : e === 'ezBar' ? 10 : 0;
 }
 
-export function baseLoadPounds(e: Equipment): number {
+export function baseLoadPounds(e: LoadKind): number {
   return e === 'barbell' || e === 'trapBar' ? 45 : e === 'ezBar' ? 25 : 0;
 }
 
@@ -74,7 +110,8 @@ export interface Exercise {
   name: string;
   primary: Muscle[];
   secondary: Muscle[];
-  equipment: Equipment[];
+  /** What it needs; a gym must provide all of them. */
+  equipment: Need[];
   pattern: MovementPattern;
   isCompound: boolean;
   level: Level;
@@ -92,14 +129,22 @@ export const CUSTOM_PREFIX = 'custom-';
 export const isBodyweight = (e: Exercise) => e.starterOneRM === 0;
 export const isCustom = (e: Exercise) => e.id.startsWith(CUSTOM_PREFIX);
 
-const LOAD_ORDER: Equipment[] = [
-  'barbell', 'trapBar', 'ezBar', 'smithMachine', 'dumbbell', 'kettlebell',
-  'cable', 'latPulldown', 'legPress', 'legCurl', 'legExtension', 'chestPressMachine', 'shoulderPressMachine',
+const LOAD_ORDER: [Need, LoadKind][] = [
+  ['barbell', 'barbell'], ['trapBar', 'trapBar'], ['ezBar', 'ezBar'], ['smithMachine', 'smithMachine'],
+  ['dumbbell', 'dumbbell'], ['kettlebell', 'kettlebell'], ['dipBelt', 'plates'], ['latPulldown', 'latPulldown'],
+  ['cableHigh', 'cable'], ['cableLow', 'cable'], ['cableAdjustable', 'cable'], ['legPress', 'legPress'], ['legCurl', 'legCurl'],
+  ['legExtension', 'legExtension'], ['chestPressMachine', 'chestPressMachine'], ['shoulderPressMachine', 'shoulderPressMachine'],
 ];
 
-/** The equipment that sets the load increment and bar weight. */
-export function loadEquipment(e: Exercise): Equipment | undefined {
-  return LOAD_ORDER.find((eq) => e.equipment.includes(eq));
+/** The kind of load that sets the step size and bar weight. */
+export function loadEquipment(e: Exercise): LoadKind | undefined {
+  return LOAD_ORDER.find(([need]) => e.equipment.includes(need))?.[1];
+}
+
+/** Whether a gym has everything an exercise needs. */
+export function gymHas(g: Gym, e: Exercise): boolean {
+  const p = provides(g.equipment);
+  return e.equipment.every((n) => p.has(n));
 }
 
 // MARK: - User plan
@@ -137,7 +182,11 @@ export interface Gym {
   /** Plates and dumbbells are in pounds; increments below are then in lb too. */
   usesPounds: boolean;
   /** Overrides for load steps, in the gym's unit. */
-  increments: Partial<Record<Equipment, number>>;
+  increments: Partial<Record<LoadKind, number>>;
+  /** 2 since equipment was split into specific pieces; older saves are converted on load. */
+  equipmentVersion?: number;
+  /** Set when an older, broader equipment list was converted, until you've checked it. */
+  reviewEquipment?: boolean;
 }
 
 export const POUNDS_PER_KG = 2.2046226218;
@@ -147,17 +196,17 @@ export function uuid(): string {
 }
 
 export function makeGym(name: string, equipment: Equipment[], usesPounds = false,
-                        increments: Partial<Record<Equipment, number>> = {}, id = uuid()): Gym {
-  return { id, name, equipment: [...equipment], usesPounds, increments: { ...increments } };
+                        increments: Partial<Record<LoadKind, number>> = {}, id = uuid()): Gym {
+  return { id, name, equipment: [...equipment], equipmentVersion: 2, usesPounds, increments: { ...increments } };
 }
 
 /** Load step in the gym's unit. */
-export function gymIncrement(g: Gym, e: Equipment): number {
+export function gymIncrement(g: Gym, e: LoadKind): number {
   return g.increments[e] ?? (g.usesPounds ? defaultIncrementPounds(e) : defaultIncrement(e));
 }
 
 /** Load step in kg. */
-export function gymIncrementKg(g: Gym, e: Equipment): number {
+export function gymIncrementKg(g: Gym, e: LoadKind): number {
   return g.usesPounds ? gymIncrement(g, e) / POUNDS_PER_KG : gymIncrement(g, e);
 }
 
@@ -169,22 +218,25 @@ export function roundLoad(weight: number, increment: number, base: number): numb
 }
 
 /** Rounds a kg load to something loadable in this gym, returned in kg. */
-export function gymRound(g: Gym, kg: number, e: Equipment): number {
+export function gymRound(g: Gym, kg: number, e: LoadKind): number {
   if (g.usesPounds) {
     return roundLoad(kg * POUNDS_PER_KG, gymIncrement(g, e), baseLoadPounds(e)) / POUNDS_PER_KG;
   }
   return roundLoad(kg, gymIncrement(g, e), baseLoad(e));
 }
 
-export function gymBaseLoadKg(g: Gym, e: Equipment): number {
+export function gymBaseLoadKg(g: Gym, e: LoadKind): number {
   return g.usesPounds ? baseLoadPounds(e) / POUNDS_PER_KG : baseLoad(e);
 }
 
 export const Gyms = {
   commercial: () => makeGym('Commercial Gym', [...EQUIPMENT]),
-  /** Barbell, EZ bar, dumbbells, bench, rack, dip station and a lat pulldown / low row cable station. */
-  homeBarbell: () => makeGym('Home Gym', ['barbell', 'ezBar', 'dumbbell', 'bench', 'squatRack', 'dipStation', 'cable', 'latPulldown']),
-  home: () => makeGym('Home', ['dumbbell', 'bench', 'pullUpBar', 'resistanceBand', 'kettlebell']),
+  /** Barbell, EZ bar, dumbbells, benches, rack, dip station and a lat pulldown / low row station with attachments. */
+  homeBarbell: () => makeGym('Home Gym', [
+    'barbell', 'ezBar', 'dumbbell', 'flatBench', 'adjustableBench', 'squatRack', 'dipStation', 'latPulldown', 'lowRow',
+    'rope', 'straightBar', 'singleHandle', 'vBar',
+  ]),
+  home: () => makeGym('Home', ['dumbbell', 'adjustableBench', 'pullUpBar', 'resistanceBand', 'kettlebell']),
   bodyweight: () => makeGym('Bodyweight', []),
 };
 

@@ -12,7 +12,7 @@
       case 'lunge': return Footprints;
       case 'verticalPush': return ArrowUpFromLine;
       case 'horizontalPull': case 'verticalPull': return MoveHorizontal;
-      case 'isolation': return exercise.equipment.includes('cable') ? Cable : Dumbbell;
+      case 'isolation': return exercise.equipment.some((n) => n.startsWith('cable')) ? Cable : Dumbbell;
       case 'core': return Activity;
       case 'carry': return PersonStanding;
       case 'mobility': return Flower2;
