@@ -350,6 +350,9 @@ describe('Custom exercises', () => {
   test('every built-in has instructions', () => {
     expect(Catalog.builtIn.filter((e) => !guideFor(e)).map((e) => e.id)).toEqual([]);
   });
+  test('every built-in has at least two tips', () => {
+    expect(Catalog.builtIn.filter((e) => (guideFor(e)?.tips?.length ?? 0) < 2).map((e) => e.id)).toEqual([]);
+  });
   test('starter suggestion uses similar exercises', () => {
     const s = Catalog.suggestedStarterOneRM(['sideDelts'], ['dumbbell'], false);
     expect(s).toBeGreaterThan(5);
