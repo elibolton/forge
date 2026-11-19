@@ -5,7 +5,7 @@
   import { addMobility } from '../lib/mobility';
   import {
     Catalog, type DayFocus, type Exercise, type ExercisePreference, type PlannedExercise, Programs, estimatedMinutes,
-    isBodyweight, plannedWorkingSets,
+    isBodyweight, muscleName, plannedWorkingSets,
   } from '../engine';
   import { ArrowLeftRight, BadgeCheck, BatteryCharging, ChevronRight, Clock, Ellipsis, MapPin, Plus, RefreshCw, SlidersHorizontal, TimerOff, Wand } from '@lucide/svelte';
   import ActionMenu, { type MenuItem } from '../components/ActionMenu.svelte';
@@ -25,6 +25,9 @@
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { isSameDay } from '../lib/units';
+
+  /** "A, B and C". */
+  const listText = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] ?? '');
 
   let loggingActivity = $state(false);
   let pickingTemplate = $state(false);
@@ -225,6 +228,25 @@
       </div>
     {/if}
 
+    {#if workout.uncovered?.length}
+      <div class="card tight row" style="align-items:flex-start">
+        <TimerOff size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
+        <div class="stack grow" style="--gap:6px">
+          <div class="sub bold">{workout.exercises.length ? 'Some muscles get no work today' : 'Nothing fits today'}</div>
+          <p class="caption muted">{workout.exercises.length ? `Nothing for ${listText(workout.uncovered.map(muscleName))} fits` : `No ${focusTitle[workout.focus].toLowerCase()} exercise fits`} {app.activeGym.name}'s equipment, your injuries and excluded exercises. Add equipment in Settings, or swap to another day.</p>
+        </div>
+      </div>
+    {/if}
+    {#if workout.fatigued}
+      <div class="card tight row" style="align-items:flex-start">
+        <BatteryCharging size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
+        <div class="stack grow" style="--gap:6px">
+          <div class="sub bold">Still recovering</div>
+          <p class="caption muted">Nothing is well recovered yet. A rest day or easy mobility may serve you better; if you train, keep it easy.</p>
+        </div>
+      </div>
+    {/if}
+
     {#if workout.block?.isDeload}
       <div class="card tight row" style="align-items:flex-start">
         <BatteryCharging size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
@@ -233,16 +255,17 @@
           <p class="caption muted">Fewer sets, lighter weights and easy effort, so you recover and come back stronger.{workout.block.earlyReason ? ` ${workout.block.earlyReason}, so it came early.` : ''} Next week starts block {workout.block.number + 1}.</p>
         </div>
       </div>
-    {:else if chosenMinutes - estimate >= 10 && estimate < chosenMinutes * 0.8}
+    {:else if chosenMinutes - estimate >= 10 && estimate < chosenMinutes * 0.8 && !workout.uncovered?.length}
+      {@const complete = !!workout.note && !workout.fatigued}
       <div class="card tight row" style="align-items:flex-start">
-        {#if workout.note}
+        {#if complete}
           <BadgeCheck size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
         {:else}
           <TimerOff size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
         {/if}
         <div class="stack grow" style="--gap:6px">
           <div class="sub bold">About {estimate} of your {chosenMinutes} min</div>
-          {#if workout.note}
+          {#if complete}
             <p class="caption muted">Every muscle today already gets the sets that help it grow; more would add fatigue, not size. Leftover time went to muscles today doesn't otherwise train.</p>
           {:else}
           <p class="caption muted">Only a few {focusTitle[workout.focus].toLowerCase()} exercises suit {app.activeGym.name}'s equipment and today's recovery. Add one to use the time, or shorten today's session.</p>

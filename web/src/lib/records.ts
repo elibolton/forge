@@ -19,14 +19,26 @@ export interface ExerciseRecords {
 
 const better = (cur: Mark | undefined, next: Mark) => !cur || next.value > cur.value + 1e-9;
 
+/**
+ * Whether an exercise has an estimated 1RM. Timed holds and carries log seconds in `reps`, so 40 kg
+ * for 60 s isn't a 60 kg max; stretches aren't lifts.
+ */
+export const hasOneRM = (exerciseID: string): boolean => {
+  const e = Catalog.exercise(exerciseID);
+  return !e.isTimed && e.pattern !== 'mobility';
+};
+
 export function exerciseRecords(sessions: { date: number; logged: LoggedExercise }[]): ExerciseRecords {
   const r: ExerciseRecords = {};
   for (const { date, logged } of sessions) {
+    const estimates = hasOneRM(logged.exerciseID);
+    // Kilograms times seconds isn't weight moved, so timed work has no volume record either.
+    const timed = Catalog.exercise(logged.exerciseID).isTimed;
     let volume = 0;
     for (const s of workingSets(logged)) {
-      volume += s.weight * s.reps;
+      if (!timed) volume += s.weight * s.reps;
       const mark = (value: number): Mark => ({ value, date, weight: s.weight, reps: s.reps });
-      if (s.weight > 0 && better(r.oneRM, mark(oneRM(s.weight, s.reps, s.rir)))) r.oneRM = mark(oneRM(s.weight, s.reps, s.rir));
+      if (estimates && s.weight > 0 && better(r.oneRM, mark(oneRM(s.weight, s.reps, s.rir)))) r.oneRM = mark(oneRM(s.weight, s.reps, s.rir));
       if (s.weight > 0 && better(r.heaviest, mark(s.weight))) r.heaviest = mark(s.weight);
       if (better(r.mostReps, mark(s.reps))) r.mostReps = mark(s.reps);
     }
@@ -47,7 +59,7 @@ export function prTimeline(logs: Log[]): PREvent[] {
   const events: PREvent[] = [];
   for (const log of [...logs].sort((a, b) => a.date - b.date)) {
     for (const logged of log.exercises) {
-      if (Catalog.exercise(logged.exerciseID).pattern === 'mobility') continue;
+      if (!hasOneRM(logged.exerciseID)) continue;
       const values = workingSets(logged).filter((s) => s.weight > 0).map((s) => oneRM(s.weight, s.reps, s.rir));
       if (!values.length) continue;
       const top = Math.max(...values);
