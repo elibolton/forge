@@ -3,7 +3,7 @@ import * as data from './catalogData';
 
 /** Exercises shipped with the app. */
 const builtIn: Exercise[] = [
-  ...data.chest, ...data.shoulders, ...data.arms, ...data.back, ...data.legs, ...data.core, ...data.mobility, ...data.homeGym,
+  ...data.chest, ...data.shoulders, ...data.arms, ...data.back, ...data.legs, ...data.core, ...data.mobility, ...data.homeGym, ...data.researchPicks,
 ];
 
 let custom: Exercise[] = [];

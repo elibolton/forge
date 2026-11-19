@@ -40,6 +40,8 @@
     if (has('dipBelt')) kinds.push('plates');
     if (has('cableDual') || has('cableColumn') || has('lowRow')) kinds.push('cable');
     if (has('latPulldown')) kinds.push('latPulldown');
+    if (has('hackSquat') && !has('dipBelt')) kinds.push('plates');
+    if (['seatedLegCurl', 'calfMachine', 'hipAbductorMachine', 'pecDeck', 'lateralRaiseMachine', 'rowMachine'].some((e) => has(e as Equipment))) kinds.push('machine');
     return kinds;
   }
 </script>

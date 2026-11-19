@@ -51,8 +51,11 @@ export const equipmentTitle: Record<Equipment, string> = {
   backExtension: 'Back extension / GHD', cableDual: 'Dual adjustable cables (crossover)', cableColumn: 'Single adjustable cable',
   latPulldown: 'Lat pulldown (high pulley)', lowRow: 'Seated row (low pulley)', rope: 'Rope', straightBar: 'Straight bar',
   singleHandle: 'Single handle', vBar: 'V-bar', ankleStrap: 'Ankle strap', legPress: 'Leg press', legExtension: 'Leg extension',
-  legCurl: 'Leg curl', chestPressMachine: 'Chest press machine', shoulderPressMachine: 'Shoulder press machine',
+  legCurl: 'Lying leg curl', chestPressMachine: 'Chest press machine', shoulderPressMachine: 'Shoulder press machine',
   smithMachine: 'Smith machine', resistanceBand: 'Resistance bands', abWheel: 'Ab wheel',
+  hackSquat: 'Hack squat', seatedLegCurl: 'Seated leg curl', calfMachine: 'Standing calf raise machine',
+  hipAbductorMachine: 'Hip abduction / adduction machine', pecDeck: 'Pec deck / rear delt fly', lateralRaiseMachine: 'Lateral raise machine',
+  rowMachine: 'Chest-supported row (machine or T-bar)',
 };
 
 /** The setup screens' groups, in the order you'd look around a gym. */
@@ -63,7 +66,8 @@ export const EQUIPMENT_GROUPS: { title: string; items: Equipment[]; foot?: strin
   { title: 'Cables', items: ['cableDual', 'cableColumn', 'latPulldown', 'lowRow'],
     foot: 'A pulldown/row combo station is both a lat pulldown and a seated row.' },
   { title: 'Cable attachments', items: ['rope', 'straightBar', 'singleHandle', 'vBar', 'ankleStrap'] },
-  { title: 'Machines', items: ['legPress', 'legExtension', 'legCurl', 'chestPressMachine', 'shoulderPressMachine', 'smithMachine'] },
+  { title: 'Leg machines', items: ['legPress', 'hackSquat', 'legExtension', 'seatedLegCurl', 'legCurl', 'calfMachine', 'hipAbductorMachine'] },
+  { title: 'Upper-body machines', items: ['chestPressMachine', 'pecDeck', 'shoulderPressMachine', 'lateralRaiseMachine', 'rowMachine', 'smithMachine'] },
   { title: 'Small gear', items: ['resistanceBand', 'abWheel'] },
 ];
 
@@ -77,7 +81,7 @@ export const needTitle: Record<Need, string> = {
 
 export const loadTitle: Record<LoadKind, string> = {
   barbell: 'Barbell', trapBar: 'Trap bar', ezBar: 'EZ bar', smithMachine: 'Smith machine', dumbbell: 'Dumbbells',
-  kettlebell: 'Kettlebells', plates: 'Plates', cable: 'Cables', latPulldown: 'Lat pulldown', legPress: 'Leg press',
+  kettlebell: 'Kettlebells', plates: 'Plates', machine: 'Other machines', cable: 'Cables', latPulldown: 'Lat pulldown', legPress: 'Leg press',
   legCurl: 'Leg curl', legExtension: 'Leg extension', chestPressMachine: 'Chest press', shoulderPressMachine: 'Shoulder press',
 };
 
