@@ -11,7 +11,7 @@
   import RatePrompt from '../components/RatePrompt.svelte';
   import Sheet from '../components/Sheet.svelte';
   import { dayTitle } from '../lib/labels';
-  import { type SessionExercise, exerciseOf, isComplete, numberedSets, session, supersetOf } from '../lib/session.svelte';
+  import { type SessionExercise, exerciseOf, isComplete, session, setProgress, supersetOf } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { minSec } from '../lib/units';
@@ -114,6 +114,7 @@
   async function save() {
     saveFailed = false;
     const records = await session.finish();
+    if (records === undefined) return; // a second tap while the first save runs: that one reports
     if (records === null) saveFailed = true; // Still open, with every set intact.
     else reviewing = false;
   }
@@ -173,13 +174,12 @@
         {@const g = supersetOf(current)}
         {@const m = g ? members(ws, g) : []}
         {@const step = nextInRound(ws, index)}
-        {@const working = (x: typeof current) => numberedSets(x.sets)}
-        {@const rounds = Math.max(...m.map((i) => working(ws.exercises[i]).length), 0)}
+        {@const rounds = Math.max(...m.map((i) => setProgress(ws.exercises[i]).total), 0)}
         <ExercisePage exercise={current} nextName={ws.exercises[index + 1] ? exerciseOf(ws.exercises[index + 1]).name : undefined}
           onswap={() => (swapping = true)}
           group={m.length >= 2 ? {
             label: groupLabel(m.length), position: m.indexOf(index) + 1, size: m.length, rounds,
-            round: Math.min(rounds, working(current).filter((s) => s.done).length + 1),
+            round: Math.min(rounds, setProgress(current).next),
             next: step.next !== undefined ? { name: exerciseOf(ws.exercises[step.next]).name, newRound: step.endOfRound, go: () => go(step.next!) } : undefined,
           } : undefined}
           onNext={() => go(index + 1)} onFinish={() => (reviewing = true)} />

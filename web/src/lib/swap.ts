@@ -1,5 +1,6 @@
 import { type Exercise, type Planner, isBodyweight, plannedWorkingSets, uuid } from '../engine';
 import { type SessionExercise, type SessionState, newSet, sessionExerciseFrom } from './session.svelte';
+import { groupOf, setGroup } from './groups';
 
 /**
  * Swaps exercise `id` for `replacement` in a workout in progress (mutates `state`).
@@ -13,7 +14,9 @@ export function swapInSession(state: SessionState, id: string, replacement: Exer
   const i = state.exercises.findIndex((x) => x.id === id);
   if (i < 0) return false;
   const old = state.exercises[i];
-  const done = old.sets.filter((s) => s.done);
+  // Only working sets count as logged: with just warm-ups ticked, the replacement takes its place outright
+  // (with its own warm-ups) rather than leaving a warm-up-only exercise behind.
+  const done = old.sets.filter((s) => s.done && !s.isWarmup);
   const pending = old.sets.filter((s) => !s.done && !s.isWarmup);
   const planned = planner.prescribe(replacement);
   const first = plannedWorkingSets(planned)[0];
@@ -45,8 +48,16 @@ export function swapInSession(state: SessionState, id: string, replacement: Exer
   } else {
     // Sets already logged stay with the original. With nothing left to do on it, the replacement comes
     // after it with a full set of sets.
-    if (pending.length) old.sets = done;
-    state.exercises.splice(i + 1, 0, next);
+    if (pending.length) old.sets = old.sets.filter((s) => s.done);
+    const group = groupOf(old);
+    if (group !== undefined) {
+      // The original is finished with: it leaves its superset, moving to just before it, and the
+      // replacement takes its place in the rotation, so a pair stays a pair rather than becoming a tri-set.
+      const first = state.exercises.findIndex((x) => groupOf(x) === group);
+      setGroup(old, undefined);
+      state.exercises[i] = next;
+      state.exercises.splice(first, 0, old);
+    } else state.exercises.splice(i + 1, 0, next);
     state.currentIndex = i + 1;
   }
   return true;

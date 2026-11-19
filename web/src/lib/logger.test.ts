@@ -91,7 +91,10 @@ describe('Swap mid-workout', () => {
     swapInSession(s, 'a', ex('db-bench'), planner);
     const [old, next] = s.exercises;
     expect(next.program).not.toBe(old.program);
+    // The finished original leaves the group (L16); the replacement keeps its place in it.
+    expect(old.program!.supersetGroup).toBeUndefined();
+    expect(next.program!.supersetGroup).toBe('A');
     next.program!.supersetGroup = 'B';
-    expect(old.program!.supersetGroup).toBe('A');
+    expect(old.program!.supersetGroup).toBeUndefined();
   });
 });

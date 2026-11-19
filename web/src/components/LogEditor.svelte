@@ -4,7 +4,7 @@
   import { Plus, Trash2 } from '@lucide/svelte';
   import { type WorkoutLog, app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
-  import { maxReps, maxWeight } from '../lib/units';
+  import { fromLocalInput, maxReps, maxWeight, toLocalInput } from '../lib/units';
   import ActionMenu from './ActionMenu.svelte';
   import ExercisePicker from './ExercisePicker.svelte';
   import SetLine from './SetLine.svelte';
@@ -20,7 +20,6 @@
 
   // svelte-ignore state_referenced_locally
   const original = log;
-  const toLocalInput = (t: number) => { const d = new Date(t); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
   let date = $state(toLocalInput(original.date));
   let exercises = $state<DraftExercise[]>(original.exercises.map((l) => ({
     id: uuid(), template: structuredClone(l), sets: l.sets.map((s) => ({ id: uuid(), set: { ...s } })),
@@ -30,7 +29,8 @@
   let adding = $state(false);
 
   const edited = $derived(exercises.filter((x) => x.sets.length).map((x): LoggedExercise => ({ ...x.template, sets: x.sets.map((s) => ({ ...s.set })) })));
-  const newDate = $derived(new Date(date).getTime());
+  // The input keeps only minutes: the same minute keeps the saved time, seconds and all.
+  const newDate = $derived(fromLocalInput(date, original.date));
   const hasChanges = $derived(newDate !== original.date || JSON.stringify(edited) !== JSON.stringify(original.exercises));
 
   function label(x: DraftExercise, id: string) {
@@ -66,7 +66,7 @@
   function save() {
     if (!hasChanges) return onclose();
     const before = original;
-    const updated: WorkoutLog = { ...before, date: Number.isFinite(newDate) ? newDate : before.date, exercises: $state.snapshot(edited) };
+    const updated: WorkoutLog = { ...before, date: newDate, exercises: $state.snapshot(edited) };
     app.updateLog(updated);
     onclose();
     toasts.show('Workout updated', () => { if (app.logs.some((l) => l.id === before.id)) app.updateLog(before); });

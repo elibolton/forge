@@ -68,6 +68,18 @@ export const isPlannedSetUsable = (s: SessionSet, loaded: boolean): boolean =>
 
 export const numberedSets = (sets: SessionSet[]) => sets.filter((s) => !s.isWarmup && s.type !== 'drop');
 
+/**
+ * Where an exercise is: the set (round) up next and how many there are. Per-side work counts a left and
+ * a right as one set, as the logger numbers them.
+ */
+export function setProgress(e: SessionExercise): { next: number; total: number } {
+  const working = numberedSets(e.sets);
+  const per = e.program && isPerSide(e.program.laterality) ? 2 : 1;
+  const total = Math.ceil(working.length / per);
+  const done = Math.floor(working.filter((s) => s.done).length / per);
+  return { next: Math.min(done + 1, total), total };
+}
+
 /** The program prescription behind a session exercise. */
 export interface ProgramSlotInfo {
   slotID: string;
@@ -136,6 +148,9 @@ export interface SessionState {
    */
   logID?: string;
 }
+
+/** A rest chime more than this late (the app was in the background) isn't played. */
+export const CHIME_LATE_MS = 3000;
 
 /** A workout untouched this long was most likely finished without tapping Finish. */
 export const STALE_AFTER = 3 * 3_600_000;
@@ -236,6 +251,8 @@ class WorkoutSession {
         this.restEndsAt = saved.restEndsAt;
         this.restTotal = saved.restTotal ?? 0;
         this.scheduleRestAlert();
+        // Audio needs a tap to start; take the first one, so the chime ending this rest can sound.
+        if (typeof document !== 'undefined') document.addEventListener('pointerdown', () => this.unlockAudio(), { once: true, capture: true });
       }
       this.keepAwake();
       this.checkStale();
@@ -348,6 +365,8 @@ class WorkoutSession {
     const workout = this.state.logID;
     this.update((s) => {
       s.exercises.splice(index, 1);
+      // Stay on the exercise showing: removing one above it moves it up a place.
+      if (index < s.currentIndex) s.currentIndex--;
       if (s.currentIndex >= s.exercises.length) s.currentIndex = Math.max(0, s.exercises.length - 1);
       normalizeGroups(s);
     });
@@ -360,14 +379,26 @@ class WorkoutSession {
     });
   }
 
-  /** Moves exercise `id` up (-1) or down (+1); the one showing stays showing. */
+  /**
+   * Moves exercise `id` up (-1) or down (+1); the one showing stays showing. Next to a superset (or
+   * tri-set, circuit) it isn't part of, it hops over the whole group rather than splitting it.
+   */
   moveExercise(id: string, by: -1 | 1) {
     this.update((s) => {
       const i = s.exercises.findIndex((x) => x.id === id);
       const j = i + by;
       if (i < 0 || j < 0 || j >= s.exercises.length) return;
-      [s.exercises[i], s.exercises[j]] = [s.exercises[j], s.exercises[i]];
-      if (s.currentIndex === i) s.currentIndex = j; else if (s.currentIndex === j) s.currentIndex = i;
+      const showing = s.exercises[s.currentIndex]?.id;
+      const mover = s.exercises[i];
+      const other = groupOf(s.exercises[j]);
+      let to = j;
+      if (other !== undefined && other !== groupOf(mover)) {
+        while (to + by >= 0 && to + by < s.exercises.length && groupOf(s.exercises[to + by]) === other) to += by;
+      }
+      s.exercises.splice(i, 1);
+      s.exercises.splice(to, 0, mover);
+      const at = s.exercises.findIndex((x) => x.id === showing);
+      if (at >= 0) s.currentIndex = at;
       normalizeGroups(s);
     });
   }
@@ -463,8 +494,15 @@ class WorkoutSession {
     });
   }
 
+  /** Removes a set; a straight or failure set takes its drop sets with it, so none is left without a parent. */
   removeSet(exerciseID: string, setID: string) {
-    this.updateExercise(exerciseID, (e) => { e.sets = e.sets.filter((x) => x.id !== setID); });
+    this.updateExercise(exerciseID, (e) => {
+      const i = e.sets.findIndex((x) => x.id === setID);
+      if (i < 0) return;
+      let end = i + 1;
+      if (!e.sets[i].isWarmup && e.sets[i].type !== 'drop') while (e.sets[end]?.type === 'drop') end++;
+      e.sets.splice(i, end - i);
+    });
   }
 
   /** Adds a working set like the last one; per-side work gets a left and a right. */
@@ -512,6 +550,7 @@ class WorkoutSession {
     if (dropNext && dropNext.type === 'drop' && !dropNext.done) {
       // Straight on to the drop set: no rest, same exercise. Rate the set once the drops are done.
       this.pendingRating = null;
+      this.stopRest();
       return;
     }
     const info = after.program;
@@ -533,8 +572,12 @@ class WorkoutSession {
     } else restFor = after.restSeconds;
 
     if (jumpTo !== undefined) this.update((s) => { s.currentIndex = jumpTo!; });
-    if (restFor) this.startRest(restFor);
+    // No rest after this set (none set, or none between sides): an earlier countdown mustn't chime mid-set.
+    if (restFor) this.startRest(restFor); else this.stopRest();
   }
+
+  /** Ends a rest still counting, if there is one. */
+  private stopRest() { if (this.restEndsAt !== null) this.skipRest(); }
 
   /** Logs every remaining working set as planned (from the finish review). */
   logRemainingAsPlanned() {
@@ -584,11 +627,12 @@ class WorkoutSession {
   /**
    * Saves completed sets and returns any new personal records. The workout stays open until the save
    * has reached the device; if it doesn't, this returns null and nothing is lost. `endedAt` sets when it
-   * ended, for a workout finished hours after the last set.
+   * ended, for a workout finished hours after the last set. Returns undefined, not a failure, when a save
+   * is already under way (a double tap) or there's no workout.
    */
-  async finish(endedAt = this.endedAt()): Promise<PersonalRecord[] | null> {
+  async finish(endedAt = this.endedAt()): Promise<PersonalRecord[] | null | undefined> {
     const state = this.state;
-    if (!state || this.saving) return null;
+    if (!state || this.saving) return undefined;
     // The same id every time, so finishing again after a crash replaces the log rather than adding one.
     const log = workoutLog(state, state.logID ?? uuid(), endedAt);
     // Against history before this workout joins it.
@@ -625,6 +669,8 @@ class WorkoutSession {
   }
 
   private chime() {
+    // iOS pauses timers in the background: a rest that ended minutes ago gets no late chime on return.
+    if (this.restEndsAt === null || Date.now() - this.restEndsAt > CHIME_LATE_MS) return;
     navigator.vibrate?.([200, 100, 200]);
     if (this.audio) playRestSound(this.audio, app.get<RestSound>('restSound') ?? 'chime');
   }
