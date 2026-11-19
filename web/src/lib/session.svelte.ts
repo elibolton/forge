@@ -5,6 +5,7 @@ import {
 } from '../engine';
 import { db } from './db';
 import { app } from './store.svelte';
+import { type RestSound, playRestSound } from './sounds';
 
 export interface SessionSet {
   id: string;
@@ -139,8 +140,11 @@ class WorkoutSession {
     this.keepAwake();
   }
 
-  start(workout: PlannedWorkout) {
-    this.begin({ startedAt: Date.now(), focus: workout.focus, exercises: workout.exercises.map(sessionExerciseFrom), currentIndex: 0 });
+  /** `prepare` can adjust the session before it starts (adding warm-up and cool-down). */
+  start(workout: PlannedWorkout, prepare?: (s: SessionState) => void) {
+    const state: SessionState = { startedAt: Date.now(), focus: workout.focus, exercises: workout.exercises.map(sessionExerciseFrom), currentIndex: 0 };
+    prepare?.(state);
+    this.begin(state);
   }
 
   /** Starts a prepared session (a program day). */
@@ -209,7 +213,8 @@ class WorkoutSession {
 
   extendRest(seconds: number) {
     if (this.restEndsAt === null) return;
-    this.restEndsAt += seconds * 1000;
+    // After rest has run out, +15 s means 15 more seconds from now.
+    this.restEndsAt = Math.max(this.restEndsAt, Date.now()) + seconds * 1000;
     this.restTotal += seconds;
     this.scheduleRestAlert();
     this.persist();
@@ -270,7 +275,7 @@ class WorkoutSession {
 
   // MARK: Rest alert: a chime and buzz while the app is open. The screen stays awake during a workout.
 
-  private unlockAudio() {
+  unlockAudio() {
     try {
       this.audio ??= new AudioContext();
       if (this.audio.state === 'suspended') this.audio.resume();
@@ -287,20 +292,13 @@ class WorkoutSession {
 
   private chime() {
     navigator.vibrate?.([200, 100, 200]);
-    const ctx = this.audio;
-    if (!ctx || ctx.state !== 'running') return;
-    const t = ctx.currentTime;
-    for (const [i, freq] of [880, 1175].entries()) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, t + i * 0.18);
-      gain.gain.exponentialRampToValueAtTime(0.3, t + i * 0.18 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.18 + 0.35);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t + i * 0.18);
-      osc.stop(t + i * 0.18 + 0.4);
-    }
+    if (this.audio) playRestSound(this.audio, app.get<RestSound>('restSound') ?? 'chime');
+  }
+
+  /** Plays a timer sound now (the settings preview); also unlocks audio for later. */
+  preview(sound: RestSound) {
+    this.unlockAudio();
+    setTimeout(() => this.audio && playRestSound(this.audio, sound), 60);
   }
 
   async keepAwake() {

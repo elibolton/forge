@@ -9,6 +9,8 @@
     const t = setInterval(() => (now = Date.now()), 200);
     return () => clearInterval(t);
   });
+  /** Seconds since rest ended, so coming back to the app later shows how long you've been sitting. */
+  const over = $derived(session.restEndsAt === null ? 0 : Math.max(0, Math.floor((now - session.restEndsAt) / 1000)));
   const remaining = $derived(session.restEndsAt === null ? 0 : Math.max(0, Math.ceil((session.restEndsAt - now) / 1000)));
   const fraction = $derived(session.restEndsAt === null ? 0 : Math.max(0, (session.restEndsAt - now) / 1000 / Math.max(1, session.restTotal)));
 </script>
@@ -18,8 +20,8 @@
     <div class="bar" aria-hidden="true"><i style="transform:scaleX({fraction})"></i></div>
     <div class="row" style="--gap:12px">
       <div class="grow" role="timer" aria-live="off">
-        <div class="eyebrow">{remaining > 0 ? 'Rest' : 'Rest complete'}</div>
-        <div class="num time">{remaining > 0 ? minSec(remaining) : 'Go'}</div>
+        <div class="eyebrow">{remaining > 0 ? 'Rest' : over >= 5 ? 'Rest ended' : 'Rest complete'}</div>
+        <div class="num time">{remaining > 0 ? minSec(remaining) : over >= 5 ? `+${minSec(over)}` : 'Go'}</div>
       </div>
       <button class="btn" aria-label="Add 15 seconds" onclick={() => session.extendRest(15)}>+15s</button>
       <button class="btn primary" onclick={() => session.skipRest()}>{remaining > 0 ? 'Skip' : 'Close'}</button>

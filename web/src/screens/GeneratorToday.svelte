@@ -1,4 +1,8 @@
 <script lang="ts">
+  import TemplatePicker from '../components/TemplatePicker.svelte';
+  import SaveTemplateSheet from '../components/SaveTemplateSheet.svelte';
+  import { templateFromPlanned } from '../lib/templates';
+  import { addMobility } from '../lib/mobility';
   import {
     Catalog, type DayFocus, type Exercise, type ExercisePreference, type PlannedExercise, Programs, estimatedMinutes,
     isBodyweight, plannedWorkingSets,
@@ -23,6 +27,8 @@
   import { isSameDay } from '../lib/units';
 
   let loggingActivity = $state(false);
+  let pickingTemplate = $state(false);
+  let savingTemplate = $state(false);
   let replacing = $state<PlannedExercise | null>(null);
   let adding = $state(false);
 
@@ -113,6 +119,8 @@
     { label: 'Add Exercise', action: () => (adding = true) },
     { label: 'Empty Workout', action: () => session.startEmpty() },
     { label: 'Log Cardio or Activity', action: () => (loggingActivity = true) },
+    { label: 'Start a Saved Workout', action: () => (pickingTemplate = true) },
+    { label: 'Save This Workout', action: () => (savingTemplate = true) },
   ]);
   const switchMenu = $derived<MenuItem[]>([
     { label: 'Follow My Plan', checked: !today?.focus, action: () => rebuild(null, today?.minutes ?? null, today?.seed) },
@@ -168,7 +176,7 @@
 
     <HeroCard eyebrow={trainedToday ? 'Next up' : `Today · ${goalTitle[profile.plan.goal]}`} title={dayTitle(workout.focus)}
       stats={[{ value: `${estimate}`, label: 'Minutes' }, { value: `${workout.exercises.length}`, label: 'Exercises' }, { value: `${totalSets}`, label: 'Sets' }]}
-      startLabel={trainedToday ? 'Start next workout' : 'Start workout'} showStart={!session.isActive} onstart={() => session.start(workout)}>
+      startLabel={trainedToday ? 'Start next workout' : 'Start workout'} showStart={!session.isActive} onstart={() => session.start(workout, (st) => addMobility(st, workout.targetMuscles, profile.mobility))}>
       {#snippet controls()}
         <ActionMenu items={switchMenu} label="Switch workout focus" class="chip glass-chip"><ArrowLeftRight size={15} /> Switch</ActionMenu>
         <ActionMenu items={durationMenu} label="Duration, {chosenMinutes} minutes" class="chip glass-chip"><Clock size={15} /> {chosenMinutes} min</ActionMenu>
@@ -204,7 +212,7 @@
 
     <div class="row between section-row">
       <h2 class="eyebrow">The session</h2>
-      <span class="caption faint">{workout.exercises.length} exercises</span>
+      <span class="caption faint">{workout.exercises.length} exercises{app.profile?.mobility.warmup || app.profile?.mobility.cooldown ? ' + stretches' : ''}</span>
     </div>
     <div class="stack" style="--gap:10px">
       {#each workout.exercises as p, i (p.exercise.id)}
@@ -221,6 +229,11 @@
   {/if}
 </div>
 
+{#if pickingTemplate}<TemplatePicker onclose={() => (pickingTemplate = false)} />{/if}
+{#if savingTemplate && today}
+  {@const w = today.workout}
+  <SaveTemplateSheet suggested={dayTitle(w.focus)} make={(n) => templateFromPlanned(n, w.exercises)} onclose={() => (savingTemplate = false)} />
+{/if}
 {#if loggingActivity}<ActivitySheet onclose={() => (loggingActivity = false)} />{/if}
 {#if replacing}
   {@const r = replacing}

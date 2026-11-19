@@ -1,6 +1,8 @@
 <script lang="ts">
+  import SaveTemplateSheet from '../components/SaveTemplateSheet.svelte';
+  import { templateFromLogged } from '../lib/templates';
   import { Catalog } from '../engine';
-  import { ChevronRight, Trophy } from '@lucide/svelte';
+  import { Bookmark, ChevronRight, Trophy } from '@lucide/svelte';
   import BackBar from '../components/BackBar.svelte';
   import LogEditor from '../components/LogEditor.svelte';
   import SetLine from '../components/SetLine.svelte';
@@ -11,6 +13,7 @@
   /** A saved workout. Edit opens a draft editor. */
   let { id }: { id: string } = $props();
   let editing = $state(false);
+  let saving = $state(false);
   const log = $derived(app.logs.find((l) => l.id === id));
 
   function remove() {
@@ -23,7 +26,9 @@
 
 <div class="screen">
   <BackBar title={log ? logTitle(log) : 'Workout'}>
-    {#snippet trailing()}{#if log}<button class="link" onclick={() => (editing = true)}>Edit</button>{/if}{/snippet}
+    {#snippet trailing()}{#if log}
+      <button class="icon-btn plain" aria-label="Save as a workout to do again" onclick={() => (saving = true)}><Bookmark size={18} /></button>
+      <button class="link" onclick={() => (editing = true)}>Edit</button>{/if}{/snippet}
   </BackBar>
   {#if log}
     <div class="list" style="margin-top:12px">
@@ -47,6 +52,10 @@
   {/if}
 </div>
 
+{#if saving && log}
+  {@const l = log}
+  <SaveTemplateSheet suggested={logTitle(l)} make={(n) => templateFromLogged(n, l.exercises)} onclose={() => (saving = false)} />
+{/if}
 {#if editing && log}
   <LogEditor {log} onclose={() => (editing = false)} ondelete={remove} />
 {/if}

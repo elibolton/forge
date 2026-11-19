@@ -1,4 +1,7 @@
 <script lang="ts">
+  import TemplatePicker from '../components/TemplatePicker.svelte';
+  import { addMobility } from '../lib/mobility';
+  import { focusMuscles } from '../engine';
   import {
     type Exercise, type FatigueCheckIn, type WeekRule, Programs, checkInDue, nextDayID, programDay, rirText, rxExercise,
     scheduledOn, setsText, effortText, restText, skipDay, dayOrder, isDone, ruleFor,
@@ -24,6 +27,7 @@
   import { isSameDay } from '../lib/units';
 
   let loggingActivity = $state(false);
+  let pickingTemplate = $state(false);
   let { onUseGenerator }: { onUseGenerator: () => void } = $props();
 
   let replacing = $state<ProgramDayItem | null>(null);
@@ -48,6 +52,7 @@
     if (!plan) return;
     const { state, progress } = startDayPlan(plan);
     app.setProgramProgress(progress);
+    addMobility(state, focusMuscles(plan.session.day.focus), app.profile!.mobility);
     session.startPrepared(state);
   }
 
@@ -121,6 +126,7 @@
     { label: 'Use Generator Today', action: onUseGenerator },
     { label: 'Empty Workout', action: () => session.startEmpty() },
     { label: 'Log Cardio or Activity', action: () => (loggingActivity = true) },
+    { label: 'Start a Saved Workout', action: () => (pickingTemplate = true) },
   ]);
 </script>
 
@@ -197,7 +203,7 @@
     {:else}
       <div class="row between section-row">
         <h2 class="eyebrow">The session</h2>
-        <span class="caption faint">{plan.items.length} exercises</span>
+        <span class="caption faint">{plan.items.length} exercises{app.profile?.mobility.warmup || app.profile?.mobility.cooldown ? ' + stretches' : ''}</span>
       </div>
       <div class="stack" style="--gap:10px">
         {#each plan.items as item, i (item.prescription.slot.id)}
@@ -240,6 +246,7 @@
   {/if}
 </div>
 
+{#if pickingTemplate}<TemplatePicker onclose={() => (pickingTemplate = false)} />{/if}
 {#if loggingActivity}<ActivitySheet onclose={() => (loggingActivity = false)} />{/if}
 {#if replacing}
   {@const r = replacing}

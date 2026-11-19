@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TemplatePicker from '../components/TemplatePicker.svelte';
   import { GOALS, type Gym, Gyms, LEVELS, Programs, SPLITS, uuid } from '../engine';
   import { ChevronRight, MapPin, Trash2 } from '@lucide/svelte';
   import ActionMenu from '../components/ActionMenu.svelte';
@@ -11,6 +12,7 @@
   /** Pushed from Today rather than shown as its own tab. */
   let { embedded = false }: { embedded?: boolean } = $props();
   const p = $derived(app.profile!);
+  let pickingTemplate = $state(false);
   const splitShort = { pushPullLegs: 'PPL', upperLower: 'U/L', fullBody: 'Full', freshMuscles: 'Fresh' } as const;
 
   const programStatus = $derived.by(() => {
@@ -146,6 +148,7 @@
     <div class="list">
       {@render link('Workout Style', variabilityTitle[p.plan.variability], { name: 'style' })}
       {@render link('Injuries & Limitations', p.plan.injuries.length ? `${p.plan.injuries.length}` : 'None', { name: 'injuries' })}
+      <button class="item" onclick={() => (pickingTemplate = true)}>Saved Workouts<span class="value">{p.templates.length || 'None'}</span><ChevronRight size={16} color="var(--muted)" /></button>
       {@render link('My Exercises', p.customExercises.length ? `${p.customExercises.length}` : 'None', { name: 'customExercises' })}
       {@render link('Exercise Preferences', Object.keys(p.plan.preferences).length ? `${Object.keys(p.plan.preferences).length}` : 'None', { name: 'preferences' })}
     </div>
@@ -171,3 +174,5 @@
   .facts .eyebrow { font-stretch: 100%; letter-spacing: 0.08em; font-size: 0.6rem; }
   .item select { width: auto; margin-left: auto; min-height: 0; padding: 4px 8px; background: transparent; border: 0; color: var(--text-2); text-align: right; }
 </style>
+
+{#if pickingTemplate}<TemplatePicker onclose={() => (pickingTemplate = false)} />{/if}

@@ -8,6 +8,7 @@ import { db, requestPersistence } from './db';
 import { WeightUnits } from './units';
 import { type Activity, readActivity, toExternal } from './activities';
 import { prTimeline } from './records';
+import { type WorkoutTemplate, readTemplate } from './templates';
 
 // MARK: - Stored shapes
 
@@ -28,6 +29,10 @@ export interface Profile {
   activities: Activity[];
   /** Lifting workouts you aim for each week (Monday to Sunday). */
   weeklyGoal: number;
+  /** Workouts you saved to do again. */
+  templates: WorkoutTemplate[];
+  /** Stretches added before and after a workout. */
+  mobility: { warmup: boolean; cooldown: boolean };
 }
 
 export interface WorkoutLog {
@@ -66,6 +71,11 @@ function readProfile(v: unknown): Profile | null {
       ? Object.fromEntries(Object.entries(v.exerciseNotes).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].trim() !== ''))
       : {},
     activities: lossy(v.activities, readActivity).sort((a, b) => b.date - a.date),
+    templates: lossy(v.templates, readTemplate),
+    mobility: {
+      warmup: isObj(v.mobility) && typeof v.mobility.warmup === 'boolean' ? v.mobility.warmup : false,
+      cooldown: isObj(v.mobility) && typeof v.mobility.cooldown === 'boolean' ? v.mobility.cooldown : false,
+    },
     weeklyGoal: typeof v.weeklyGoal === 'number' && v.weeklyGoal >= 1 && v.weeklyGoal <= 7 ? Math.round(v.weeklyGoal) : 3,
   };
 }
@@ -137,7 +147,15 @@ class AppStore {
 
   async load() {
     try {
-      const [profile, logs, kv] = await Promise.all([db.get('profile'), db.get('logs'), db.get('kv')]);
+      const [profile, stored, legacy, kv] = await Promise.all([db.get('profile'), db.allLogs(), db.get('logs'), db.get('kv')]);
+      let logs: unknown[] = stored;
+      // Before version 2 every workout lived in one list under 'logs'; move them to their own store once.
+      if (Array.isArray(legacy) && legacy.length) {
+        const moved = lossy(legacy, readLog);
+        await db.putLogs($state.snapshot(moved));
+        await db.del('logs');
+        logs = [...stored, ...moved];
+      }
       const p = readProfile(profile);
       // Before anything plans or renders, so saved custom exercises resolve by id.
       if (p) Catalog.setCustom(p.customExercises);
@@ -156,7 +174,7 @@ class AppStore {
   createProfile(plan: UserPlan, gym: Gym, usesPounds: boolean, weeklyGoal = 3) {
     this.setProfile({
       plan, gyms: [gym], overrides: [], activeGymID: gym.id, usesPounds, createdAt: Date.now(), customExercises: [],
-      programProgress: null, exerciseNotes: {}, activities: [], weeklyGoal,
+      programProgress: null, exerciseNotes: {}, activities: [], weeklyGoal, templates: [], mobility: { warmup: false, cooldown: false },
     });
   }
 
@@ -208,6 +226,14 @@ class AppStore {
     this.updateProfile((p) => { p.activities = p.activities.filter((x) => x.id !== id); });
   }
 
+  saveTemplate(t: WorkoutTemplate) {
+    this.updateProfile((p) => { p.templates = [t, ...p.templates.filter((x) => x.id !== t.id)]; });
+  }
+
+  removeTemplate(id: string) {
+    this.updateProfile((p) => { p.templates = p.templates.filter((x) => x.id !== id); });
+  }
+
   setExerciseNote(id: string, text: string) {
     this.updateProfile((p) => { if (text.trim()) p.exerciseNotes[id] = text.trim(); else delete p.exerciseNotes[id]; });
   }
@@ -232,16 +258,28 @@ class AppStore {
 
   // MARK: Logs
 
-  private saveLogs(next: WorkoutLog[]) {
-    this.logs = [...next].sort((a, b) => b.date - a.date);
-    db.set('logs', $state.snapshot(this.logs));
-  }
+  private setLogs(next: WorkoutLog[]) { this.logs = [...next].sort((a, b) => b.date - a.date); }
 
-  addLog(log: WorkoutLog) { this.saveLogs([log, ...this.logs]); }
-  addLogs(logs: WorkoutLog[]) { this.saveLogs([...logs, ...this.logs]); }
-  updateLog(log: WorkoutLog) { this.saveLogs(this.logs.map((l) => (l.id === log.id ? log : l))); }
-  deleteLog(id: string) { this.saveLogs(this.logs.filter((l) => l.id !== id)); }
-  restoreLogs(logs: WorkoutLog[]) { this.saveLogs(logs); }
+  // Each change writes only the workouts it touches.
+  addLog(log: WorkoutLog) { this.addLogs([log]); }
+  addLogs(logs: WorkoutLog[]) {
+    const ids = new Set(logs.map((l) => l.id));
+    this.setLogs([...logs, ...this.logs.filter((l) => !ids.has(l.id))]);
+    db.putLogs($state.snapshot(logs));
+  }
+  updateLog(log: WorkoutLog) {
+    this.setLogs(this.logs.map((l) => (l.id === log.id ? log : l)));
+    db.putLogs([$state.snapshot(log)]);
+  }
+  deleteLog(id: string) {
+    this.setLogs(this.logs.filter((l) => l.id !== id));
+    db.deleteLog(id);
+  }
+  /** Replaces every workout (restoring a backup). */
+  restoreLogs(logs: WorkoutLog[]) {
+    this.setLogs(logs);
+    db.replaceLogs($state.snapshot(logs));
+  }
 
   // MARK: Small values
 
@@ -267,7 +305,7 @@ class AppStore {
     const profile = readProfile(data.profile);
     if (!profile) throw new Error('The backup has no profile.');
     this.setProfile(profile);
-    this.saveLogs(lossy(data.logs, readLog));
+    this.restoreLogs(lossy(data.logs, readLog));
     this.set('todayPlan', undefined);
   }
 

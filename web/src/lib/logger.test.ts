@@ -1,7 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 
 // The session module persists to IndexedDB; tests only need its pure helpers.
-vi.mock('./db', () => ({ db: { get: async () => undefined, set: async () => {}, del: async () => {} }, requestPersistence: async () => false }));
+vi.mock('./db', () => ({
+  db: { get: async () => undefined, set: async () => {}, del: async () => {}, allLogs: async () => [], putLogs: async () => {}, deleteLog: async () => {}, replaceLogs: async () => {}, clear: async () => {} },
+  requestPersistence: async () => false,
+}));
 
 const { Catalog, Gyms, Planner, defaultPlan } = await import('../engine');
 const { platesPerSide, barFor } = await import('./plates');

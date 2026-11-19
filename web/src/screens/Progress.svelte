@@ -4,6 +4,7 @@
   import ExerciseThumb from '../components/ExerciseThumb.svelte';
   import LineChart from '../components/LineChart.svelte';
   import BodyMap from '../components/BodyMap.svelte';
+  import Report from '../components/Report.svelte';
   import RecoveryRing from '../components/RecoveryRing.svelte';
   import Sheet from '../components/Sheet.svelte';
   import WorkoutCalendar from '../components/WorkoutCalendar.svelte';
@@ -84,6 +85,8 @@
       <span class="caption faint">{daysSinceLast === null ? 'none yet' : daysSinceLast === 0 ? 'nice work' : daysSinceLast === 1 ? 'day ago' : 'days ago'}</span>
     </div>
   </div>
+
+  <Report />
 
   <section class="card stack" style="--gap:14px">
     <div class="row between" style="align-items:flex-end">

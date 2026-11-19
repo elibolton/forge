@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 // Persistence is IndexedDB in the app; here it's a no-op.
-vi.mock('./db', () => ({ db: { get: async () => undefined, set: async () => {}, del: async () => {} }, requestPersistence: async () => false }));
+vi.mock('./db', () => ({
+  db: { get: async () => undefined, set: async () => {}, del: async () => {}, allLogs: async () => [], putLogs: async () => {}, deleteLog: async () => {}, replaceLogs: async () => {}, clear: async () => {} },
+  requestPersistence: async () => false,
+}));
 
 const { Gyms, Programs, defaultPlan, newProgress } = await import('../engine');
 const { app } = await import('./store.svelte');

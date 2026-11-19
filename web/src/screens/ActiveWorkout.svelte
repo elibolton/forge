@@ -1,6 +1,8 @@
 <script lang="ts">
+  import SaveTemplateSheet from '../components/SaveTemplateSheet.svelte';
+  import { templateFromSession } from '../lib/templates';
   import { Catalog } from '../engine';
-  import { ArrowDown, ArrowUp, ChevronDown, CircleAlert, CircleCheck, Ellipsis, Dumbbell, Trash2 } from '@lucide/svelte';
+  import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Ellipsis, Dumbbell, Trash2 } from '@lucide/svelte';
   import ActionMenu from '../components/ActionMenu.svelte';
   import ExercisePage from '../components/ExercisePage.svelte';
   import ExercisePicker from '../components/ExercisePicker.svelte';
@@ -16,10 +18,18 @@
 
   let adding = $state(false);
   let swapping = $state(false);
+  let savingTemplate = $state(false);
   let overview = $state(false);
   let reviewing = $state(false);
   let scroller = $state<HTMLDivElement>();
   let tick = $state(Date.now());
+  // Once ever: point out that you can swipe between exercises.
+  $effect(() => {
+    if (ws.exercises.length > 1 && !app.get('swipeHintShown')) {
+      app.set('swipeHintShown', true);
+      setTimeout(() => toasts.show('Tip: swipe left or right to move between exercises'), 900);
+    }
+  });
   $effect(() => { const t = setInterval(() => (tick = Date.now()), 1000); return () => clearInterval(t); });
 
   const ws = $derived(session.state!);
@@ -95,12 +105,19 @@
       { label: 'All exercises', action: () => (overview = true) },
       { label: 'Swap this exercise', action: () => (swapping = true) },
       { label: 'Add exercise', action: () => (adding = true) },
+      { label: 'Save as a workout', action: () => (savingTemplate = true) },
       { label: 'Discard workout', danger: true, action: discard },
     ]}><Ellipsis size={18} /></ActionMenu>
     <button class="btn primary finish" onclick={() => (reviewing = true)}>Finish</button>
   </header>
 
-  {#if ws.exercises.length}<div class="eyebrow pos">Exercise {index + 1} of {ws.exercises.length}</div>{/if}
+  {#if ws.exercises.length}
+    <div class="pos">
+      <button class="step" aria-label="Previous exercise" disabled={index === 0} onclick={() => go(index - 1)}><ChevronLeft size={16} /></button>
+      <span class="eyebrow">Exercise {index + 1} of {ws.exercises.length}</span>
+      <button class="step" aria-label="Next exercise" disabled={index >= ws.exercises.length - 1} onclick={() => go(index + 1)}><ChevronRight size={16} /></button>
+    </div>
+  {/if}
   <div class="strip" role="tablist" aria-label="Exercises">
     {#each ws.exercises as x, i (x.id)}
       <button role="tab" aria-selected={i === index} aria-label="{exerciseOf(x).name}{isComplete(x) ? ', done' : ''}" onclick={() => go(i)}>
@@ -182,6 +199,9 @@
   </Sheet>
 {/if}
 
+{#if savingTemplate}
+  <SaveTemplateSheet suggested={title} make={(n) => templateFromSession(n, ws.exercises)} onclose={() => (savingTemplate = false)} />
+{/if}
 {#if swapping && current}
   {@const c = current}
   <ExercisePicker title="Swap {exerciseOf(c).name}" exercises={app.planner().alternatives(exerciseOf(c), new Set(ws.exercises.map((x) => x.exerciseID)))}
@@ -200,7 +220,8 @@
   .title { font-weight: 650; font-size: 0.95rem; }
   .elapsed { font-size: 0.78rem; color: var(--text-3); }
   .finish { min-height: 40px; padding: 8px 16px; }
-  .pos { text-align: center; margin-top: 8px; }
+  .pos { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 6px; }
+  .step { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); background: var(--surface-2); }
   .strip { display: flex; gap: 5px; padding: 8px 18px 6px; }
   .strip button { flex: 1; padding: 8px 0; }
   .seg { display: block; height: 4px; border-radius: 3px; background: var(--surface-3); transition: background 0.3s, box-shadow 0.3s; }

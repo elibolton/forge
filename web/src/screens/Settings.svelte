@@ -11,6 +11,8 @@
   import { type Route, nav } from '../lib/nav.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
+  import { REST_SOUNDS, restSoundTitle } from '../lib/sounds';
+  import { session } from '../lib/session.svelte';
 
   let { route }: { route: Route } = $props();
   const p = $derived(app.profile!);
@@ -83,6 +85,24 @@
     <div class="section">
       <div class="list"><Toggle label="Warm-Up Sets" checked={p.plan.warmUpSets} onchange={(v) => app.updatePlan((x) => { x.warmUpSets = v; })} /></div>
       <div class="foot">Adds lighter ramp-up sets before heavy compound lifts.</div>
+    </div>
+    <div class="section"><div class="head">Stretching</div>
+      <div class="list">
+        <Toggle label="Warm-up drills" checked={p.mobility.warmup} onchange={(v) => app.updateProfile((x) => { x.mobility.warmup = v; })} />
+        <Toggle label="Cool-down stretches" checked={p.mobility.cooldown} onchange={(v) => app.updateProfile((x) => { x.mobility.cooldown = v; })} />
+      </div>
+      <div class="foot">Adds three drills before and three stretches after each workout, chosen for the muscles you're training. They don't count toward fatigue.</div>
+    </div>
+    <div class="section"><div class="head">Rest timer sound</div>
+      <div class="list" role="radiogroup" aria-label="Rest timer sound">
+        {#each REST_SOUNDS as snd (snd)}
+          {@const on = (app.get('restSound') ?? 'chime') === snd}
+          <button class="item" role="radio" aria-checked={on} onclick={() => { app.set('restSound', snd); session.preview(snd); }}>
+            <span class="grow">{restSoundTitle[snd]}</span>{#if on}<Check size={18} color="var(--accent)" />{/if}
+          </button>
+        {/each}
+      </div>
+      <div class="foot">Plays when rest is up while Forge is open. A web app can't sound an alert while the phone is locked, so the screen stays on during a workout.</div>
     </div>
   </div>
 
