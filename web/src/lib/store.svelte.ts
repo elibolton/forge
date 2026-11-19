@@ -5,6 +5,7 @@ import {
   readProgress, uuid, workingSets, loadEquipment, POUNDS_PER_KG, gymIncrement,
 } from '../engine';
 import { db, requestPersistence } from './db';
+import { saving } from './saving.svelte';
 import { WeightUnits } from './units';
 import { type Activity, readActivity, toExternal } from './activities';
 import { prTimeline } from './records';
@@ -100,6 +101,11 @@ function readLog(v: unknown): WorkoutLog | undefined {
 
 class AppStore {
   ready = $state(false);
+  /**
+   * Set when saved data couldn't be read. The app then shows a retry screen, never onboarding,
+   * because finishing onboarding would write a new profile over the one that's still on the device.
+   */
+  loadError = $state<string | null>(null);
   profile = $state.raw<Profile | null>(null);
   /** Newest first. */
   logs = $state.raw<WorkoutLog[]>([]);
@@ -161,16 +167,37 @@ class AppStore {
         logs = [...stored, ...moved];
       }
       const p = readProfile(profile);
+      if (profile !== undefined && profile !== null && !p) throw new Error('The saved profile is unreadable.');
       // Before anything plans or renders, so saved custom exercises resolve by id.
       if (p) Catalog.setCustom(p.customExercises);
       this.profile = p;
       this.logs = lossy(logs, readLog).sort((a, b) => b.date - a.date);
       this.kv = isObj(kv) ? kv : {};
+      this.loadError = null;
     } catch (e) {
       console.error('Could not load saved data', e);
+      this.loadError = e instanceof Error ? e.message : String(e);
     }
     this.ready = true;
     requestPersistence();
+  }
+
+  /**
+   * After a load error the user chose to get past: reads whatever can still be read and shows
+   * onboarding, which writes a new profile. Workouts are in their own store, so they're kept.
+   */
+  async resetAfterLoadError() {
+    this.loadError = null;
+    this.ready = false;
+    try {
+      const [stored, kv] = await Promise.all([db.allLogs(), db.get('kv')]);
+      this.logs = lossy(stored, readLog).sort((a, b) => b.date - a.date);
+      this.kv = isObj(kv) ? kv : {};
+    } catch (e) {
+      console.error('Could not read workouts', e);
+    }
+    this.profile = null;
+    this.ready = true;
   }
 
   // MARK: Profile
@@ -185,7 +212,8 @@ class AppStore {
   setProfile(p: Profile) {
     this.profile = p;
     Catalog.setCustom(p.customExercises);
-    db.set('profile', $state.snapshot(p));
+    const snap = $state.snapshot(p);
+    return saving.run('profile', () => db.set('profile', snap));
   }
 
   /** Clone, change, save. */
@@ -273,24 +301,34 @@ class AppStore {
   private setLogs(next: WorkoutLog[]) { this.logs = [...next].sort((a, b) => b.date - a.date); }
 
   // Each change writes only the workouts it touches.
-  addLog(log: WorkoutLog) { this.addLogs([log]); }
+  // Each resolves to whether it reached the device.
+  addLog(log: WorkoutLog) { return this.addLogs([log]); }
   addLogs(logs: WorkoutLog[]) {
     const ids = new Set(logs.map((l) => l.id));
     this.setLogs([...logs, ...this.logs.filter((l) => !ids.has(l.id))]);
-    db.putLogs($state.snapshot(logs));
+    const snap = $state.snapshot(logs);
+    return saving.run(`log:${logs.map((l) => l.id).join(',')}`, () => db.putLogs(snap));
   }
   updateLog(log: WorkoutLog) {
     this.setLogs(this.logs.map((l) => (l.id === log.id ? log : l)));
-    db.putLogs([$state.snapshot(log)]);
+    const snap = $state.snapshot(log);
+    return saving.run(`log:${log.id}`, () => db.putLogs([snap]));
   }
   deleteLog(id: string) {
     this.setLogs(this.logs.filter((l) => l.id !== id));
-    db.deleteLog(id);
+    return saving.run(`log:${id}`, () => db.deleteLog(id));
+  }
+  /** Takes back a workout whose save failed, so trying again doesn't add it twice. */
+  dropUnsavedLog(id: string) {
+    this.setLogs(this.logs.filter((l) => l.id !== id));
+    saving.forget(`log:${id}`);
   }
   /** Replaces every workout (restoring a backup). */
   restoreLogs(logs: WorkoutLog[]) {
     this.setLogs(logs);
-    db.replaceLogs($state.snapshot(logs));
+    saving.forget('log:');
+    const snap = $state.snapshot(logs);
+    return saving.run('log:*', () => db.replaceLogs(snap));
   }
 
   // MARK: Small values
@@ -301,7 +339,8 @@ class AppStore {
     const next = { ...this.kv };
     if (value === undefined) delete next[key]; else next[key] = value;
     this.kv = next;
-    db.set('kv', $state.snapshot(next));
+    const snap = $state.snapshot(next);
+    saving.run('kv', () => db.set('kv', snap));
   }
 
   // MARK: Backup

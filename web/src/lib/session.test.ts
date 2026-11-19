@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 // Persistence is IndexedDB in the app; here it's a no-op.
 vi.mock('./db', () => ({
-  db: { get: async () => undefined, set: async () => {}, del: async () => {}, allLogs: async () => [], putLogs: async () => {}, deleteLog: async () => {}, replaceLogs: async () => {}, clear: async () => {} },
+  db: { get: vi.fn(async () => undefined), set: async () => {}, del: async () => {}, allLogs: async () => [], putLogs: vi.fn(async () => {}), deleteLog: async () => {}, replaceLogs: async () => {}, clear: async () => {} },
   requestPersistence: async () => false,
 }));
 
@@ -12,6 +12,9 @@ const { session, newSet } = await import('./session.svelte');
 const { goalStreak, trainedDays, weeklyCounts, DAY } = await import('./weeks');
 const { exerciseRecords, prTimeline } = await import('./records');
 const { toExternal } = await import('./activities');
+const { db } = await import('./db');
+const { saving } = await import('./saving.svelte');
+const { checkSet } = await import('./setCheck');
 type SessionExercise = import('./session.svelte').SessionExercise;
 type ProgramSlotInfo = import('./session.svelte').ProgramSlotInfo;
 
@@ -100,13 +103,13 @@ describe('Logging sets', () => {
   });
 });
 
-describe('Finishing', () => {
-  test('saves only done sets, with RIR on working sets', () => {
+describe('Finishing', async () => {
+  test('saves only done sets, with RIR on working sets', async () => {
     start([
       exercise('a', [newSet(40, 8, { isWarmup: true, done: true }), newSet(80, 8, { done: true }), newSet(80, 8)], { rir: 1 }),
       exercise('b', [newSet(20, 12)], { exerciseID: 'db-fly' }),
     ]);
-    session.finish();
+    await session.finish();
     expect(app.logs.length).toBe(1);
     const [bench] = app.logs[0].exercises;
     expect(app.logs[0].exercises.map((e) => e.exerciseID)).toEqual(['bb-bench']);
@@ -116,34 +119,88 @@ describe('Finishing', () => {
     expect(session.finished?.records).toEqual([]);
   });
 
-  test('lowering-only work is saved without RIR', () => {
+  test('lowering-only work is saved without RIR', async () => {
     start([exercise('a', [newSet(0, 5, { done: true })], { exerciseID: 'nordic-curl', rir: 2, program: info({ effort: { type: 'eccentricOnly' } }) })]);
-    session.finish();
+    await session.finish();
     expect(app.logs[0].exercises[0].sets[0].rir).toBeNull();
     expect(app.logs[0].exercises[0].slotID).toBe('x.1');
   });
 
-  test('beating your best estimated 1RM is a personal record', () => {
+  test('beating your best estimated 1RM is a personal record', async () => {
     start([exercise('a', [newSet(80, 5, { done: true })], { rir: 2 })]);
-    session.finish();
+    await session.finish();
     start([exercise('a', [newSet(90, 5, { done: true })], { rir: 2 })]);
-    const records = session.finish();
+    const records = (await session.finish())!;
     expect(records.map((r) => r.exercise.id)).toEqual(['bb-bench']);
     expect(records[0].oneRM).toBeGreaterThan(records[0].previous);
   });
 
-  test('nothing logged saves nothing', () => {
+  test('nothing logged saves nothing', async () => {
     start([exercise('a', [newSet(80, 8)])]);
-    session.finish();
+    await session.finish();
     expect(app.logs.length).toBe(0);
   });
 
-  test('a program day moves the program on once it has working sets', () => {
+  test('a program day moves the program on once it has working sets', async () => {
     const program = Programs.pplul8;
     app.setProgramProgress(newProgress(program.id));
     start([exercise('a', [newSet(80, 8, { done: true })])], { programID: program.id, week: 1, dayID: 'push', isDeload: false });
-    session.finish();
+    await session.finish();
     expect(app.profile!.programProgress!.completed[1]).toEqual(['push']);
+  });
+
+  test('a failed save keeps the workout open, adds nothing and can be tried again', async () => {
+    const program = Programs.pplul8;
+    app.setProgramProgress(newProgress(program.id));
+    start([exercise('a', [newSet(80, 8, { done: true })])], { programID: program.id, week: 1, dayID: 'push', isDeload: false });
+    vi.mocked(db.putLogs).mockRejectedValueOnce(Object.assign(new Error('full'), { name: 'QuotaExceededError' }));
+    expect(await session.finish()).toBeNull();
+    expect(session.state).not.toBeNull();
+    expect(session.state!.exercises[0].sets[0].done).toBe(true);
+    expect(app.logs.length).toBe(0);
+    expect(app.profile!.programProgress!.completed[1] ?? []).toEqual([]);
+    expect(saving.lastFailure).toMatch(/out of storage/);
+    expect(saving.error).toBeNull(); // the dropped log isn't retried behind your back
+
+    expect(await session.finish()).toEqual([]);
+    expect(app.logs.length).toBe(1);
+    expect(session.state).toBeNull();
+    expect(saving.error).toBeNull();
+  });
+
+  test('a second tap while saving logs the workout once', async () => {
+    start([exercise('a', [newSet(80, 8, { done: true })])]);
+    const [first, second] = await Promise.all([session.finish(), session.finish()]);
+    expect(first).toEqual([]);
+    expect(second).toBeNull();
+    expect(app.logs.length).toBe(1);
+  });
+});
+
+describe('Loading', () => {
+  test('an unreadable workout in progress blocks the app instead of being overwritten', async () => {
+    vi.mocked(db.get).mockRejectedValueOnce(new Error('Connection to Indexed Database server lost'));
+    await session.load();
+    expect(app.loadError).toMatch(/Indexed Database/);
+    app.loadError = null;
+  });
+});
+
+describe('Checking a set before logging', () => {
+  test('no reps is never logged', () => {
+    expect(checkSet(80, 0, 100)).toEqual({ kind: 'noReps' });
+  });
+  test('far over your heaviest asks first; a normal jump does not', () => {
+    expect(checkSet(105, 5, 100)).toBeNull();
+    expect(checkSet(119, 5, 100)).toBeNull();
+    expect(checkSet(1000, 5, 100)).toEqual({ kind: 'heavy', heaviest: 100 });
+    expect(checkSet(35, 5, 10)).toEqual({ kind: 'heavy', heaviest: 10 }); // light lifts: needs +20 kg too
+    expect(checkSet(25, 5, 10)).toBeNull();
+  });
+  test('with no history only absurd weights ask', () => {
+    expect(checkSet(200, 5, undefined)).toBeNull();
+    expect(checkSet(450, 5, undefined)).toEqual({ kind: 'heavy' });
+    expect(checkSet(null, 12, undefined)).toBeNull();
   });
 });
 

@@ -4,6 +4,7 @@ import {
   effortRIR,
 } from '../engine';
 import { db } from './db';
+import { saving } from './saving.svelte';
 import { app } from './store.svelte';
 import { type RestSound, playRestSound } from './sounds';
 
@@ -106,8 +107,19 @@ class WorkoutSession {
 
   get isActive() { return this.state !== null; }
 
+  /** True while a finish is saving, so a second tap can't log the workout twice. */
+  saving = $state(false);
+
   async load() {
-    const saved = await db.get<{ state: SessionState; restEndsAt?: number; restTotal?: number }>('session');
+    let saved: { state: SessionState; restEndsAt?: number; restTotal?: number } | undefined;
+    try {
+      saved = await db.get('session');
+    } catch (e) {
+      // Starting a new workout now would write over the one still on the device.
+      console.error('Could not load the workout in progress', e);
+      app.loadError ??= e instanceof Error ? e.message : String(e);
+      return;
+    }
     if (saved?.state && Array.isArray(saved.state.exercises)) {
       this.state = saved.state;
       if (saved.restEndsAt && saved.restEndsAt > Date.now()) {
@@ -120,8 +132,10 @@ class WorkoutSession {
   }
 
   private persist() {
-    if (this.state) db.set('session', { state: $state.snapshot(this.state), restEndsAt: this.restEndsAt, restTotal: this.restTotal });
-    else db.del('session');
+    if (this.state) {
+      const snap = { state: $state.snapshot(this.state), restEndsAt: this.restEndsAt, restTotal: this.restTotal };
+      saving.run('session', () => db.set('session', snap));
+    } else saving.run('session', () => db.del('session'));
   }
 
   /** Clone, change, save. */
@@ -237,10 +251,13 @@ class WorkoutSession {
     this.releaseWake();
   }
 
-  /** Saves completed sets and returns any new personal records. */
-  finish(): PersonalRecord[] {
+  /**
+   * Saves completed sets and returns any new personal records. The workout stays open until the save
+   * has reached the device; if it doesn't, this returns null and nothing is lost.
+   */
+  async finish(): Promise<PersonalRecord[] | null> {
     const state = this.state;
-    if (!state) return [];
+    if (!state || this.saving) return null;
     const logged: LoggedExercise[] = [];
     for (const ex of state.exercises) {
       const eccentric = ex.program?.effort.type === 'eccentricOnly';
@@ -265,10 +282,16 @@ class WorkoutSession {
 
     const loggedWorking = logged.some((l) => workingSets(l).length > 0);
     if (logged.length) {
-      app.addLog({
-        id: uuid(), date: state.startedAt, focus: state.focus, durationSeconds: Math.round((Date.now() - state.startedAt) / 1000),
+      const id = uuid();
+      this.saving = true;
+      const saved = await app.addLog({
+        id, date: state.startedAt, focus: state.focus, durationSeconds: Math.round((Date.now() - state.startedAt) / 1000),
         exercises: logged, program: state.program ?? null,
-      });
+      }).finally(() => { this.saving = false; });
+      if (!saved) {
+        app.dropUnsavedLog(id);
+        return null;
+      }
     }
     if (state.program && loggedWorking) app.completeProgramDay(state.program);
     this.discard();

@@ -15,6 +15,7 @@
   import { toasts } from '../lib/toasts.svelte';
   import { minSec } from '../lib/units';
   import { swapInSession } from '../lib/swap';
+  import { saving } from '../lib/saving.svelte';
 
   let adding = $state(false);
   let swapping = $state(false);
@@ -88,10 +89,18 @@
   const pending = $derived(ws.exercises.flatMap((x) => x.sets).filter((s) => !s.isWarmup && !s.done).length);
   const volume = $derived(done.reduce((t, s) => t + (s.weight ?? 0) * s.reps, 0));
 
-  function save() {
-    reviewing = false;
-    session.finish();
+  let saveFailed = $state(false);
+  async function save() {
+    saveFailed = false;
+    const records = await session.finish();
+    if (records === null) saveFailed = true; // Still open, with every set intact.
+    else reviewing = false;
   }
+
+  // Discarding loses logged sets, so ask first when there are any.
+  let confirmingDiscard = $state(false);
+  const loggedCount = $derived(ws.exercises.flatMap((x) => x.sets).filter((s) => s.done).length);
+  function askDiscard() { if (loggedCount) confirmingDiscard = true; else discard(); }
 </script>
 
 <div class="logger" role="dialog" aria-modal="true" aria-label={title}>
@@ -106,7 +115,7 @@
       { label: 'Swap this exercise', action: () => (swapping = true) },
       { label: 'Add exercise', action: () => (adding = true) },
       { label: 'Save as a workout', action: () => (savingTemplate = true) },
-      { label: 'Discard workout', danger: true, action: discard },
+      { label: 'Discard workout', danger: true, action: askDiscard },
     ]}><Ellipsis size={18} /></ActionMenu>
     <button class="btn primary finish" onclick={() => (reviewing = true)}>Finish</button>
   </header>
@@ -161,17 +170,34 @@
         <div><b class="num">{done.length}</b><span class="caption muted">sets logged</span></div>
         <div><b class="num">{volume > 0 ? app.units.format(volume) : '–'}</b><span class="caption muted">volume</span></div>
       </div>
+      {#if saveFailed}
+        <div class="card stack save-failed" role="alert">
+          <div class="row bold" style="--gap:8px;color:var(--fatigued)"><CircleAlert size={20} /> Your workout wasn't saved</div>
+          <p class="sub muted">{saving.lastFailure ?? "Forge couldn't save to this device."} The workout is still open and every set is kept. Free up some space if you can, then try again.</p>
+        </div>
+      {/if}
       {#if pending > 0}
         <div class="card stack">
           <div class="row bold" style="--gap:8px;color:var(--recovering)"><CircleAlert size={20} /> {pending} planned {pending === 1 ? "set wasn't" : "sets weren't"} logged</div>
           <p class="sub muted">Did you do them? Logging them keeps your recovery and progression accurate.</p>
-          <button class="btn primary block big" onclick={() => { session.logRemainingAsPlanned(); save(); }}>I did them, log as planned</button>
+          <button class="btn primary block big" disabled={session.saving} onclick={() => { session.logRemainingAsPlanned(); save(); }}>I did them, log as planned</button>
           <!-- A workout with no working sets would only add noise to history and recovery. -->
-          <button class="btn block" disabled={!done.length} onclick={save}>{done.length ? 'Save without them' : 'Nothing logged to save'}</button>
+          <button class="btn block" disabled={!done.length || session.saving} onclick={save}>{done.length ? 'Save without them' : 'Nothing logged to save'}</button>
         </div>
       {:else}
-        <button class="btn primary block big" disabled={!done.length} onclick={save}>Save Workout</button>
+        <button class="btn primary block big" disabled={!done.length || session.saving} onclick={save}>{saveFailed ? 'Try Again' : 'Save Workout'}</button>
       {/if}
+    </div>
+  </Sheet>
+{/if}
+
+{#if confirmingDiscard}
+  <Sheet title="Discard Workout?" onclose={() => (confirmingDiscard = false)}>
+    {#snippet leading()}<span></span>{/snippet}
+    <div class="stack" style="--gap:14px">
+      <p class="sub muted">{loggedCount} logged {loggedCount === 1 ? 'set' : 'sets'} will be thrown away and won't count toward your history or recovery.</p>
+      <button class="btn primary block big" onclick={() => (confirmingDiscard = false)}>Keep Training</button>
+      <button class="btn block big danger" onclick={() => { confirmingDiscard = false; discard(); }}>Discard Workout</button>
     </div>
   </Sheet>
 {/if}
@@ -235,6 +261,7 @@
   .scroll > :global(*) { max-width: 620px; margin: 0 auto; }
   .rest { padding-bottom: var(--safe-bottom); }
   .rest:empty { display: none; }
+  .save-failed { border-color: rgba(255, 77, 109, 0.4); }
   .empty { align-items: center; text-align: center; padding-top: 22vh; }
   .stats > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .stats > div + div { border-left: 1px solid var(--hairline); }

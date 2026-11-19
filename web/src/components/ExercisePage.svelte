@@ -10,6 +10,10 @@
   import { barFor } from '../lib/plates';
   import ExerciseThumb from './ExerciseThumb.svelte';
   import ValueStepper from './ValueStepper.svelte';
+  import Sheet from './Sheet.svelte';
+  import { checkSet } from '../lib/setCheck';
+  import { exerciseRecords } from '../lib/records';
+  import { toasts } from '../lib/toasts.svelte';
 
   let { exercise: ex, nextName, onNext, onFinish, onswap, partner }: {
     exercise: SessionExercise; nextName?: string; onNext: () => void; onFinish: () => void;
@@ -48,7 +52,19 @@
   const setUpdate = (id: string, change: (s: SessionSet) => void) =>
     session.updateExercise(ex.id, (x) => { const s = x.sets.find((y) => y.id === id); if (s) change(s); });
 
-  function log(id: string) {
+  /** Heaviest working set ever logged for this exercise (kg). */
+  const heaviest = $derived(exerciseRecords(app.derivedHistory.sessions.get(ex.exerciseID) ?? []).heaviest?.value);
+  /** A set that looks like a typo, waiting for "log it anyway". */
+  let checking = $state<{ id: string; weight: number; heaviest?: number } | null>(null);
+
+  function log(id: string, checked = false) {
+    const s = ex.sets.find((x) => x.id === id);
+    if (!s) return;
+    if (!checked) {
+      const problem = checkSet(isBodyweight(e) ? null : s.weight, s.reps, heaviest);
+      if (problem?.kind === 'noReps') { toasts.show(e.isTimed ? 'Set the time before logging' : 'Set your reps before logging'); return; }
+      if (problem?.kind === 'heavy') { checking = { id, weight: s.weight ?? 0, heaviest: problem.heaviest }; return; }
+    }
     session.logSet(id, ex.id);
     editingID = null;
   }
@@ -223,6 +239,21 @@
     <button class="add-set" onclick={addSet}><Plus size={16} /> Add set</button>
   </div>
 </div>
+
+{#if checking}
+  {@const c = checking}
+  <Sheet title="Check the Weight" onclose={() => (checking = null)}>
+    {#snippet leading()}<span></span>{/snippet}
+    <div class="stack" style="--gap:14px">
+      <p class="sub muted">
+        {units.format(c.weight)} is {c.heaviest ? `far more than your heaviest ${e.name} so far (${units.format(c.heaviest)})` : 'a lot of weight'}.
+        A typo here would count as a personal record and change your next workouts.
+      </p>
+      <button class="btn primary block big" onclick={() => (checking = null)}>Fix the Weight</button>
+      <button class="btn block big" onclick={() => { checking = null; log(c.id, true); }}>Log {units.format(c.weight)}</button>
+    </div>
+  </Sheet>
+{/if}
 
 <style>
   .ex-name { font-size: 1.55rem; line-height: 1.05; }

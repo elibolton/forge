@@ -1,3 +1,4 @@
+import { db } from './db';
 import { app } from './store.svelte';
 import { toasts } from './toasts.svelte';
 import { dayKey } from './units';
@@ -9,8 +10,26 @@ export const lastBackupAt = () => app.get<number>('lastBackupAt');
 
 /** Saves a backup file: the share sheet on iPhone (Save to Files / iCloud Drive), a download elsewhere. */
 export async function exportBackup(): Promise<boolean> {
-  const name = `forge-backup-${dayKey()}.json`;
-  const file = new File([app.backup()], name, { type: 'application/json' });
+  if (!(await saveFile(app.backup(), `forge-backup-${dayKey()}.json`))) return false;
+  app.set('lastBackupAt', Date.now());
+  app.set('backupLogCount', app.logs.length);
+  toasts.show('Backup saved');
+  return true;
+}
+
+/**
+ * Everything on the device exactly as stored, for when the app can't read it. Nothing is parsed, so a
+ * damaged record still makes it into the file.
+ */
+export async function exportRawBackup(): Promise<boolean> {
+  const [profile, logs, kv, session] = await Promise.all([db.get('profile'), db.allLogs(), db.get('kv'), db.get('session')]);
+  const text = JSON.stringify({ app: 'forge', version: 1, raw: true, exportedAt: Date.now(), profile, logs, kv, session }, null, 1);
+  return saveFile(text, `forge-raw-${dayKey()}.json`);
+}
+
+/** The share sheet on iPhone (Save to Files / iCloud Drive), a download elsewhere. False if cancelled. */
+async function saveFile(text: string, name: string): Promise<boolean> {
+  const file = new File([text], name, { type: 'application/json' });
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: 'Forge backup' });
@@ -21,9 +40,6 @@ export async function exportBackup(): Promise<boolean> {
   } else {
     download(file);
   }
-  app.set('lastBackupAt', Date.now());
-  app.set('backupLogCount', app.logs.length);
-  toasts.show('Backup saved');
   return true;
 }
 
