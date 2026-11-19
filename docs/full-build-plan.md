@@ -36,7 +36,7 @@ Goal: Forge that you and a group of friends can rely on, with accounts, sync to 
    - Privacy settings: share everything, PRs only or nothing, plus hiding a single workout.
 5. **Invite friends.** An invite flow, a short privacy note (their data lives on your server), a feedback channel, and fixes from the first weeks of real use.
 
-Before phase 2, you need to pick the home machine, register a domain on Cloudflare, and choose an SMTP sender.
+Phase 2 details: [home server plan](home-server-plan.md) (Proxmox VM, Resend; domain still to decide).
 
 ## Debug phase method
 
