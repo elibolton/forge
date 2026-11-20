@@ -24,7 +24,11 @@ The app stays on GitHub Pages. Only data goes to the VM. The phone stays local-f
 
 ## 1. Decisions still needed
 
-**Domain.** Both Cloudflare Tunnel and Resend need one. Resend only sends from a domain you've verified; without one it can email only your own address. Options:
+**Domain.** Both Cloudflare Tunnel and Resend need one. Resend only sends from a domain you've verified; without one it can email only your own address.
+
+**Decision (2026-11-20):** buy a domain on Cloudflare, about $10/year. It's the most reliable choice, and only you can make the purchase. If you'd rather stay free, use Tailscale Funnel with Gmail; only steps 4 and 5 below change. A free eu.org domain is a fallback only, since approval is slow and not guaranteed.
+
+Options:
 - **Buy one on Cloudflare (recommended).** About $10/year. The tunnel, DNS and Resend's DNS records are all in one place.
 - **Use a domain you own elsewhere.** Move its nameservers to Cloudflare (free), or add only a subdomain if your registrar allows it.
 - **No domain at all.** Tailscale Funnel gives the VM a free `*.ts.net` HTTPS address instead of the tunnel. Email then needs Gmail SMTP with an app password, which is less reliable (spam folders), or Resend with a cheap domain anyway.
