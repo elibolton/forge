@@ -80,14 +80,21 @@ const MAX_INCREMENT = 50;
 
 const sane = (n: unknown, max: number): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= max;
 
-/** A gym's plate list: bad sizes dropped, a bad pair count read as unlimited, one entry per size, heaviest first. */
+/**
+ * A gym's plate list: bad sizes dropped, one entry per size, heaviest first. A pair count under one
+ * (0, or 0.5) drops that size rather than reading as "as many as needed"; a fraction above one rounds
+ * down; a count that isn't a number, or is past the limit, reads as unlimited.
+ */
 function readPlates(v: unknown): PlateStock[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const bySize = new Map<number, PlateStock>();
   for (const x of v) {
     const weight = isObj(x) ? x.weight : x;
     if (!sane(weight, MAX_PLATE) || bySize.has(weight)) continue;
-    const pairs = isObj(x) && sane(x.pairs, MAX_PAIRS) ? Math.floor(x.pairs) : undefined;
+    const raw = isObj(x) ? x.pairs : undefined;
+    const counted = typeof raw === 'number' && Number.isFinite(raw);
+    if (counted && raw < 1) continue;
+    const pairs = counted && raw <= MAX_PAIRS ? Math.floor(raw) : undefined;
     bySize.set(weight, pairs ? { weight, pairs } : { weight });
   }
   return bySize.size ? [...bySize.values()].sort((a, b) => b.weight - a.weight) : undefined;
@@ -96,7 +103,8 @@ function readPlates(v: unknown): PlateStock[] | undefined {
 function readBars(v: unknown): Gym['bars'] {
   if (!isObj(v)) return undefined;
   const out: NonNullable<Gym['bars']> = {};
-  for (const k of BAR_KINDS) if (sane(v[k], MAX_BAR)) out[k] = v[k] as number;
+  // A counterbalanced Smith machine starts at 0.
+  for (const k of BAR_KINDS) if (sane(v[k], MAX_BAR) || (k === 'smithMachine' && v[k] === 0)) out[k] = v[k] as number;
   return Object.keys(out).length ? out : undefined;
 }
 

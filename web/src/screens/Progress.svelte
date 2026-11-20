@@ -35,7 +35,7 @@
   const goal = $derived(app.weeklyGoal);
   const dates = $derived(app.logs.map((l) => l.date));
   /** Consecutive weeks that hit the weekly goal. */
-  const streak = $derived(goalStreak(dates, goal));
+  const streak = $derived(goalStreak(dates, app.weeklyGoalByWeek));
   /** Workouts in each of the last 8 weeks, oldest first. */
   const weeksBars = $derived(weeklyCounts(dates, 8));
   const maxBar = $derived(Math.max(goal + 1, ...weeksBars));

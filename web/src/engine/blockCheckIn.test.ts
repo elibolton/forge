@@ -122,7 +122,8 @@ describe('Blocks with check-ins', () => {
   });
 
   test('answers for another block are ignored', () => {
-    const c: BlockCheckIns = { [String(start + DAY_MS)]: { 5: good(weekStart(5)) } };
+    // The block before this one: six weeks away, far past the drift a moved start is allowed.
+    const c: BlockCheckIns = { [String(start - 42 * DAY_MS)]: { 5: good(weekStart(5)) } };
     expect(blockStatus(h, day(36), c)).toEqual(blockStatus(h, day(36)));
   });
 

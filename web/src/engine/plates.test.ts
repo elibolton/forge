@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   type Gym, Catalog, Gyms, HOME_PLATES, POUNDS_PER_KG, STANDARD_PLATES, gymBar, gymBaseLoadKg, gymIncrement, gymPlates, gymRound,
-  makeGym, nearestLoadable, nextLoad, platesPerSide, withGymUnits,
+  hasCustomPlates, makeGym, nearestLoadable, nextLoad, platesPerSide, withGymUnits,
 } from '.';
 import { readGym } from './decode';
 import { plateSetup, platesPerSide as displayPlates } from '../lib/plates';
@@ -57,10 +57,11 @@ describe('rounding with the gym\'s plates', () => {
     expect(nextLoad(80, 'upperBarbell', Catalog.exercise('bb-bench'), g)).toBe(90);
   });
 
-  test('10 lb smallest plate: steps of 20 lb', () => {
+  test('10 lb smallest plate with 45s and 25s: 25 + 10 + 10 a side makes every 10 lb from 85 up (N2)', () => {
     const g = lbGym({ plates: stock(45, 25, 10) });
-    expect(gymIncrement(g, 'barbell')).toBe(20);
-    expect(gymRound(g, lb(140), 'barbell') * POUNDS_PER_KG).toBeCloseTo(145);
+    expect(gymIncrement(g, 'barbell')).toBe(10);
+    expect(gymRound(g, lb(145), 'barbell') * POUNDS_PER_KG).toBeCloseTo(145);
+    expect(gymRound(g, lb(140), 'barbell') * POUNDS_PER_KG).toBeCloseTo(135);
     expect(gymRound(g, lb(10), 'barbell') * POUNDS_PER_KG).toBeCloseTo(45);
   });
 
@@ -121,7 +122,8 @@ describe('decoding plates and bars', () => {
         { weight: 5, pairs: 0 }, { weight: 5, pairs: 3 }, { weight: 2.5, pairs: -1 }, { weight: 1.25, pairs: 999 }],
       bars: { barbell: 15, ezBar: -1, trapBar: 'heavy', smithMachine: 999, junk: 5 },
     })!;
-    expect(g.plates).toEqual([{ weight: 20, pairs: 2 }, { weight: 10 }, { weight: 5 }, { weight: 2.5 }, { weight: 1.25 }]);
+    // A count under one drops that entry (N14), so the later 5 × 3 is the one kept; a count past the limit is unlimited.
+    expect(g.plates).toEqual([{ weight: 20, pairs: 2 }, { weight: 10 }, { weight: 5, pairs: 3 }, { weight: 1.25 }]);
     expect(g.bars).toEqual({ barbell: 15 });
   });
 
@@ -141,12 +143,30 @@ describe('presets and units', () => {
     expect(withGymUnits(Gyms.commercial(), true).plates).toBeUndefined();
   });
 
-  test('a custom list and bar weights are dropped on a unit switch', () => {
-    const g = withGymUnits(kgGym({ plates: stock([20, 2], 5), bars: { barbell: 15 }, increments: { barbell: 5 } }), true);
+  test('a custom list and bar weights are converted on a unit switch, not dropped (N9)', () => {
+    const g = withGymUnits(kgGym({ plates: stock([20, 3], 10, 5), bars: { barbell: 15 }, increments: { barbell: 5 } }), true);
     expect(g.usesPounds).toBe(true);
-    expect(g.plates).toBeUndefined();
-    expect(g.bars).toBeUndefined();
+    // 20 kg ≈ 44 lb → 45s, 10 kg ≈ 22 lb → 25s, 5 kg ≈ 11 lb → 10s; pair counts kept.
+    expect(g.plates).toEqual([{ weight: 45, pairs: 3 }, { weight: 25 }, { weight: 10 }]);
+    expect(g.bars).toEqual({ barbell: 33 });
     expect(g.increments).toEqual({});
+    // And back again: the same plates, pairs and bar.
+    const back = withGymUnits(g, false);
+    expect(back.plates).toEqual([{ weight: 20, pairs: 3 }, { weight: 10 }, { weight: 5 }]);
+    expect(back.bars).toEqual({ barbell: 15 });
+  });
+
+  test('two sizes landing on one plate add their pairs; any unlimited size stays unlimited', () => {
+    expect(withGymUnits(kgGym({ plates: stock([2.5, 2], [1.25, 1]) }), true).plates).toEqual([{ weight: 5, pairs: 2 }, { weight: 2.5, pairs: 1 }]);
+    expect(withGymUnits(lbGym({ plates: stock([35, 1], [45, 2]) }), false).plates).toEqual([{ weight: 20, pairs: 2 }, { weight: 15, pairs: 1 }]);
+  });
+
+  test('hasCustomPlates: a preset or unset list is not custom; pairs, other lists or bars are', () => {
+    expect(hasCustomPlates(kgGym())).toBe(false);
+    expect(hasCustomPlates(Gyms.homeBarbell())).toBe(false);
+    expect(hasCustomPlates(kgGym({ plates: stock(...STANDARD_PLATES.kg.map((w) => [w, 4] as [number, number])) }))).toBe(true);
+    expect(hasCustomPlates(kgGym({ plates: stock(20, 10) }))).toBe(true);
+    expect(hasCustomPlates(kgGym({ bars: { barbell: 15 } }))).toBe(true);
   });
 });
 
