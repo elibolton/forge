@@ -13,6 +13,38 @@ const patterns: Record<Exclude<RestSound, 'off'>, Note[]> = {
   pulse: [0, 0.22, 0.44].map((at) => ({ freq: 988, at, length: 0.14, type: 'square' as OscillatorType, volume: 0.12 })),
 };
 
+/**
+ * Asks iOS for an audio session that ducks the user's music instead of stopping it. Safari 16.4+ has
+ * `navigator.audioSession`; elsewhere this does nothing. ('playback' would ignore the silent switch but
+ * pause Spotify or Apple Music, so it isn't used.) Returns whether it was set.
+ */
+export function configureAudioSession(nav: unknown = typeof navigator === 'undefined' ? undefined : navigator): boolean {
+  const session = (nav as { audioSession?: { type: string } } | undefined)?.audioSession;
+  if (!session || typeof session !== 'object' || !('type' in session)) return false;
+  try {
+    session.type = 'transient';
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * Gets an audio context going again. iOS leaves it 'suspended' until a tap, and puts it in the
+ * non-standard 'interrupted' state after a call, Siri or a lock; anything but 'running' is resumed.
+ */
+export function resumeAudio(ctx: AudioContext): Promise<void> {
+  if (ctx.state === 'running') return Promise.resolve();
+  try {
+    return ctx.resume().catch(() => {});
+  } catch { return Promise.resolve(); }
+}
+
+/** Plays a timer sound, first waking the audio context if iOS stopped it. */
+export async function playWhenReady(ctx: AudioContext, sound: RestSound) {
+  if (sound === 'off') return;
+  await resumeAudio(ctx);
+  playRestSound(ctx, sound);
+}
+
 export function playRestSound(ctx: AudioContext, sound: RestSound) {
   if (sound === 'off' || ctx.state !== 'running') return;
   const t = ctx.currentTime;

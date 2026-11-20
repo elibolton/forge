@@ -30,7 +30,7 @@
 
 {#if target}
   {@const t = target}
-  <div class="prompt glass" role="group" aria-label="Rate set {t.number}">
+  <div class="prompt" role="group" aria-label="Rate set {t.number}">
     <div class="row" style="--gap:8px">
       <span class="sub semibold grow one-line">Reps left on set {t.number}{' '}<span class="muted">· {exerciseOf(t.ex).name}</span></span>
       <button class="skip" aria-label="Skip rating" onclick={() => session.skipRating()}><X size={16} /></button>
@@ -41,8 +41,8 @@
 {/if}
 
 <style>
-  .prompt { display: flex; flex-direction: column; gap: 10px; margin: 0 12px 8px; padding: 12px 12px 12px 16px; border-radius: var(--r-lg);
-    animation: rise 0.3s var(--ease); }
+  /* Drawn inside the logger's rest card, above the timer row (see ActiveWorkout). */
+  .prompt { display: flex; flex-direction: column; gap: 8px; animation: rise 0.3s var(--ease); }
   .explain { margin-top: -6px; }
   .skip { width: 44px; height: 44px; margin: -10px -8px -10px 0; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); flex: none; }
   @keyframes rise { from { transform: translateY(20px); opacity: 0; } }

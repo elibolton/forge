@@ -28,7 +28,8 @@
   .note { display: inline-flex; align-items: flex-start; gap: 8px; text-align: left; font-size: 0.8rem; color: var(--text-3); padding: 2px 0; }
   .note.has { color: var(--text); padding: 9px 12px; border-radius: 12px; background: rgba(255, 187, 69, 0.08); border: 1px solid rgba(255, 187, 69, 0.22); width: 100%; }
   .note.has :global(svg) { color: var(--recovering); flex: none; margin-top: 2px; }
-  .note-field { font-size: 0.9rem; min-height: 0; }
+  /* 16px or more: iOS zooms the page into any smaller field it focuses. */
+  .note-field { font-size: max(16px, 1rem); min-height: 0; }
   /* A one-line link with a full-height tap area that doesn't push the layout. */
   .note.add { align-items: center; min-height: 44px; margin: -11px 0; }
 </style>

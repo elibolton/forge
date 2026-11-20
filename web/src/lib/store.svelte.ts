@@ -36,6 +36,8 @@ export interface Profile {
   blockCheckIns: BlockCheckIns;
   /** Your own sticky note per exercise ("seat on 4", "use the blue band"). */
   exerciseNotes: Record<string, string>;
+  /** Your rest length per exercise, in seconds, chosen in the logger; it overrides the planned rest. */
+  exerciseRest?: Record<string, number>;
   /** Lifting workouts you aim for each week (Monday to Sunday). */
   weeklyGoal: number;
   /** Stretches added before and after a workout. */
@@ -104,6 +106,13 @@ export const logVolume = (l: WorkoutLog) =>
 type Raw = Record<string, unknown>;
 const isObj = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** Per-exercise rest: whole seconds from 0 to 15 minutes; anything else is dropped. */
+export function readExerciseRest(v: unknown): Record<string, number> {
+  if (!isObj(v)) return {};
+  return Object.fromEntries(Object.entries(v).flatMap(([id, s]) =>
+    typeof s === 'number' && Number.isFinite(s) && s >= 0 && s <= 900 ? [[id, Math.round(s)]] : []));
+}
+
 function readProfile(v: unknown): Profile | null {
   if (!isObj(v)) return null;
   // A gym stored without an id gets one from its place in the list, the same on every read.
@@ -122,6 +131,7 @@ function readProfile(v: unknown): Profile | null {
     exerciseNotes: isObj(v.exerciseNotes)
       ? Object.fromEntries(Object.entries(v.exerciseNotes).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].trim() !== ''))
       : {},
+    exerciseRest: readExerciseRest(v.exerciseRest),
     mobility: {
       warmup: isObj(v.mobility) && typeof v.mobility.warmup === 'boolean' ? v.mobility.warmup : false,
       cooldown: isObj(v.mobility) && typeof v.mobility.cooldown === 'boolean' ? v.mobility.cooldown : false,
@@ -444,6 +454,15 @@ class AppStore {
 
   setExerciseNote(id: string, text: string) {
     this.updateProfile((p) => { if (text.trim()) p.exerciseNotes[id] = text.trim(); else delete p.exerciseNotes[id]; });
+  }
+
+  /** Remembers the rest length for an exercise (null forgets it, back to the plan's rest). */
+  setExerciseRest(id: string, seconds: number | null) {
+    this.updateProfile((p) => {
+      const rest = { ...(p.exerciseRest ?? {}) };
+      if (seconds === null) delete rest[id]; else rest[id] = Math.max(0, Math.round(seconds));
+      p.exerciseRest = rest;
+    });
   }
 
   planner(minutes?: number | null): Planner {
