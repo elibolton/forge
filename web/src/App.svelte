@@ -16,6 +16,7 @@
   import { app } from './lib/store.svelte';
   import ActiveWorkout from './screens/ActiveWorkout.svelte';
   import Data from './screens/Data.svelte';
+  import Account from './screens/Account.svelte';
   import ExerciseDetail from './screens/ExerciseDetail.svelte';
   import History from './screens/History.svelte';
   import LogDetail from './screens/LogDetail.svelte';
@@ -128,6 +129,7 @@
       {:else if route.name === 'plan'}<You embedded />
       {:else if route.name === 'programs' || route.name === 'program'}<Programs {route} />
       {:else if route.name === 'data'}<Data />
+      {:else if route.name === 'account'}<Account />
       {:else}<Settings {route} />
       {/if}
       </div>

@@ -29,3 +29,5 @@ done; echo
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null || { docker logs "$NAME" | tail -30; exit 1; }
 
 PB_URL="http://127.0.0.1:$PORT" node --test "$HERE/rules.test.mjs"
+# The app's sync engine, two phones against this server.
+(cd "$SERVER/../web" && PB_URL="http://127.0.0.1:$PORT" npx vitest run src/lib/syncEngine.integration.test.ts)

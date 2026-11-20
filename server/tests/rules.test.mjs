@@ -33,6 +33,7 @@ before(async () => {
   for (const inv of [
     { code: 'FRIENDS2', maxUses: 2, uses: 0 },
     { code: 'EXPIRED1', maxUses: 5, uses: 0, expiresAt: '2020-01-01 00:00:00.000Z' },
+    { code: 'SELFDEL1', maxUses: 1, uses: 0 },
   ]) {
     const c = await api('POST', '/api/collections/invites/records', { token: su, body: inv });
     assert.equal(c.status, 200, JSON.stringify(c.json));
@@ -111,6 +112,11 @@ for (const name of COLLECTIONS) {
     assert.equal(upd.json.owner, userA);
     assert.equal(upd.json.deleted, true);
 
+    const stale = await api('PATCH', `${base}/${a.json.id}`, { token: tokA, body: { body: { old: true }, updatedAt: 1500 } });
+    assert.equal(stale.status, 404, 'an update older than the server copy is refused');
+    const same = await api('PATCH', `${base}/${a.json.id}`, { token: tokA, body: { updatedAt: 2000 } });
+    assert.equal(same.status, 200, 'an update as new as the server copy is fine');
+
     const since = await api('GET', `${base}?filter=${encodeURIComponent(`updated >= "${a.json.updated}"`)}&sort=updated`, { token: tokA });
     assert.deepEqual(since.json.items.map((r) => r.clientId), ['c1']);
   });
@@ -137,6 +143,19 @@ test('rate limits: join and sign-in codes', async () => {
     if (r.status === 429) { limited = true; break; }
   }
   assert.ok(limited, 'join should hit 429 within 8 tries');
+});
+
+test('sign-ins last 90 days, and users can delete themselves', async () => {
+  const c = await api('GET', '/api/collections/users', { token: su });
+  assert.equal(c.json.authToken.duration, 90 * 24 * 60 * 60);
+  await setJoinLimit(1000); // the rate-limit test above left it at 5
+  const tmp = await api('POST', '/api/forge/join', { body: { email: 'gone@test.local', code: 'SELFDEL1' } });
+  assert.equal(tmp.status, 200, JSON.stringify(tmp.json));
+  const u = await api('GET', `/api/collections/users/records?filter=${encodeURIComponent("email='gone@test.local'")}`, { token: su });
+  const id = u.json.items[0].id;
+  const tok = (await api('POST', `/api/collections/users/impersonate/${id}`, { token: su, body: {} })).json.token;
+  assert.equal((await api('DELETE', `/api/collections/users/records/${userB}`, { token: tok })).status, 404, 'not someone else');
+  assert.equal((await api('DELETE', `/api/collections/users/records/${id}`, { token: tok })).status, 204);
 });
 
 test('deleting a user deletes their data', async () => {
