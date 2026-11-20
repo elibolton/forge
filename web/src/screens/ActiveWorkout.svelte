@@ -18,14 +18,55 @@
   import { saving } from '../lib/saving.svelte';
   import { liveRecords } from '../lib/records';
   import { groupLabel, linkedToNext, members, nextInRound } from '../lib/groups';
+  import { openOverlay } from '../lib/overlays';
+  import { announce, registerLiveRegion } from '../lib/announce';
+  import { REST_CHOICES, restLabel, restSpoken } from '../lib/restPrefs';
+  import ExerciseDetail from './ExerciseDetail.svelte';
+  import { type Snippet, tick } from 'svelte';
+  import { X } from '@lucide/svelte';
 
   let adding = $state(false);
   let swapping = $state(false);
   let savingTemplate = $state(false);
   let overview = $state(false);
   let reviewing = $state(false);
+  /** The exercise whose how-to, records and history are open over the workout. */
+  let info = $state<string | null>(null);
+  /** The exercise whose rest length is being chosen. */
+  let restFor = $state<SessionExercise | null>(null);
+
+  // A dialog over the app: focus moves into it, Escape minimizes it, and minimizing hands focus to the
+  // bar it shrinks into. Sheets opened from here sit above it in the overlay stack.
+  let dialog = $state<HTMLDivElement>();
+  let liveRegion = $state<HTMLDivElement>();
+  function minimize() {
+    session.isExpanded = false;
+    tick().then(() => document.querySelector<HTMLElement>('button.mini')?.focus());
+  }
+  $effect(() => {
+    const close = openOverlay(minimize, { returnFocus: null });
+    dialog?.focus();
+    return () => close(false);
+  });
+  $effect(() => (liveRegion ? registerLiveRegion(liveRegion) : undefined));
+  // Toasts sit outside this dialog, where VoiceOver may not hear them: say them here too.
+  let toastSeen = Math.max(0, ...toasts.items.map((t) => t.id));
+  $effect(() => {
+    for (const t of toasts.items) if (t.id > toastSeen) { toastSeen = t.id; announce(t.message); }
+  });
+
+  // The Log button lives in the footer, below the rest timer and rating prompt, so none of them covers
+  // the steppers. The exercise page hands it over.
+  let footer = $state<Snippet>();
+  function setFooter(s: Snippet) {
+    footer = s;
+    return () => { if (footer === s) footer = undefined; };
+  }
+
+  // Keeping the screen on failed (or can't work on this iOS): say how to keep it on, until dismissed.
+  const wakeTip = $derived(!session.wakeLockWorks && !app.get('wakeTipDismissed'));
   let scroller = $state<HTMLDivElement>();
-  let tick = $state(Date.now());
+  let now = $state(Date.now());
   // Once ever: point out that you can swipe between exercises. It shows for a few seconds in place of
   // "Exercise 1 of N", between the arrows it stands for, rather than as a toast over Minimize and Finish.
   let swipeHint = $state(false);
@@ -36,7 +77,25 @@
       setTimeout(() => (swipeHint = false), 6000);
     }
   });
-  $effect(() => { const t = setInterval(() => (tick = Date.now()), 1000); return () => clearInterval(t); });
+  $effect(() => { const t = setInterval(() => (now = Date.now()), 1000); return () => clearInterval(t); });
+
+  // When the rest card or rating prompt appears, the scroll area shrinks: keep the set's steppers in
+  // view rather than leaving them cut off under it. (Not while typing: the field typed in comes first.)
+  $effect(() => {
+    const el = scroller;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    // Opened mid-rest, the card is already there: that counts as the area having shrunk.
+    let last = session.restEndsAt !== null || session.pendingRating ? Infinity : el.clientHeight;
+    const ro = new ResizeObserver(() => {
+      const h = el.clientHeight;
+      const shrank = h < last;
+      last = h;
+      if (!shrank || document.activeElement instanceof HTMLTextAreaElement || document.activeElement instanceof HTMLInputElement) return;
+      el.querySelector('.steppers')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
 
   // iOS keeps the layout viewport full height when the keyboard opens, so a full-screen logger would
   // sit under it. Fit the logger to the visible area instead, which keeps the Log button just above
@@ -129,16 +188,23 @@
   function askDiscard() { if (loggedCount) confirmingDiscard = true; else discard(); }
 </script>
 
-<div class="logger" class:typing={keyboardOpen} role="dialog" aria-modal="true" aria-label={title}
+<!-- Any tap wakes the audio iOS suspended or interrupted, so the rest chime can play. -->
+<div class="logger" class:typing={keyboardOpen} role="dialog" aria-modal="true" aria-label={title} tabindex="-1" bind:this={dialog}
+  onpointerdowncapture={() => session.unlockAudio()}
   style={keyboardOpen && viewport ? `bottom:auto;height:${viewport.height}px;top:${viewport.top}px` : ''}>
+  <div class="sr-only" aria-live="polite" aria-atomic="true" bind:this={liveRegion}></div>
   <header class="head">
-    <button class="icon-btn" aria-label="Minimize workout" onclick={() => (session.isExpanded = false)}><ChevronDown size={20} /></button>
+    <button class="icon-btn" aria-label="Minimize workout" onclick={minimize}><ChevronDown size={20} /></button>
     <div class="center">
       <div class="title one-line">{title}</div>
-      <div class="num elapsed" aria-label="Elapsed time">{minSec((tick - ws.startedAt) / 1000)}</div>
+      <div class="num elapsed"><span class="sr-only">Elapsed </span>{minSec((now - ws.startedAt) / 1000)}</div>
     </div>
     <ActionMenu label="Workout options" class="icon-btn" items={[
       { label: 'Reorder & group exercises', action: () => (overview = true) },
+      ...(current ? [
+        { label: `About ${exerciseOf(current).name}`, action: () => (info = current.exerciseID) },
+        { label: `Rest time · ${restLabel(current.restSeconds)}`, action: () => (restFor = current) },
+      ] : []),
       { label: 'Swap this exercise', action: () => (swapping = true) },
       { label: 'Add exercise', action: () => (adding = true) },
       { label: 'Save as a workout', action: () => (savingTemplate = true) },
@@ -151,7 +217,8 @@
     <div class="pos">
       <button class="step" aria-label="Previous exercise" disabled={index === 0} onclick={() => go(index - 1)}><ChevronLeft size={16} /></button>
       {#if swipeHint}
-        <span class="eyebrow hint" role="status">Swipe to change exercise</span>
+        <span class="eyebrow hint" aria-hidden="true">Swipe to change exercise</span>
+        <span class="sr-only">Exercise {index + 1} of {ws.exercises.length}</span>
       {:else}
         <span class="eyebrow">Exercise {index + 1} of {ws.exercises.length}</span>
       {/if}
@@ -168,6 +235,12 @@
     {/each}
   </div>
 
+  {#if wakeTip && ws.exercises.length}
+    <div class="wake-tip" role="note">
+      <span class="caption grow">Keep the screen on: set Auto-Lock to Never (Settings › Display) while you train.</span>
+      <button class="icon-btn plain" aria-label="Dismiss tip" onclick={() => app.set('wakeTipDismissed', true)}><X size={16} /></button>
+    </div>
+  {/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroll" bind:this={scroller} ontouchstart={touchStart} ontouchend={touchEnd}>
     {#if !ws.exercises.length}
@@ -184,7 +257,8 @@
         {@const step = nextInRound(ws, index)}
         {@const rounds = Math.max(...m.map((i) => setProgress(ws.exercises[i]).total), 0)}
         <ExercisePage exercise={current} nextName={ws.exercises[index + 1] ? exerciseOf(ws.exercises[index + 1]).name : undefined}
-          onswap={() => (swapping = true)}
+          onswap={() => (swapping = true)} oninfo={() => (info = current.exerciseID)}
+          onrest={() => (restFor = current)} {setFooter}
           group={m.length >= 2 ? {
             label: groupLabel(m.length), position: m.indexOf(index) + 1, size: m.length, rounds,
             round: Math.min(rounds, setProgress(current).next),
@@ -195,15 +269,43 @@
     {/if}
   </div>
 
-  <div class="rest"><RatePrompt /><RestTimerBar /></div>
+  <div class="rest glass"><RatePrompt /><RestTimerBar /></div>
+  <div class="foot">{@render footer?.()}</div>
 </div>
+
+{#if info}
+  <Sheet title="Exercise" full onclose={() => (info = null)}>
+    {#snippet leading()}<span></span>{/snippet}
+    {#snippet trailing()}<button class="link bold" onclick={() => (info = null)}>Done</button>{/snippet}
+    <ExerciseDetail id={info} inSheet />
+  </Sheet>
+{/if}
+
+{#if restFor}
+  {@const r = restFor}
+  {@const x = ws.exercises.find((y) => y.id === r.id) ?? r}
+  <Sheet title="Rest Time" onclose={() => (restFor = null)}>
+    {#snippet leading()}<span></span>{/snippet}
+    {#snippet trailing()}<button class="link bold" onclick={() => (restFor = null)}>Done</button>{/snippet}
+    <div class="stack" style="--gap:12px">
+      <p class="sub muted" style="margin:0 4px">Rest after each set of {exerciseOf(x).name}. Forge remembers it for your next workouts too.</p>
+      <div class="rest-choices" role="radiogroup" aria-label="Rest after each set">
+        {#each REST_CHOICES as sec (sec)}
+          <button class="chip num" class:on={x.restSeconds === sec} role="radio" aria-checked={x.restSeconds === sec}
+            aria-label={restSpoken(sec)} onclick={() => session.setExerciseRest(x.id, sec)}>{restLabel(sec)}</button>
+        {/each}
+      </div>
+      {#if supersetOf(x)}<p class="caption muted" style="margin:0 4px">In a superset, this is the rest after each round.</p>{/if}
+    </div>
+  </Sheet>
+{/if}
 
 {#if reviewing}
   <Sheet title="Finish Workout" onclose={() => (reviewing = false)}>
     {#snippet leading()}<button class="link" onclick={() => (reviewing = false)}>Keep Going</button>{/snippet}
     <div class="stack" style="--gap:18px">
       <div class="card tight row stats">
-        <div><b class="num">{durationText((session.endedAt(tick) - ws.startedAt) / 1000)}</b><span class="caption muted">duration</span></div>
+        <div><b class="num">{durationText((session.endedAt(now) - ws.startedAt) / 1000)}</b><span class="caption muted">duration</span></div>
         <div><b class="num">{done.length}</b><span class="caption muted">sets logged</span></div>
         <div><b class="num">{volume > 0 ? app.units.format(volume) : '–'}</b><span class="caption muted">volume</span></div>
       </div>
@@ -254,15 +356,21 @@
           {@const size = members(ws, g).length}
           <div class="group-head"><span class="kicker">{groupLabel(size).toUpperCase()}</span><span class="caption muted">{size} exercises · one set of each per round</span></div>
         {/if}
-        <div class="item" class:grouped={!!g}>
-          <button class="row grow" style="text-align:left" onclick={() => { go(i); overview = false; }}>
-            <ExerciseThumb exercise={exerciseOf(x)} size={44} />
-            <span class="grow"><span>{exerciseOf(x).name}</span><br /><span class="caption muted mono">{w.filter((s) => s.done).length}/{w.length} sets</span></span>
-            {#if isComplete(x)}<CircleCheck size={20} color="var(--fresh)" aria-label="Done" />{/if}
+        <!-- The name gets the row's full width; the controls sit on the line under it, after the set count. -->
+        <div class="item ov" class:grouped={!!g}>
+          <button class="ov-open" onclick={() => { go(i); overview = false; }}
+            aria-label="{exerciseOf(x).name}, {w.filter((s) => s.done).length} of {w.length} sets{isComplete(x) ? ', done' : ''}">
+            <ExerciseThumb exercise={exerciseOf(x)} size={40} />
+            <span class="ov-name">{exerciseOf(x).name}</span>
           </button>
-          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} up" disabled={i === 0} onclick={() => session.moveExercise(x.id, -1)}><ArrowUp size={18} /></button>
-          <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} down" disabled={i === ws.exercises.length - 1} onclick={() => session.moveExercise(x.id, 1)}><ArrowDown size={18} /></button>
-          <button class="icon-btn" style="color:var(--fatigued)" aria-label="Remove {exerciseOf(x).name}" onclick={() => remove(x)}><Trash2 size={18} /></button>
+          <div class="ov-sub">
+            <span class="caption muted mono" aria-hidden="true">{w.filter((s) => s.done).length}/{w.length} sets</span>
+            {#if isComplete(x)}<CircleCheck size={15} color="var(--fresh)" aria-hidden="true" />{/if}
+            <span class="grow"></span>
+            <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} up" disabled={i === 0} onclick={() => session.moveExercise(x.id, -1)}><ArrowUp size={18} /></button>
+            <button class="icon-btn plain" aria-label="Move {exerciseOf(x).name} down" disabled={i === ws.exercises.length - 1} onclick={() => session.moveExercise(x.id, 1)}><ArrowDown size={18} /></button>
+            <button class="icon-btn plain" aria-label="Remove {exerciseOf(x).name}" onclick={() => remove(x)}><Trash2 size={17} /></button>
+          </div>
         </div>
         {#if i < ws.exercises.length - 1}
           {@const nextName = exerciseOf(ws.exercises[i + 1]).name}
@@ -319,6 +427,12 @@
   /* Grouped exercises in the overview: a rail down the left joins them. */
   .group-head { display: flex; align-items: baseline; gap: 8px; padding: 12px 16px 2px; color: var(--ember-2); }
   .item.grouped { box-shadow: inset 3px 0 0 var(--ember); }
+  .ov { flex-direction: column; align-items: stretch; gap: 0; padding: 10px 8px 2px 14px; }
+  .ov-open { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; min-height: 44px; padding-right: 8px; }
+  .ov-name { flex: 1; min-width: 0; font-weight: 600; line-height: 1.25; }
+  /* Under the name, lined up with it (past the 40px thumb and its gap). */
+  .ov-sub { display: flex; align-items: center; gap: 6px; padding-left: 52px; margin-top: -4px; }
+  .ov-sub .icon-btn { width: 40px; height: 44px; }
   .link-row { display: flex; justify-content: center; padding: 2px 0; }
   .link-row.linked { box-shadow: inset 3px 0 0 var(--ember); }
   .list > .link-row, .list > .link-row + .item { border-top: 0; }
@@ -327,8 +441,23 @@
   .linked .link-btn { color: var(--ember-2); }
   .scroll { flex: 1; overflow-y: auto; padding: 10px 18px 0; -webkit-overflow-scrolling: touch; }
   .scroll > :global(*) { max-width: 620px; margin: 0 auto; }
-  .rest { padding-bottom: var(--safe-bottom); }
-  .rest:empty, .typing .rest { display: none; }
+  .logger:focus { outline: none; }
+  /* Rating prompt, then the rest timer, then the Log button: the timer row sits between the rating
+     chips and Log, so a tap a little off one doesn't land on the other. */
+  /* One compact card under the scroll area, never over it, so the steppers stay uncovered. */
+  .rest { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 12px; margin: 8px 12px 0;
+    padding: 12px 14px 12px 18px; border-radius: var(--r-xl); box-shadow: 0 -10px 40px -10px rgba(0, 0, 0, 0.8); }
+  .rest:has(:global(.ready)) { border-color: rgba(60, 239, 176, 0.45); }
+  .rest:empty, .typing .rest, .typing .wake-tip { display: none; }
+  .foot { padding: 12px 18px calc(var(--safe-bottom) + 10px); }
+  .foot:empty { display: none; }
+  .typing .foot { padding-bottom: 8px; }
+  .foot :global(.dock) { max-width: 620px; margin: 0 auto; }
+  .wake-tip { display: flex; align-items: center; gap: 8px; margin: 8px 12px 0; padding: 6px 4px 6px 14px; border-radius: 14px;
+    background: rgba(255, 187, 69, 0.08); border: 1px solid rgba(255, 187, 69, 0.22); }
+  .rest-choices { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .rest-choices .chip { justify-content: center; min-height: 46px; padding: 0; }
+
   .save-failed { border-color: rgba(255, 77, 109, 0.4); }
   .empty { align-items: center; text-align: center; padding-top: 22vh; }
   .stats > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }

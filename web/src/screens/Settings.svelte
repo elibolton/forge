@@ -1,6 +1,6 @@
 <script lang="ts">
   // The small settings pages pushed from You: gym editor, workout style, injuries, preferences, custom exercises.
-  import { type BarKind, Catalog, EQUIPMENT, type Equipment, JOINTS, MAX_BAR, MAX_PAIRS, VARIABILITIES, gymBar, gymIncrement, gymPlates, muscleName } from '../engine';
+  import { type BarKind, Catalog, EQUIPMENT, type Equipment, JOINTS, MAX_BAR, MAX_PAIRS, VARIABILITIES, gymBar, gymIncrement, gymPlates, isPlateLoaded, muscleName, stepTooFine } from '../engine';
   import { PLATE_CHOICES, gymBarKinds, gymLoadKinds, nextStep, readAmount, usesPlates } from '../lib/loadSteps';
   import { fmtNum } from '../lib/units';
   import { Check, ChevronRight, Plus, Trash2 } from '@lucide/svelte';
@@ -54,7 +54,7 @@
 
   /** Blank is the standard bar. */
   function setBar(id: string, kind: BarKind, input: HTMLInputElement) {
-    const weight = readAmount(input.value, MAX_BAR);
+    const weight = readAmount(input.value, MAX_BAR, false, kind === 'smithMachine');
     const gym = p.gyms.find((g) => g.id === id);
     if (weight === undefined) { input.value = String(gym?.bars?.[kind] ?? ''); return; }
     updateGym(id, (g) => {
@@ -139,8 +139,10 @@
             {@const step = gymIncrement(gym, eq)}
             {@const down = nextStep(step, -1, gym.usesPounds)}
             {@const up = nextStep(step, 1, gym.usesPounds)}
+            {@const fine = stepTooFine(gym, eq)}
+            {@const unitName = gym.usesPounds ? 'lb' : 'kg'}
             <div class="item">
-              <span class="grow">{loadTitle[eq]}: {step} {gym.usesPounds ? 'lb' : 'kg'} steps</span>
+              <span class="grow">{loadTitle[eq]}: {fmtNum(step, 2)} {unitName} steps</span>
               <div class="segmented" style="width:110px">
                 <button aria-label="Smaller {loadTitle[eq]} step" disabled={down === undefined}
                   onclick={() => updateGym(gym.id, (g) => { if (down !== undefined) g.increments[eq] = down; })}>−</button>
@@ -148,6 +150,14 @@
                   onclick={() => updateGym(gym.id, (g) => { if (up !== undefined) g.increments[eq] = up; })}>+</button>
               </div>
             </div>
+            {#if fine > 0 || (isPlateLoaded(eq) && gym.increments[eq] !== undefined)}
+              <div class="item step-note">
+                <span class="grow caption" class:warn={fine > 0}>
+                  {fine > 0 ? `Finer than your plates can make: weights go up ${fmtNum(fine, 2)} ${unitName} at a time.` : 'Your own step, not the plates\' smallest jump.'}
+                </span>
+                <button class="btn reset" onclick={() => updateGym(gym.id, (g) => { delete g.increments[eq]; })}>Reset to plates</button>
+              </div>
+            {/if}
           {/each}
         </div>
         <div class="foot">The smallest jump available, so suggested weights are ones you can actually load.</div>
@@ -265,4 +275,8 @@
 <style>
   /* A short number field at the end of a settings row. */
   .amount { width: 84px; min-height: 38px; padding: 7px 12px; text-align: right; flex: none; }
+  /* A step finer than the plates make: the note below it says so and offers the plate-based default. */
+  .step-note { gap: 10px; padding-top: 0; }
+  .step-note .warn { color: var(--ember-2); }
+  .step-note .reset { flex: none; min-height: 36px; padding: 6px 14px; font-size: 0.86rem; }
 </style>

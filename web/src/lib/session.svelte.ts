@@ -5,8 +5,9 @@ import {
 import { db } from './db';
 import { saving } from './saving.svelte';
 import { app } from './store.svelte';
-import { type RestSound, playRestSound } from './sounds';
+import { type RestSound, configureAudioSession, playWhenReady, resumeAudio } from './sounds';
 import { swapInSession } from './swap';
+import { applyRestPreferences } from './restPrefs';
 import { groupOf, groupRest, linkWithNext, nextInRound, normalizeGroups, unlinkFromNext } from './groups';
 import { type PersonalRecord, completesProgramDay, newRecords, workoutLog } from './finishWorkout';
 
@@ -177,6 +178,21 @@ export function sessionExerciseFrom(p: PlannedExercise): SessionExercise {
   };
 }
 
+/**
+ * Whether the screen will lock anyway: a Home Screen app on iOS before 18.4, where Wake Lock resolves
+ * but does nothing (WebKit bug 254545).
+ */
+export function wakeLockUnreliable(
+  ua = typeof navigator === 'undefined' ? '' : navigator.userAgent,
+  standalone = typeof navigator !== 'undefined' && ((navigator as { standalone?: boolean }).standalone === true
+    || (typeof matchMedia !== 'undefined' && matchMedia('(display-mode: standalone)').matches)),
+): boolean {
+  const m = /(?:iPhone|iPad|iPod).*? OS (\d+)_(\d+)/.exec(ua);
+  if (!m || !standalone) return false;
+  const [major, minor] = [Number(m[1]), Number(m[2])];
+  return major < 18 || (major === 18 && minor < 4);
+}
+
 /** The workout in progress. Saved on every change so it survives the app being closed. */
 class WorkoutSession {
   state = $state.raw<SessionState | null>(null);
@@ -291,6 +307,7 @@ class WorkoutSession {
   private begin(state: SessionState, replace: boolean): boolean {
     if (this.state && !replace) return false;
     state.logID ??= uuid();
+    applyRestPreferences(state, app.profile?.exerciseRest);
     this.unlockAudio();
     this.restEndsAt = null;
     clearTimeout(this.restTimer);
@@ -350,6 +367,8 @@ class WorkoutSession {
     this.update((s) => {
       const x = sessionExerciseFrom(planned);
       delete x.supersetGroup; // a generator pairing means nothing in this workout
+      const rest = app.profile?.exerciseRest?.[x.exerciseID];
+      if (rest !== undefined && x.restSeconds > 0) x.restSeconds = rest;
       s.exercises.push(x);
       s.currentIndex = s.exercises.length - 1;
     });
@@ -416,8 +435,24 @@ class WorkoutSession {
   /** Swaps exercise `id` for `replacement`, keeping any sets already logged (see `swapInSession`). */
   swapExercise(id: string, replacement: Exercise, planner: Planner): boolean {
     let swapped = false;
-    this.update((s) => { swapped = swapInSession(s, id, replacement, planner); normalizeGroups(s); });
+    this.update((s) => {
+      swapped = swapInSession(s, id, replacement, planner);
+      normalizeGroups(s);
+      if (swapped) applyRestPreferences(s, app.profile?.exerciseRest);
+    });
     return swapped;
+  }
+
+  /**
+   * Sets the rest after each set of this exercise, for this workout and (remembered in the profile)
+   * every workout after it. Every copy of the exercise in the workout changes with it.
+   */
+  setExerciseRest(id: string, seconds: number) {
+    const ex = this.state?.exercises.find((x) => x.id === id);
+    if (!ex) return;
+    const rest = Math.max(0, Math.round(seconds));
+    app.setExerciseRest(ex.exerciseID, rest);
+    this.update((s) => { for (const x of s.exercises) if (x.exerciseID === ex.exerciseID) x.restSeconds = rest; });
   }
 
   /** How many reps were left in the tank on this exercise's last set. */
@@ -653,12 +688,22 @@ class WorkoutSession {
 
   // MARK: Rest alert: a chime and buzz while the app is open. The screen stays awake during a workout.
 
+  /**
+   * Creates or wakes the audio context. Called on taps in the logger (iOS only starts audio from a
+   * gesture) and when the app comes back to the front, since a lock or a call leaves it 'interrupted'.
+   */
   unlockAudio() {
     try {
-      this.audio ??= new AudioContext();
-      if (this.audio.state === 'suspended') this.audio.resume();
+      if (!this.audio) {
+        configureAudioSession();
+        this.audio = new AudioContext();
+      }
+      void resumeAudio(this.audio);
     } catch { /* no audio */ }
   }
+
+  /** Wakes audio that was already started; never creates it (that needs a tap). */
+  resumeAudioIfStarted() { if (this.audio) void resumeAudio(this.audio); }
 
   private scheduleRestAlert() {
     clearTimeout(this.restTimer);
@@ -672,22 +717,45 @@ class WorkoutSession {
     // iOS pauses timers in the background: a rest that ended minutes ago gets no late chime on return.
     if (this.restEndsAt === null || Date.now() - this.restEndsAt > CHIME_LATE_MS) return;
     navigator.vibrate?.([200, 100, 200]);
-    if (this.audio) playRestSound(this.audio, app.get<RestSound>('restSound') ?? 'chime');
+    if (this.audio) void playWhenReady(this.audio, app.get<RestSound>('restSound') ?? 'chime');
   }
 
   /** Plays a timer sound now (the settings preview); also unlocks audio for later. */
   preview(sound: RestSound) {
     this.unlockAudio();
-    setTimeout(() => this.audio && playRestSound(this.audio, sound), 60);
+    setTimeout(() => this.audio && void playWhenReady(this.audio, sound), 60);
   }
 
+  /**
+   * False once keeping the screen on is known not to work: no Wake Lock API, a refused request, the lock
+   * dropping while the app is on screen, or a Home Screen app on iOS below 18.4 (where it silently does
+   * nothing). The logger then suggests setting Auto-Lock to Never.
+   */
+  wakeLockWorks = $state(true);
+
   async keepAwake() {
+    if (typeof document === 'undefined' || document.visibilityState !== 'visible' || !this.state || this.wakeLock || this.wakeRequesting) return;
+    if (wakeLockUnreliable()) this.wakeLockWorks = false;
+    const api = typeof navigator === 'undefined' ? undefined : navigator.wakeLock;
+    if (!api?.request) { this.wakeLockWorks = false; return; }
+    // Starting a workout and coming back to the app can both ask at once; one request is enough.
+    this.wakeRequesting = true;
     try {
-      if (document.visibilityState === 'visible' && this.state && !this.wakeLock) {
-        this.wakeLock = await navigator.wakeLock?.request('screen');
-        this.wakeLock?.addEventListener('release', () => { this.wakeLock = null; });
-      }
-    } catch { /* not supported or denied */ }
+      this.holdWake(await api.request('screen'), true);
+    } catch { this.wakeLockWorks = false; } finally { this.wakeRequesting = false; }
+  }
+
+  private wakeRequesting = false;
+
+  private holdWake(lock: WakeLockSentinel, retry: boolean) {
+    this.wakeLock = lock;
+    lock.addEventListener('release', () => {
+      if (this.wakeLock === lock) this.wakeLock = null;
+      // Released while still on screen (not by going to the background): take it again, once.
+      if (!this.state || document.visibilityState !== 'visible') return;
+      if (!retry) { this.wakeLockWorks = false; return; }
+      navigator.wakeLock.request('screen').then((again) => this.holdWake(again, false)).catch(() => { this.wakeLockWorks = false; });
+    });
   }
 
   private releaseWake() {
@@ -703,6 +771,8 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     session.keepAwake();
+    // A lock or a call leaves iOS audio 'interrupted'; wake it so the next rest can chime.
+    session.resumeAudioIfStarted();
     session.checkStale();
   });
   // The wake lock keeps the page visible, so a workout left open overnight never fires the check above.

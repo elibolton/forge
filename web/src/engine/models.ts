@@ -204,9 +204,27 @@ export interface PlateStock { weight: number; pairs?: number }
 export const BAR_KINDS = ['barbell', 'ezBar', 'trapBar', 'smithMachine'] as const;
 export type BarKind = (typeof BAR_KINDS)[number];
 
-/** Kinds loaded with plates on both sides, where the smallest jump is two of the smallest plate. */
+/** Kinds that take plates: on both sides of a bar or sled, or hung on a dip belt. */
 export const PLATE_LOADED: readonly LoadKind[] = ['barbell', 'ezBar', 'trapBar', 'smithMachine', 'plates'];
 export const isPlateLoaded = (e: LoadKind) => PLATE_LOADED.includes(e);
+/** Kinds loaded with plates on both sides, where the smallest jump is two plates. */
+export const PAIR_LOADED: readonly LoadKind[] = ['barbell', 'ezBar', 'trapBar', 'smithMachine'];
+
+/** Plates per jump for a kind of load: 2 on a bar, 1 on a dip belt or vest ('plates'), 0 when it takes no plates. */
+export function kindSides(e: LoadKind): 0 | 1 | 2 {
+  return PAIR_LOADED.includes(e) ? 2 : e === 'plates' ? 1 : 0;
+}
+
+/**
+ * Plates per jump for an exercise: 2 for bars and plate-loaded sleds (a hack squat), 1 for a dip belt,
+ * vest or held plate, 0 when it takes no plates.
+ */
+export function plateSides(e: Exercise): 0 | 1 | 2 {
+  const kind = loadEquipment(e) ?? (isBodyweight(e) ? undefined : 'plates');
+  if (!kind) return 0;
+  if (kind === 'plates' && e.equipment.includes('hackSquat')) return 2;
+  return kindSides(kind);
+}
 
 /** Plates heavier than this, bars heavier than this, or more pairs than this are corrupt or a typo. */
 export const MAX_PLATE = 100;
@@ -229,12 +247,35 @@ export function makeGym(name: string, equipment: Equipment[], usesPounds = false
   return { id, name, equipment: [...equipment], equipmentVersion: 2, usesPounds, increments: { ...increments } };
 }
 
-/** Load step in the gym's unit. Plate-loaded kinds default to two of the gym's smallest plate. */
-export function gymIncrement(g: Gym, e: LoadKind): number {
+/**
+ * Load step in the gym's unit. With the gym's own plates listed, plate-loaded kinds default to the
+ * smallest jump those plates make: `sides` × the plates' common divisor (two 1.25s on a bar, one on a
+ * belt; 5 a side for 25/20/15/10 rather than two 10s).
+ */
+export function gymIncrement(g: Gym, e: LoadKind, sides: number = kindSides(e)): number {
   const set = g.increments[e];
   if (set !== undefined) return set;
-  if (g.plates?.length && isPlateLoaded(e)) return 2 * Math.min(...g.plates.map((p) => p.weight));
+  if (g.plates?.length && sides) return plateJump(g.plates, sides);
   return g.usesPounds ? defaultIncrementPounds(e) : defaultIncrement(e);
+}
+
+/** The finest jump these plates make (given enough of them): `sides` × the common divisor of the sizes. */
+export function plateJump(stock: readonly PlateStock[], sides: number): number {
+  const gcd = (x: number, y: number): number => (y ? gcd(y, x % y) : x);
+  const unit = stock.map((p) => Math.round(p.weight * 100)).reduce((x, y) => gcd(x, y), 0);
+  return (sides * unit) / 100;
+}
+
+/**
+ * When a step set in Settings is finer than the gym's plates (its own, else the standard set) can make,
+ * the plates' smallest jump, which suggestions go up by instead; else 0.
+ */
+export function stepTooFine(g: Gym, e: LoadKind): number {
+  const sides = kindSides(e);
+  const set = g.increments[e];
+  if (!sides || set === undefined) return 0;
+  const jump = plateJump(gymPlates(g), sides);
+  return set < jump - 1e-9 ? jump : 0;
 }
 
 /** Bar weight in the gym's unit: the gym's own, else the standard one (0 for kinds with no bar). */
@@ -316,18 +357,40 @@ function loadableSides(sizes: PlateStock[], target: number): { sides: number[]; 
   return { sides, make };
 }
 
-/** The nearest total (bar plus pairs of owned plates) to `weight`, never below the bar; ties go lighter. */
-export function nearestLoadable(weight: number, bar: number, stock: readonly PlateStock[]): number {
-  const target = Math.max(0, (weight - bar) / 2);
-  const { sides } = loadableSides([...stock].sort((a, b) => b.weight - a.weight), target);
+/**
+ * The nearest total (bar plus `sides` sets of owned plates: pairs on a bar, single plates on a belt) to
+ * `weight`, never below the bar; ties go lighter.
+ */
+export function nearestLoadable(weight: number, bar: number, stock: readonly PlateStock[], sides = 2): number {
+  return loadableTotal(weight, bar, stock, sides, 0)!;
+}
+
+/**
+ * A total the plates make: the nearest (`dir` 0, ties lighter, never below the bar), the lightest at or
+ * above `weight` (1), or the heaviest at or below it (−1). Undefined when there's none that way: past
+ * the most the plates make, or under the bar.
+ */
+export function loadableTotal(weight: number, bar: number, stock: readonly PlateStock[], sides: number, dir: 0 | 1 | -1): number | undefined {
+  const target = (weight - bar) / sides;
+  const list = loadableSides([...stock].sort((a, b) => b.weight - a.weight), Math.max(0, target)).sides;
+  if (dir > 0) {
+    const s = list.find((x) => x >= target - 1e-6);
+    return s === undefined ? undefined : bar + sides * s;
+  }
+  if (dir < 0) {
+    let best: number | undefined;
+    for (const x of list) if (x <= target + 1e-6) best = x;
+    return best === undefined ? undefined : bar + sides * best;
+  }
+  const t = Math.max(0, target);
   let best = 0;
-  for (const s of sides) if (Math.abs(s - target) < Math.abs(best - target) - 1e-9) best = s;
-  return bar + 2 * best;
+  for (const x of list) if (Math.abs(x - t) < Math.abs(best - t) - 1e-9) best = x;
+  return bar + sides * best;
 }
 
 /** Load step in kg. */
-export function gymIncrementKg(g: Gym, e: LoadKind): number {
-  return g.usesPounds ? gymIncrement(g, e) / POUNDS_PER_KG : gymIncrement(g, e);
+export function gymIncrementKg(g: Gym, e: LoadKind, sides: number = kindSides(e)): number {
+  return gymIncrement(g, e, sides) / (g.usesPounds ? POUNDS_PER_KG : 1);
 }
 
 /** Rounds to a loadable weight: bar plus whole increments, never below the bar. */
@@ -337,32 +400,96 @@ export function roundLoad(weight: number, increment: number, base: number): numb
   return Math.max(base, base + steps * increment);
 }
 
-/** Rounds a kg load to something loadable in this gym, returned in kg. */
-export function gymRound(g: Gym, kg: number, e: LoadKind): number {
+/**
+ * Whether weights for this kind come from the plates themselves rather than a step grid: when the gym
+ * lists its plates, or its step is finer than the standard plates make.
+ */
+function usesPlateMath(g: Gym, e: LoadKind, sides: number): boolean {
+  if (!sides) return false;
+  return !!g.plates?.length || gymIncrement(g, e, sides) < plateJump(gymPlates(g), sides) - 1e-9;
+}
+
+/** A loadable weight in kg near `kg` (`dir` as in `loadableTotal`), or undefined when there's none that way. */
+function roundIn(g: Gym, kg: number, e: LoadKind, sides: number, dir: 0 | 1 | -1): number | undefined {
   const toGym = g.usesPounds ? POUNDS_PER_KG : 1;
   const bar = gymBar(g, e);
-  let w = roundLoad(kg * toGym, gymIncrement(g, e), bar);
-  // With the gym's own plates listed, land on a weight those plates actually make.
-  if (g.plates?.length && isPlateLoaded(e)) w = nearestLoadable(w, bar, g.plates);
-  return w / toGym;
+  const w = kg * toGym;
+  let out: number | undefined;
+  if (usesPlateMath(g, e, sides)) {
+    // A weight the plates actually make: a step grid on top would skip some (bar + 15 a side with 10s and 15s).
+    out = loadableTotal(w, bar, gymPlates(g), sides, dir);
+  } else {
+    const step = gymIncrement(g, e, sides);
+    if (step <= 0) return kg;
+    const raw = (w - bar) / step;
+    const k = dir > 0 ? Math.ceil(raw - 1e-6) : dir < 0 ? Math.floor(raw + 1e-6) : Math.round(raw);
+    out = dir < 0 && k < 0 ? undefined : bar + Math.max(0, k) * step;
+  }
+  return out === undefined ? undefined : out / toGym;
+}
+
+/** Rounds a kg load to something loadable in this gym, returned in kg. `sides`: see `plateSides`. */
+export function gymRound(g: Gym, kg: number, e: LoadKind, sides: number = kindSides(e)): number {
+  return roundIn(g, kg, e, sides, 0)!;
+}
+
+/** The lightest loadable weight at or above `kg`, in kg; undefined past the most the plates make. */
+export function gymRoundUp(g: Gym, kg: number, e: LoadKind, sides: number = kindSides(e)): number | undefined {
+  return roundIn(g, kg, e, sides, 1);
+}
+
+/** The heaviest loadable weight at or below `kg`, in kg; undefined under the bar. */
+export function gymRoundDown(g: Gym, kg: number, e: LoadKind, sides: number = kindSides(e)): number | undefined {
+  return roundIn(g, kg, e, sides, -1);
 }
 
 export function gymBaseLoadKg(g: Gym, e: LoadKind): number {
   return g.usesPounds ? gymBar(g, e) / POUNDS_PER_KG : gymBar(g, e);
 }
 
+/** The preset (standard or home) this plate list is exactly, in its unit, with no pair counts. */
+function platePreset(plates: readonly PlateStock[] | undefined, unit: 'kg' | 'lb') {
+  const same = (list: number[]) => !!plates && plates.length === list.length && plates.every((p, i) => p.pairs === undefined && p.weight === list[i]);
+  return [STANDARD_PLATES, HOME_PLATES].find((set) => same(set[unit]));
+}
+
 /**
- * The gym in another unit. Load steps and bar weights were in the old unit, so they're dropped; a
- * preset plate set becomes the same preset in the new unit, and any other list is dropped too.
+ * The gym in another unit. Load steps were in the old unit and are dropped (the plates' own jump takes
+ * over). A preset plate set becomes the same preset in the new unit; any other list becomes the nearest
+ * standard plates in the new unit, keeping pair counts (two sizes landing on one plate add up). Bar
+ * weights are converted to the nearest half unit.
  */
 export function withGymUnits(g: Gym, pounds: boolean): Gym {
   if (g.usesPounds === pounds) return g;
-  const { plates, bars: _bars, ...rest } = g;
-  const from = g.usesPounds ? 'lb' : 'kg';
+  const { plates, bars, ...rest } = g;
   const to = pounds ? 'lb' : 'kg';
-  const same = (list: number[]) => !!plates && plates.length === list.length && plates.every((p, i) => p.pairs === undefined && p.weight === list[i]);
-  const preset = [STANDARD_PLATES, HOME_PLATES].find((set) => same(set[from]));
-  return { ...rest, usesPounds: pounds, increments: {}, ...(preset ? { plates: preset[to].map((weight) => ({ weight })) } : {}) };
+  const factor = pounds ? POUNDS_PER_KG : 1 / POUNDS_PER_KG;
+  const preset = platePreset(plates, g.usesPounds ? 'lb' : 'kg');
+  let converted: PlateStock[] | undefined;
+  if (preset) converted = preset[to].map((weight) => ({ weight }));
+  else if (plates?.length) {
+    const bySize = new Map<number, PlateStock>();
+    for (const p of plates) {
+      const w = p.weight * factor;
+      const weight = STANDARD_PLATES[to].reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) ? b : a));
+      const seen = bySize.get(weight);
+      const pairs = !seen ? p.pairs : seen.pairs === undefined || p.pairs === undefined ? undefined : Math.min(MAX_PAIRS, seen.pairs + p.pairs);
+      bySize.set(weight, pairs === undefined ? { weight } : { weight, pairs });
+    }
+    converted = [...bySize.values()].sort((a, b) => b.weight - a.weight);
+  }
+  const newBars: NonNullable<Gym['bars']> = {};
+  for (const [k, v] of Object.entries(bars ?? {}) as [BarKind, number][]) newBars[k] = Math.min(MAX_BAR, Math.round(v * factor * 2) / 2);
+  return {
+    ...rest, usesPounds: pounds, increments: {},
+    ...(converted ? { plates: converted } : {}), ...(Object.keys(newBars).length ? { bars: newBars } : {}),
+  };
+}
+
+/** Whether switching units would change plates or bars the user set on this gym (beyond a preset plate set). */
+export function hasCustomPlates(g: Gym): boolean {
+  const ownList = !!g.plates?.length && !platePreset(g.plates, g.usesPounds ? 'lb' : 'kg');
+  return ownList || Object.keys(g.bars ?? {}).length > 0;
 }
 
 export const Gyms = {

@@ -2,7 +2,8 @@ import { Catalog } from './catalog';
 import {
   type DayFocus, type Exercise, type ExternalActivity, type Goal, type Gym, type Level, type LoadKind, type LoggedExercise,
   type LoggedSet, type Muscle, type MuscleMap, type RecoveryOverride, type UserPlan, type WorkoutRecord,
-  type Need, DAY_MS, focusMuscles, gymBaseLoadKg, provides, gymIncrementKg, gymRound, isBodyweight, levelRank, loadEquipment, muscleName,
+  type Need, DAY_MS, focusMuscles, gymBaseLoadKg, provides, gymIncrementKg, gymRound, gymRoundDown, gymRoundUp, isBodyweight, levelRank,
+  loadEquipment, muscleName, plateSides,
   straightSets, workingSets,
 } from './models';
 import { type BlockCheckIns, type BlockStatus, blockRIR, blockStatus, deloadDates } from './block';
@@ -301,6 +302,8 @@ function rotates(id: string, n: number): boolean {
   for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
   return ((h >>> 0) % 4) === 0;
 }
+
+const HIT_REASON = 'Hit every rep last time, adding weight';
 
 /** An exercise picked for a slot, in the order it was added. */
 interface Pick { slot: number; planned: PlannedExercise; order: number }
@@ -808,13 +811,13 @@ export class Planner {
     const loadFromMax = strengthGoal && main;
     const rir = blockRIR(this.plan.goal, this.plan.experience, block, e.isCompound);
     const past: LoggedExercise[] = [];
-    /** Sessions outside deload weeks: a deload's lighter loads aren't something to progress from. */
+    /** Sessions outside deload weeks (the generator's or a program's): a deload's lighter loads aren't something to progress from. */
     const training: LoggedExercise[] = [];
     for (const r of this.history) {
       const l = r.exercises.find((x) => x.exerciseID === e.id);
       if (!l) continue;
       past.push(l);
-      if (!this.wasDeload(r.date)) training.push(l);
+      if (!this.wasDeload(r.date) && !r.program?.isDeload) training.push(l);
     }
     const sessions = past.length;
     const range = e.isCompound ? scheme.compoundReps : scheme.isolationReps;
@@ -869,7 +872,7 @@ export class Planner {
           const missed = (l: LoggedExercise) => straightSets(l).some((s) => s.reps < target - 1);
           if (hit) {
             oneRM += this.progressionBump(e);
-            reasons.push('Hit every rep last time, adding weight');
+            reasons.push(HIT_REASON);
           } else if (training.length >= 2 && missed(training[0]) && missed(training[1])) {
             oneRM *= 0.95;
             reasons.push('Missed reps twice, backing off 5%');
@@ -882,6 +885,23 @@ export class Planner {
       }
       intended = weightForReps(reps, rir, oneRM);
       weight = this.round(intended, e);
+      const lastRun = training[0];
+      const lastTop = lastRun ? workingLoad(lastRun)?.load : undefined;
+      // (workingLoad keeps two decimals, so a converted lb load can read a hair under itself.)
+      if (reasons.includes(HIT_REASON) && lastTop !== undefined && weight <= lastTop + 0.01) {
+        const at = reasons.indexOf(HIT_REASON);
+        if (reps <= (lastRun?.targetReps ?? 0)) {
+          // Every rep hit and no more reps today: the load must go up, even when the bump is finer
+          // than the plates and rounds back down.
+          const next = this.nextUp(lastTop, this.progressionStep(e), e);
+          reasons[at] = next === undefined ? 'Top of your plates: add reps' : HIT_REASON;
+          weight = next ?? this.round(lastTop, e);
+          if (next === undefined) reps = Math.min(reps + 1, 30);
+        } else {
+          // A lighter, higher-rep day in the wave: the max went up, the load needn't.
+          reasons[at] = 'Hit every rep last time: more reps today';
+        }
+      }
       if (block.isDeload) {
         // Lighter than the last training session, whatever the estimate says.
         const lastTop = training[0] ? workingLoad(training[0])?.load : undefined;
@@ -910,14 +930,20 @@ export class Planner {
           weight = this.round(lastLoad * 0.95, e);
           reasons.push('Missed reps twice, backing off 5%');
         } else if (minReps >= range[1]) {
-          // A step over ~7.5% of the load (light dumbbells, cable pins) is too big: add reps first.
+          // A jump over ~7.5% of the load (light dumbbells, cable pins) is too big: add reps first.
           const extendedTop = range[1] + 3;
-          if (step > lastLoad * 0.075 && minReps < extendedTop) {
+          const next = this.nextUp(lastLoad, step, e);
+          if (next === undefined) {
+            // Nothing heavier can be loaded here: more reps is the way on.
+            weight = this.round(lastLoad, e);
+            reps = Math.min(minReps + 1, 30);
+            reasons.push('Top of your plates: add reps');
+          } else if (next - lastLoad > lastLoad * 0.075 && minReps < extendedTop) {
             weight = this.round(lastLoad, e);
             reps = extendedTop;
             reasons.push(`The next weight is a big jump: build to ${extendedTop} reps first`);
           } else {
-            weight = this.round(lastLoad + step, e);
+            weight = next;
             reasons.push('Hit the top of the range on every set, adding weight');
           }
         } else {
@@ -944,9 +970,42 @@ export class Planner {
     return out;
   }
 
-  /** A clearly lighter load for a deload: about 10% off, at least one step, never below the lightest loadable. */
+  /**
+   * A clearly lighter load for a deload: about 10% off, at least one step, never below the lightest
+   * loadable. When sparse plates round both back up, the next weight down the plates make.
+   */
   lighter(load: number, e: Exercise): number {
-    return Math.max(this.round(0, e), Math.min(this.round(load * 0.9, e), this.round(load - this.progressionStep(e), e)));
+    const floor = this.round(0, e);
+    let w = Math.min(this.round(load * 0.9, e), this.round(load - this.progressionStep(e), e));
+    if (w >= load - 1e-6) w = this.roundDown(load - 0.01, e) ?? floor;
+    return Math.max(floor, w);
+  }
+
+  /**
+   * The load after `lastLoad` once the top of the range is hit: the lightest loadable weight at least
+   * `step` on (so it never rounds back to the same weight when the step is finer than the plates), and
+   * always heavier than `lastLoad`. Undefined when nothing heavier can be loaded here.
+   */
+  nextUp(lastLoad: number, step: number, e: Exercise): number | undefined {
+    let next = this.roundUp(this.round(lastLoad, e) + step, e);
+    // Short of a full step (near the most the plates make), the next weight up is still progress.
+    if (next === undefined || next <= lastLoad + 0.005) next = this.roundUp(lastLoad + 0.01, e);
+    return next !== undefined && next > lastLoad + 0.005 ? next : undefined;
+  }
+
+  /** The lightest loadable weight at or above `weight`, or undefined past the most this gym can load. */
+  roundUp(weight: number, e: Exercise): number | undefined {
+    const eq = this.loadKind(e) ?? 'plates';
+    const w = gymRoundUp(this.gym, Math.min(weight, MAX_PLAUSIBLE_KG), eq, plateSides(e));
+    if (w === undefined) return undefined;
+    return w > 0 ? w : this.round(0, e);
+  }
+
+  /** The heaviest loadable weight at or below `weight`, or undefined under the lightest. */
+  roundDown(weight: number, e: Exercise): number | undefined {
+    const eq = this.loadKind(e) ?? 'plates';
+    const w = gymRoundDown(this.gym, weight, eq, plateSides(e));
+    return w !== undefined && w > 0 ? w : undefined;
   }
 
   /** The history array as passed in: the key for the deload-week cache, shared by Planners on the same history. */
@@ -971,13 +1030,13 @@ export class Planner {
     const eq = this.loadKind(e);
     if (!eq) return 0;
     const lower = ['squat', 'hinge', 'lunge'].includes(e.pattern) && (eq === 'barbell' || eq === 'trapBar');
-    return gymIncrementKg(this.gym, eq) * (lower ? 2 : 1);
+    return gymIncrementKg(this.gym, eq, plateSides(e)) * (lower ? 2 : 1);
   }
 
   progressionBump(e: Exercise): number {
     const eq = this.loadKind(e);
     // One loadable step in working weight is ~1.15x that step in e1RM at moderate reps.
-    return eq ? gymIncrementKg(this.gym, eq) * 1.15 : 0;
+    return eq ? gymIncrementKg(this.gym, eq, plateSides(e)) * 1.15 : 0;
   }
 
   /**
@@ -986,8 +1045,11 @@ export class Planner {
    */
   round(weight: number, e: Exercise): number {
     const eq = this.loadKind(e) ?? 'plates';
-    const w = gymRound(this.gym, Number.isFinite(weight) ? Math.min(weight, MAX_PLAUSIBLE_KG) : 0, eq);
-    return w > 0 ? w : gymRound(this.gym, gymIncrementKg(this.gym, eq), eq);
+    const sides = plateSides(e);
+    const w = gymRound(this.gym, Number.isFinite(weight) ? Math.min(weight, MAX_PLAUSIBLE_KG) : 0, eq, sides);
+    if (w > 0) return w;
+    // The lightest above nothing: one step, or the smallest the plates make.
+    return gymRoundUp(this.gym, 1e-3, eq, sides) ?? gymRound(this.gym, gymIncrementKg(this.gym, eq, sides), eq, sides);
   }
 
   /** No history for this lift: scale from a related lift you have done, else a conservative default. */

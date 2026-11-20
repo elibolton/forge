@@ -13,7 +13,8 @@
   import { app } from '../lib/store.svelte';
   import { exerciseRecords } from '../lib/records';
 
-  let { id }: { id: string } = $props();
+  /** `inSheet`: shown over the logger mid-workout, so no back bar, and nothing that navigates away. */
+  let { id, inSheet = false }: { id: string; inSheet?: boolean } = $props();
   let editing = $state(false);
 
   /** Re-read so edits to a custom exercise show immediately. */
@@ -41,9 +42,9 @@
   }
 </script>
 
-<div class="screen">
-  <BackBar title={e.name} />
-  <div class="row" style="--gap:14px;margin:12px 0 8px">
+<div class={inSheet ? 'in-sheet' : 'screen'}>
+  {#if !inSheet}<BackBar title={e.name} />{/if}
+  <div class="row" style="--gap:14px;margin:{inSheet ? 0 : 12}px 0 8px">
     <ExerciseThumb exercise={e} size={56} />
     <div>
       <h2 style="font-size:1.25rem" class="bold">{e.name}</h2>
@@ -114,15 +115,23 @@
     <div class="list">
       {#if !sessions.length}<div class="item muted">Not logged yet.</div>{/if}
       {#each sessions.slice(0, 100) as s, i (i)}
-        <button class="item" style="display:block" onclick={() => nav.push({ name: 'log', id: s.logID })}>
-          <div class="sub bold">{fmtDate(s.date, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-          <div class="caption muted mono">{workingSets(s.logged).map((x) => (isBodyweight(e) ? `${x.reps}` : `${app.units.format(x.weight)}×${x.reps}`)).join(', ')}</div>
-        </button>
+        {@const sets = workingSets(s.logged).map((x) => (isBodyweight(e) ? `${x.reps}` : `${app.units.format(x.weight)}×${x.reps}`)).join(', ')}
+        {#if inSheet}
+          <div class="item" style="display:block">
+            <div class="sub bold">{fmtDate(s.date, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+            <div class="caption muted mono">{sets}</div>
+          </div>
+        {:else}
+          <button class="item" style="display:block" onclick={() => nav.push({ name: 'log', id: s.logID })}>
+            <div class="sub bold">{fmtDate(s.date, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+            <div class="caption muted mono">{sets}</div>
+          </button>
+        {/if}
       {/each}
     </div>
   </div>
 
-  {#if isCustom(e)}
+  {#if isCustom(e) && !inSheet}
     <div class="section">
       <div class="list">
         <button class="item link" onclick={() => (editing = true)}>Edit Exercise</button>
