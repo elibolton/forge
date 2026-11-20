@@ -15,5 +15,7 @@
 <style>
   .side { min-width: 64px; display: flex; }
   .side.end { justify-content: flex-end; }
-  .title { font-family: var(--font-display); font-stretch: 112%; font-weight: 750; font-size: 1rem; }
+  /* Wraps to two lines rather than cutting a long name off. */
+  .title { font-family: var(--font-display); font-stretch: 112%; font-weight: 750; font-size: 1rem; white-space: normal; line-height: 1.2;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 </style>

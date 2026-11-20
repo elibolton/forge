@@ -16,7 +16,9 @@
 
   $effect(() => {
     if (!startButton) return;
-    const io = new IntersectionObserver(([entry]) => (startVisible = entry.isIntersecting), { rootMargin: '0px 0px -90px 0px' });
+    // Only fully clear of the tab bar counts, so Start is never half-hidden under it: the floating button takes over.
+    const io = new IntersectionObserver(([entry]) => (startVisible = entry.isIntersecting && entry.intersectionRatio > 0.98),
+      { rootMargin: '0px 0px -100px 0px', threshold: [0, 0.99, 1] });
     io.observe(startButton);
     return () => io.disconnect();
   });
@@ -69,5 +71,5 @@
   /* Wraps rather than scrolls sideways: at phone width a scrolling row cut the gym chip off mid-word. */
   .controls { display: flex; flex-wrap: wrap; gap: 8px; }
   .start { margin-top: 2px; }
-  .play { width: 28px; height: 28px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); display: grid; place-items: center; }
+  .play { width: 28px; height: 28px; border-radius: 50%; background: rgba(26, 11, 5, 0.14); display: grid; place-items: center; }
 </style>

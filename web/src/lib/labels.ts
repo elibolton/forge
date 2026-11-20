@@ -22,7 +22,7 @@ export const levelBlurb: Record<Level, string> = {
 };
 
 export const splitTitle: Record<Split, string> = {
-  pushPullLegs: 'Push / Pull / Legs', upperLower: 'Upper / Lower', fullBody: 'Full Body', freshMuscles: 'Freshest Muscles',
+  pushPullLegs: 'Push / Pull / Legs', upperLower: 'Upper / Lower', fullBody: 'Full Body', freshMuscles: 'Recovered Muscles',
 };
 export const splitBlurb: Record<Split, string> = {
   pushPullLegs: 'Rotate pushing, pulling and leg days.',
@@ -39,7 +39,7 @@ export const focusTitle: Record<DayFocus, string> = {
 export const swappableFocuses: DayFocus[] = ['recovered', 'push', 'pull', 'legs', 'upper', 'lower', 'fullBody'];
 
 export function dayTitle(f: DayFocus): string {
-  if (f === 'recovered') return 'Fresh Muscles';
+  if (f === 'recovered') return 'Recovered Muscles';
   if (f === 'upper' || f === 'lower' || f === 'fullBody') return focusTitle[f];
   return `${focusTitle[f]} Day`;
 }

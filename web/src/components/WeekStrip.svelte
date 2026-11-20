@@ -48,7 +48,7 @@
     color: var(--text-3); background: var(--surface-2); border: 1px solid transparent; }
   .day.future { background: transparent; border: 1px dashed var(--hairline-2); }
   .day.today { border-color: rgba(255, 106, 46, 0.7); color: var(--text); }
-  .day.lift { background: var(--ember-gradient); color: #fff; box-shadow: 0 6px 14px -6px var(--ember-glow); border-color: transparent; }
+  .day.lift { background: var(--ember-gradient); color: var(--on-ember); box-shadow: 0 6px 14px -6px var(--ember-glow); border-color: transparent; }
   .cardio { position: absolute; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: #6fa2ff; box-shadow: 0 0 6px rgba(111, 162, 255, 0.8); }
   .day.lift .cardio { background: #fff; }
   .meter { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }

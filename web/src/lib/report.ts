@@ -1,5 +1,6 @@
 import { type LoggedExercise, workingSets } from '../engine';
 import { weekStart } from './weeks';
+import { durationMinutes } from './units';
 
 interface Log { date: number; durationSeconds: number; exercises: LoggedExercise[] }
 
@@ -10,7 +11,7 @@ export function statsBetween(logs: Log[], from: number, to: number): PeriodStats
   for (const l of logs) {
     if (l.date < from || l.date >= to) continue;
     s.workouts++;
-    s.minutes += Math.round(l.durationSeconds / 60);
+    s.minutes += durationMinutes(l.durationSeconds);
     for (const e of l.exercises) for (const set of workingSets(e)) { s.sets++; s.volume += set.weight * set.reps; }
   }
   return s;

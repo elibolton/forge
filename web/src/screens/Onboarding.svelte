@@ -1,9 +1,11 @@
 <script lang="ts">
   import { EQUIPMENT, GOALS, type Gym, Gyms, LEVELS, SPLITS, type Split, defaultPlan, uuid, withGymUnits } from '../engine';
   import { canPull } from '../lib/gymFit';
-  import { Building2, ChevronLeft, Dumbbell, ChevronRight, Circle, CircleCheck, Footprints, House, TriangleAlert, Zap, Share, SquarePlus, Download } from '@lucide/svelte';
+  import { Building2, ChevronLeft, Dumbbell, ChevronRight, Circle, CircleCheck, Footprints, House, TriangleAlert, Zap, Download } from '@lucide/svelte';
   import Sheet from '../components/Sheet.svelte';
   import Toggle from '../components/Toggle.svelte';
+  import InstallSteps from '../components/InstallSteps.svelte';
+  import { isStandalone } from '../lib/install.svelte';
   import { EQUIPMENT_GROUPS, equipmentTitle, goalBlurb, goalTitle, levelBlurb, levelTitle, splitBlurb, splitTitle } from '../lib/labels';
   import { app } from '../lib/store.svelte';
 
@@ -25,11 +27,15 @@
   let pounds = $state(/^en-US|^en-LR|^my/.test(navigator.language));
   let editingGym = $state(false);
 
-  const isStandalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+  /**
+   * In a Safari tab, setup starts with installing: the Home Screen app keeps its own data, so setting up
+   * here first would mean doing it twice (or training in a tab whose data Safari can clear).
+   */
+  let installFirst = $state(!isStandalone());
   const gymName = $derived(gym.name.trim() || PRESETS[preset].gym().name);
   /** No way to pull: say so up front rather than let pull days quietly come up nearly empty. */
   const cantPull = $derived(!canPull(gym));
-  const summary = $derived(`${goalTitle[plan.goal]} · ${days} days a week · ${splitTitle[plan.split]} · ${plan.sessionMinutes} min · ${levelTitle[plan.experience]} · ${gymName}`);
+  const summary = $derived(`${goalTitle[plan.goal]} · ${days}\u00a0days a week · ${splitTitle[plan.split]} · ${plan.sessionMinutes}\u00a0min · ${levelTitle[plan.experience]} · ${gymName}`);
 
   function finish() {
     const g = { ...withGymUnits($state.snapshot(gym), pounds), id: uuid(), name: gymName, increments: {} };
@@ -52,6 +58,20 @@
   </div>
 {/snippet}
 
+{#if installFirst}
+<div class="onboarding">
+  <div class="dots"><span class="brand eyebrow" aria-hidden="true">Forge</span></div>
+  <div class="body stack" style="--gap:18px">
+    <span class="install-ico" aria-hidden="true"><Download size={26} /></span>
+    {@render pageTitle('Add Forge to your Home Screen', 'Do this first, then set up in the app. It opens full screen, works offline at the gym, and keeps your workouts safe.')}
+    <div class="card"><InstallSteps /></div>
+    <p class="caption muted">Safari and the Home Screen app keep separate data, and Safari can clear a tab's data after 7 days without a visit. Setting up here means doing it again in the app.</p>
+  </div>
+  <footer class="row" style="justify-content:center">
+    <button class="link continue" onclick={() => (installFirst = false)}>Continue in Safari anyway</button>
+  </footer>
+</div>
+{:else}
 <div class="onboarding">
   <div class="dots">
     <span class="brand eyebrow" aria-hidden="true">Forge</span>
@@ -120,17 +140,8 @@
       </div>
     {:else}
       {@render pageTitle("You're all set", summary)}
-      {#if !isStandalone}
-        <div class="card stack">
-          <div class="row bold" style="--gap:8px"><Download size={20} /> Add Forge to your Home Screen</div>
-          <p class="sub muted">It then opens full screen like an app and works offline at the gym.</p>
-          <ol class="sub steps">
-            <li>Tap <Share size={16} style="vertical-align:-3px" /> <b>Share</b> in Safari's toolbar.</li>
-            <li>Choose <SquarePlus size={16} style="vertical-align:-3px" /> <b>Add to Home Screen</b>.</li>
-            <li>Open Forge from your Home Screen.</li>
-          </ol>
-          <p class="caption muted">Each copy keeps its own data, so finish setup in the Home Screen app.</p>
-        </div>
+      {#if !isStandalone()}
+        <p class="caption" style="color:var(--recovering)">You're setting up in Safari. Your workouts stay in this tab, separate from a Home Screen copy; back up now and then from You → Backup, Import & Export.</p>
       {/if}
       <p class="caption muted">Coming from another app? Import your workout history from You → Data after setup.</p>
     {/if}
@@ -146,6 +157,7 @@
     {/if}
   </footer>
 </div>
+{/if}
 
 {#if editingGym}
   <Sheet title="Equipment" onclose={() => (editingGym = false)}>
@@ -179,14 +191,15 @@
   .option { display: flex; align-items: center; gap: 14px; width: 100%; transition: border-color 0.25s, background 0.25s; }
   .option.selected { border-color: rgba(255, 106, 46, 0.6); background: radial-gradient(80% 120% at 0% 0%, rgba(255, 90, 31, 0.16), transparent 60%), var(--surface); }
   .ico { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-2); color: var(--ember-2); flex: none; }
-  .selected .ico { background: var(--ember-gradient); color: #fff; box-shadow: 0 8px 18px -6px var(--ember-glow); }
+  .selected .ico { background: var(--ember-gradient); color: var(--on-ember); box-shadow: 0 8px 18px -6px var(--ember-glow); }
   .day { flex: 1; min-height: 52px; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--hairline);
     font-family: var(--font-display); font-stretch: 125%; font-weight: 800; font-size: 1.3rem; }
-  .day.on { background: var(--ember-gradient); border-color: transparent; color: #fff; box-shadow: 0 10px 22px -8px var(--ember-glow); }
-  .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  .day.on { background: var(--ember-gradient); border-color: transparent; color: var(--on-ember); box-shadow: 0 10px 22px -8px var(--ember-glow); }
+  .install-ico { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; background: var(--ember-gradient); color: var(--on-ember); }
+  .continue { min-height: 48px; padding: 0 16px; }
   footer { position: sticky; bottom: 0; padding: 12px 0 calc(var(--safe-bottom) + 12px); margin-bottom: calc(-1 * (var(--safe-bottom) + 12px));
     background: linear-gradient(to bottom, transparent, var(--bg) 35%); }
   .back { width: 56px; height: 56px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--hairline); display: grid; place-items: center; }
   .go { white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; padding: 17px 28px; border-radius: 999px; background: var(--ember-gradient);
-    color: #fff; font-weight: 700; font-size: 1.05rem; box-shadow: 0 16px 36px -10px var(--ember-glow), inset 0 1px 0 rgba(255, 255, 255, 0.3); }
+    color: var(--on-ember); font-weight: 700; font-size: 1.05rem; box-shadow: 0 16px 36px -10px var(--ember-glow), inset 0 1px 0 rgba(255, 255, 255, 0.3); }
 </style>

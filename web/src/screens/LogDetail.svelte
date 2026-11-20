@@ -7,7 +7,8 @@
   import BackBar from '../components/BackBar.svelte';
   import LogEditor from '../components/LogEditor.svelte';
   import SetLine from '../components/SetLine.svelte';
-  import { deleteLog, fmtDate, logTitle } from '../lib/logs';
+  import { deleteLog, logTitle } from '../lib/logs';
+  import { hasTimeOfDay, logDateText } from '../lib/logFormat';
   import { nav } from '../lib/nav.svelte';
   import { app, logVolume } from '../lib/store.svelte';
   import { durationText } from '../lib/units';
@@ -34,7 +35,7 @@
   </BackBar>
   {#if log}
     <div class="list" style="margin-top:12px">
-      <div class="item">Date <span class="value">{fmtDate(log.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}, {new Date(log.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span></div>
+      <div class="item">{hasTimeOfDay(log) ? 'Started' : 'Date'} <span class="value">{logDateText(log)}</span></div>
       {#if log.durationSeconds > 0}<div class="item">Duration <span class="value">{durationText(log.durationSeconds)}</span></div>{/if}
       {#if logVolume(log) > 0}<div class="item">Volume <span class="value">{app.units.format(logVolume(log))}</span></div>{/if}
     </div>

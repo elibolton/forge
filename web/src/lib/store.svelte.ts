@@ -5,7 +5,8 @@ import {
   readProgress, uuid, workingSets, loadEquipment, POUNDS_PER_KG, gymIncrement, type BlockCheckIn, type BlockCheckIns,
   readBlockCheckIns,
 } from '../engine';
-import { db, requestPersistence } from './db';
+import { db } from './db';
+import { storageGuard } from './install.svelte';
 import { saving } from './saving.svelte';
 import { sync } from './sync.svelte';
 import { WeightUnits } from './units';
@@ -290,7 +291,16 @@ class AppStore {
       this.loadError = e instanceof Error ? e.message : String(e);
     }
     this.ready = true;
-    requestPersistence();
+    this.protectStorage(true);
+  }
+
+  /**
+   * Asks the browser to keep Forge's data (on launch, after setup and after each workout until it
+   * agrees), and records the answer, which the Data screen shows and the backup nudge reads.
+   */
+  async protectStorage(record = false) {
+    const ok = await storageGuard.request();
+    if (record && this.profile && this.get<boolean>('storagePersisted') !== ok) this.set('storagePersisted', ok);
   }
 
   /**
@@ -344,6 +354,7 @@ class AppStore {
       plan, gyms: [gym], overrides: [], activeGymID: gym.id, usesPounds, createdAt: Date.now(), customExercises: [],
       programProgress: null, blockCheckIns: {}, exerciseNotes: {}, weeklyGoal, mobility: { warmup: false, cooldown: false },
     });
+    this.protectStorage();
   }
 
   setProfile(p: Profile) {
@@ -484,6 +495,7 @@ class AppStore {
   addLogs(logs: WorkoutLog[]) {
     const ids = new Set(logs.map((l) => l.id));
     this.setLogs([...logs, ...this.logs.filter((l) => !ids.has(l.id))]);
+    if (!storageGuard.persisted) this.protectStorage();
     const snap = $state.snapshot(logs);
     // One write for all of them, but a failure is retried per workout, so deleting or editing one of
     // them afterwards replaces its retry rather than the old batch bringing it back.

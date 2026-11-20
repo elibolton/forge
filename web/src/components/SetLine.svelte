@@ -15,7 +15,7 @@
   {:else if set.type === 'drop'}<span class="caption muted">drop</span>
   {:else if set.rir != null && !set.isWarmup}
     <!-- Plain words rather than "RIR": the logger asks "Reps left on set N". -->
-    <span class="caption muted mono" title="Reps in reserve: how many more you could have done">{set.rir >= 4 ? '4+' : set.rir} left</span>{/if}
+    <span class="caption muted mono" title="Reps left: how many more you could have done">{set.rir === 0 ? 'to failure' : `${set.rir >= 4 ? '4+' : set.rir} left`}</span>{/if}
   {#if selected}<ChevronUp size={16} color="var(--accent)" />{/if}
 </span>
 

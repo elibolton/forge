@@ -100,7 +100,9 @@
   .sheet.full { height: calc(100dvh - var(--safe-top) - 20px); }
   .grabber { width: 38px; height: 5px; border-radius: 3px; background: var(--surface-3); margin: 8px auto 0; flex: none; }
   header { padding: 2px 18px 0; flex: none; }
-  .title { font-family: var(--font-display); font-stretch: 112%; font-weight: 750; }
+  /* A long name ("Swap Single-Arm Cable Reverse Fly") wraps to a second line instead of being cut off. */
+  .title { font-family: var(--font-display); font-stretch: 112%; font-weight: 750; white-space: normal; line-height: 1.2;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
   /* At least 84px so the title stays centred, wider for a longer label ("Keep Going") rather than wrapping it. */
   .side { min-width: 84px; display: flex; white-space: nowrap; }
   .side.end { justify-content: flex-end; }

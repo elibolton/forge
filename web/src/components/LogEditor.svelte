@@ -121,8 +121,8 @@
               {/if}
               {#if !s.set.isWarmup && !e.isTimed && s.set.type !== 'failure'}
                 <div class="stack" style="--gap:6px">
-                  <span class="kicker muted">REPS IN RESERVE</span>
-                  <div class="segmented" role="radiogroup" aria-label="Reps in reserve">
+                  <span class="kicker muted">REPS LEFT</span>
+                  <div class="segmented" role="radiogroup" aria-label="Reps left">
                     {#each [0, 1, 2, 3, 4] as v (v)}
                       <button role="radio" aria-checked={s.set.rir === v} class:on={s.set.rir === v} onclick={() => (s.set.rir = v)}>{v === 4 ? '4+' : v}</button>
                     {/each}

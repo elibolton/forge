@@ -75,5 +75,5 @@
   .kind.on { background: var(--ember-soft); border-color: rgba(255, 106, 46, 0.5); color: var(--text); }
   .ico { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--ember-2); }
   .warn { color: var(--fatigued); text-align: center; margin-top: -12px; }
-  .kind.on .ico { background: var(--ember-gradient); color: #fff; }
+  .kind.on .ico { background: var(--ember-gradient); color: var(--on-ember); }
 </style>
