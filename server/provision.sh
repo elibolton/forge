@@ -78,7 +78,7 @@ ufw allow from "$LAN_CIDR" to any port 22 proto tcp
 ufw --force enable
 
 echo "== SSH: keys only"
-sudo_user_home=$(getent passwd "${SUDO_USER:-root}" | cut -d: -f6)
+sudo_user_home=$(getent passwd "${ADMIN_USER:-${SUDO_USER:-root}}" | cut -d: -f6)
 if [ -s "$sudo_user_home/.ssh/authorized_keys" ]; then
   printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/10-forge.conf
   systemctl reload ssh
