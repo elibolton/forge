@@ -18,10 +18,11 @@ describe('workout duration (F7)', () => {
     expect(durationText(59.9)).toBe('<1 min');
   });
 
-  test('whole minutes from a minute up', () => {
+  test('whole minutes from a minute up, rounded the same way the weekly report rounds (I-data)', () => {
     expect(durationText(60)).toBe('1 min');
-    expect(durationText(119)).toBe('1 min');
-    expect(durationText(47 * 60 + 30)).toBe('47 min');
+    expect(durationText(89)).toBe('1 min');
+    expect(durationText(170)).toBe('3 min');
+    expect(durationText(47 * 60 + 30)).toBe('48 min');
   });
 
   test('a logged 30-second workout says so in its summary', () => {

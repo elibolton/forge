@@ -13,7 +13,7 @@
   let { embedded = false }: { embedded?: boolean } = $props();
   const p = $derived(app.profile!);
   let pickingTemplate = $state(false);
-  const splitShort = { pushPullLegs: 'PPL', upperLower: 'U/L', fullBody: 'Full', freshMuscles: 'Fresh' } as const;
+  const splitShort = { pushPullLegs: 'PPL', upperLower: 'U/L', fullBody: 'Full', freshMuscles: 'Recov.' } as const;
 
   const programStatus = $derived.by(() => {
     const progress = p.programProgress;
@@ -126,10 +126,17 @@
     <div class="list">{@render link('Program', programStatus, { name: 'programs' })}</div>
   </div>
 
+  {#if !embedded}
+    <div class="section">
+      <div class="head">History</div>
+      <div class="list">{@render link('Past Workouts', app.logs.length ? `${app.logs.length}` : 'None', { name: 'history' })}</div>
+    </div>
+  {/if}
+
   <div class="section">
     <div class="head">Gyms</div>
     <div class="list">
-      <label class="item">Training At
+      <label class="item"><span class="nowrap">Training At</span>
         <select value={p.activeGymID} onchange={(e) => app.updateProfile((x) => { x.activeGymID = (e.currentTarget as HTMLSelectElement).value; })}>
           {#each p.gyms as g (g.id)}<option value={g.id}>{g.name}</option>{/each}
         </select>
@@ -192,7 +199,8 @@
   .facts .num { font-size: 1.2rem; }
   .facts .eyebrow { font-stretch: 100%; letter-spacing: 0.08em; font-size: 0.6rem; }
   .item select { width: auto; margin: -11px 0 -11px auto; align-self: stretch; min-height: 0; padding: 4px 24px 4px 8px; background-color: transparent; background-position: right 2px center;
-    border: 0; color: var(--text-2); text-align: right; }
+    border: 0; color: var(--text-2); text-align: right; min-width: 0; max-width: 62%; text-overflow: ellipsis; }
+  .nowrap { white-space: nowrap; }
   /* The whole row opens the gym, not just its text line. */
   .gym-open { align-self: stretch; margin: -11px 0; }
 </style>

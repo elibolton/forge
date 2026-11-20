@@ -126,7 +126,7 @@ describe('Workout titles (U19, S21)', () => {
   test('match what Today calls the day', () => {
     expect(logTitle(log('a', 1, { focus: 'upper' }))).toBe('Upper Body');
     expect(logTitle(log('a', 1, { focus: 'fullBody' }))).toBe('Full Body');
-    expect(logTitle(log('a', 1, { focus: 'recovered' }))).toBe('Fresh Muscles');
+    expect(logTitle(log('a', 1, { focus: 'recovered' }))).toBe('Recovered Muscles');
     expect(logTitle(log('a', 1, { focus: 'push' }))).toBe('Push Day');
     expect(logTitle(log('a', 1, { focus: null }))).toBe('Workout');
   });

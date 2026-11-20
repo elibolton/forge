@@ -9,10 +9,15 @@
   import { count } from '../lib/labels';
   import { type Backup, app, readBackup } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
-  import { exportBackup, lastBackupText } from '../lib/backup';
+  import { exportBackup, lastBackupDetail } from '../lib/backup';
+  import { storageGuard } from '../lib/install.svelte';
+  import InstallSteps from '../components/InstallSteps.svelte';
+  import Sheet from '../components/Sheet.svelte';
 
   // CSV import from Fitbod, Strong or Hevy, so recommendations start from real numbers.
-  const lastBackup = $derived.by(() => { void app.kv; return lastBackupText(); });
+  const lastBackup = $derived.by(() => { void app.kv; return lastBackupDetail(); });
+  let showingInstall = $state(false);
+  $effect(() => { storageGuard.check(); });
   let pounds = $state(app.profile!.usesPounds);
   let fileText = $state<string | null>(null);
   let result = $state.raw<ImportResult | null>(null);
@@ -97,12 +102,30 @@
 </script>
 
 <div class="screen">
-  <BackBar title="Data" />
+  <BackBar title="Backup, Import & Export" />
+
+  <div class="section">
+    <div class="head">Storage on this device</div>
+    <div class="list">
+      <div class="item">Installed
+        <span class="value" class:ok={storageGuard.installed} class:warn={!storageGuard.installed}>{storageGuard.installed ? 'Home Screen app' : 'No, Safari tab'}</span></div>
+      <div class="item">Protected from clearing
+        <span class="value" class:ok={storageGuard.persisted === true} class:warn={storageGuard.persisted === false}>{storageGuard.persisted === null ? 'Checking…' : storageGuard.persisted ? 'Yes' : 'No'}</span></div>
+      <div class="item">Last backup<span class="value" class:warn={lastBackup === 'Never' && app.logs.length > 0}>{lastBackup}</span></div>
+      {#if !storageGuard.installed}
+        <button class="item link" onclick={() => (showingInstall = true)}>How to add Forge to your Home Screen</button>
+      {/if}
+    </div>
+    <div class="foot">
+      {#if !storageGuard.installed}In a Safari tab, iOS can clear Forge's data after 7 days without a visit, and the Home Screen app keeps a separate copy. Back up, add Forge to your Home Screen, then restore the backup there.
+      {:else if !storageGuard.persisted}iPhone hasn't promised to keep Forge's data if space runs low. Back up regularly.
+      {:else}iPhone keeps Forge's data unless you delete the app. A backup still protects you if you lose or replace your phone.{/if}
+    </div>
+  </div>
 
   <div class="section">
     <div class="head">Backup</div>
     <div class="list">
-      <div class="item">Last backup<span class="value">{lastBackup}</span></div>
       <button class="item link" onclick={exportBackup}><Download size={18} /> Export Backup</button>
       <button class="item link" onclick={() => backupInput?.click()}><Upload size={18} /> Restore from Backup</button>
     </div>
@@ -189,6 +212,12 @@
   </div>
 </div>
 
+{#if showingInstall}
+  <Sheet title="Add to Home Screen" onclose={() => (showingInstall = false)}>
+    {#snippet trailing()}<button class="link bold" onclick={() => (showingInstall = false)}>Done</button>{/snippet}
+    <InstallSteps />
+  </Sheet>
+{/if}
 {#if matching}
   {@const name = matching}
   <ExercisePicker title="Match “{name}”" exercises={Catalog.all} onpick={(e) => match(name, e)} onclose={() => (matching = null)} />
@@ -197,3 +226,8 @@
   {@const name = creatingFrom}
   <CustomExerciseEditor initialName={name} onsave={(e) => match(name, e)} onclose={() => (creatingFrom = null)} />
 {/if}
+
+<style>
+  .value.ok { color: var(--fresh); }
+  .value.warn { color: var(--recovering); }
+</style>

@@ -188,6 +188,6 @@
   .dock button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 999px;
     color: var(--text-3); font-size: 0.85rem; font-weight: 640; transition: flex 0.35s var(--ease), background 0.3s, color 0.3s; }
   .dock button .label { max-width: 0; overflow: hidden; white-space: nowrap; opacity: 0; transition: max-width 0.35s var(--ease), opacity 0.25s; }
-  .dock button.on { flex: 1.9; color: #fff; background: var(--ember-gradient); box-shadow: 0 8px 20px -6px var(--ember-glow), inset 0 1px 0 rgba(255,255,255,.25); }
+  .dock button.on { flex: 1.9; color: var(--on-ember); background: var(--ember-gradient); box-shadow: 0 8px 20px -6px var(--ember-glow), inset 0 1px 0 rgba(255,255,255,.25); }
   .dock button.on .label { max-width: 90px; opacity: 1; }
 </style>

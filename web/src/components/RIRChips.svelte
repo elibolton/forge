@@ -21,6 +21,6 @@
     border-radius: 16px; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--hairline); font-size: 1.3rem; touch-action: manipulation; }
   .compact .rir { padding: 0; font-size: 1.15rem; border-radius: 14px; }
   .rir small { font-family: var(--font); font-size: 0.6rem; font-weight: 600; color: var(--text-3); min-height: 0.8em; }
-  .rir.on { background: var(--ember-gradient); border-color: transparent; color: #fff; box-shadow: 0 10px 24px -8px var(--ember-glow); }
-  .rir.on small { color: rgba(255, 255, 255, 0.8); }
+  .rir.on { background: var(--ember-gradient); border-color: transparent; color: var(--on-ember); box-shadow: 0 10px 24px -8px var(--ember-glow); }
+  .rir.on small { color: rgba(26, 11, 5, 0.85); }
 </style>

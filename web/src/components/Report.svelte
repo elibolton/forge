@@ -11,7 +11,8 @@
 
   const metrics = $derived([
     { label: 'Workouts', now: r.current.workouts, before: r.previous.workouts, show: (v: number) => `${v}` },
-    { label: 'Time', now: r.current.minutes, before: r.previous.minutes, show: (v: number) => (v >= 60 ? `${fmtNum(v / 60)} h` : `${v} min`) },
+    // Imported workouts have no duration: say so rather than "None" for a week that had workouts.
+    { label: 'Time', now: r.current.minutes, before: r.previous.minutes, untracked: r.previous.workouts > 0, show: (v: number) => (v >= 60 ? `${fmtNum(v / 60)} h` : `${v} min`) },
     { label: 'Sets', now: r.current.sets, before: r.previous.sets, show: (v: number) => `${v}` },
     { label: 'Volume', now: r.current.volume, before: r.previous.volume, show: (v: number) => {
       const d = app.units.display(v);
@@ -36,7 +37,7 @@
         <span class="num value">{m.now ? m.show(m.now) : '–'}</span>
         <span class="caption delta" class:up={c.kind === 'up'} class:down={c.kind === 'down'}>
           {#if c.kind === 'empty'}No data yet
-          {:else if c.kind === 'new'}None {last}
+          {:else if c.kind === 'new'}{'untracked' in m && m.untracked ? `Not tracked ${last}` : `None ${last}`}
           {:else if c.kind === 'up'}<ArrowUpRight size={13} /> {m.show(c.by)} vs {last}
           {:else if c.kind === 'down'}<ArrowDownRight size={13} /> {m.show(c.by)} vs {last}
           {:else}Same as {last}{/if}

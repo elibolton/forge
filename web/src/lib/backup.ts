@@ -2,6 +2,7 @@ import { db } from './db';
 import { app } from './store.svelte';
 import { toasts } from './toasts.svelte';
 import { dayKey } from './units';
+import { storageGuard } from './install.svelte';
 
 const DAY = 86_400_000;
 
@@ -81,15 +82,17 @@ function download(file: File) {
 }
 
 /**
- * Whether to nudge for a backup: there are workouts the last backup doesn't have, and it's been two
- * weeks (or there's never been one and three workouts are at stake). "Later" snoozes for a week.
+ * Whether to nudge for a backup: there are workouts the last backup doesn't have, and it's been a while.
+ * The first nudge comes early: after the second workout, or the first when the data could be cleared
+ * (a Safari tab, or storage the browser didn't agree to keep). After that, every two weeks (every week
+ * when it could be cleared).
  */
-export function backupDue(now = Date.now()): boolean {
-  if (app.logs.length < 3) return false;
+export function backupDue(now = Date.now(), safe = storageGuard.safe): boolean {
+  if (app.logs.length < (safe ? 2 : 1)) return false;
   if ((app.get<number>('backupSnoozeUntil') ?? 0) > now) return false;
   const last = lastBackupAt();
   if (last === undefined) return true;
-  return unsavedCount() > 0 && now - last > 14 * DAY;
+  return unsavedCount() > 0 && now - last > (safe ? 14 : 7) * DAY;
 }
 
 /** Workouts the last backup doesn't have. */
@@ -103,11 +106,19 @@ export function unsavedCount(): number {
   return Math.max(0, app.logs.length - (app.get<number>('backupLogCount') ?? 0));
 }
 
-export function snoozeBackup(now = Date.now()) { app.set('backupSnoozeUntil', now + 7 * DAY); }
+/** "Later" waits a week, or three days while there's no backup at all. */
+export function snoozeBackup(now = Date.now()) { app.set('backupSnoozeUntil', now + (lastBackupAt() === undefined ? 3 : 7) * DAY); }
 
 export function lastBackupText(now = Date.now()): string {
   const last = lastBackupAt();
   if (last === undefined) return 'Never';
   const days = Math.floor((now - last) / DAY);
   return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
+}
+
+/** The last backup's date and how long ago, e.g. "Nov 17 · 3 days ago". */
+export function lastBackupDetail(now = Date.now()): string {
+  const last = lastBackupAt();
+  if (last === undefined) return 'Never';
+  return `${new Date(last).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${lastBackupText(now)}`;
 }

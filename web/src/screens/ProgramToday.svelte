@@ -13,7 +13,11 @@
   import HeroCard from '../components/HeroCard.svelte';
   import ScreenHeader from '../components/ScreenHeader.svelte';
   import FatigueCheckInSheet from '../components/FatigueCheckInSheet.svelte';
-  import TrainedCard from '../components/TrainedCard.svelte';
+  import TrainedLine from '../components/TrainedLine.svelte';
+  import Notice from '../components/Notice.svelte';
+  import SafariBanner from '../components/SafariBanner.svelte';
+  import { breakable } from '../lib/programInfo';
+  import { trainedDetail } from '../lib/logFormat';
   import BackupNudge from '../components/BackupNudge.svelte';
   import WeekStrip from '../components/WeekStrip.svelte';
   import ActivitySheet from '../components/ActivitySheet.svelte';
@@ -43,11 +47,6 @@
   const showRest = $derived(isRestDay && !trainedToday && !trainOnRestDay);
   const dueWeek = $derived(checkInDue(active.progress, active.program));
 
-  function trainedDetail(): string {
-    const ref = trainedToday?.program;
-    const day = ref ? Programs.byID(ref.programID) && programDay(Programs.byID(ref.programID)!, ref.dayID) : undefined;
-    return `${ref && day ? `Week ${ref.week} · ${day.title}. ` : ''}Recover well; here's what's next.`;
-  }
 
   function start() {
     if (!plan || !session.okToReplace()) return;
@@ -124,7 +123,7 @@
   const options = $derived<MenuItem[]>([
     { label: 'Program Details', action: () => nav.push({ name: 'program', id: active.program.id }) },
     { label: 'Skip This Day', action: skipToday },
-    { label: 'Use Generator Today', action: onUseGenerator },
+    { label: 'Use a Generated Workout Today', action: onUseGenerator },
     { label: 'Empty Workout', action: () => { if (session.okToReplace()) session.startEmpty(true); } },
     { label: 'Log Cardio or Activity', action: () => (loggingActivity = true) },
     { label: 'Start a Saved Workout', action: () => (pickingTemplate = true) },
@@ -136,35 +135,19 @@
     {#snippet actions()}<ActionMenu items={options} label="Workout options" class="icon-btn"><Ellipsis size={18} /></ActionMenu>{/snippet}
   </ScreenHeader>
 
-  <BackupNudge />
-
-  {#if trainedToday && !session.isActive}<TrainedCard detail={trainedDetail()} />{/if}
-
-  {#if dueWeek}
-    <div class="card stack notice" style="--gap:10px">
-      <div class="row sub bold" style="--gap:8px"><HeartPulse size={18} color="var(--ember-2)" /> Week {dueWeek} check-in</div>
-      <p class="caption muted">Four quick fatigue flags. Two or more and it's time to deload early.</p>
-      <div class="row" style="--gap:8px">
-        <button class="btn primary" onclick={() => (checkInWeek = dueWeek)}>Check in</button>
-        <button class="btn" onclick={() => saveCheckIn({ jointPain: false, stillSore: false, poorSleepOrMotivation: false, repsDropped: false }, dueWeek)}>Skip</button>
-      </div>
-    </div>
-  {/if}
-
-  {#if active.progress.deloadNext}
-    <div class="card tight row sub semibold" style="color:var(--recovering)"><BedDouble size={18} /> Deload starts after this week</div>
-  {/if}
+  <SafariBanner />
 
   {#if plan}
     {@const rule = plan.session.rule}
     {@const totalSets = plan.items.reduce((t, i) => t + i.prescription.sets, 0)}
     <HeroCard eyebrow={trainedToday ? 'Next up' : `Week ${plan.session.week} of ${plan.program.weeks}`} title="{plan.session.day.title} Day"
       stats={[{ value: `${dayPlanMinutes(plan)}`, label: 'Minutes' }, { value: `${plan.items.length}`, label: 'Exercises' }, { value: `${totalSets}`, label: 'Sets' }]}
-      startLabel="Start {plan.session.day.title}" showStart={!session.isActive && !showRest} onstart={start}>
+      startLabel="Start {plan.session.day.title} Day" showStart={!session.isActive && !showRest} onstart={start}>
       {#snippet top()}
+        {#if trainedToday && !session.isActive}<TrainedLine detail={trainedDetail(trainedToday)} />{/if}
         <button class="program row" onclick={() => nav.push({ name: 'program', id: plan.program.id })}>
           <span class="grow stack" style="--gap:8px;text-align:left">
-            <span class="caption semibold one-line">{plan.program.name}</span>
+            <span class="caption semibold program-name">{breakable(plan.program.name)}</span>
             <span class="weeks" aria-label="Week {plan.session.week} of {plan.program.weeks}">
               {#each Array(plan.program.weeks) as _, w (w)}
                 <i class:done={w + 1 !== plan.session.week && (active.progress.completed[w + 1] ?? []).length > 0} class:now={w + 1 === plan.session.week} class:deload={ruleFor(plan.program, w + 1).isDeload}></i>
@@ -187,6 +170,21 @@
         {#each chips(rule) as c (c)}<span class="chip glass-chip">{c}</span>{/each}
       {/snippet}
     </HeroCard>
+
+    <!-- Secondary messages: one quiet card style, below the workout summary. -->
+    {#if dueWeek}
+      <Notice icon={HeartPulse} title="Week {dueWeek} check-in">
+        Four quick fatigue flags. Two or more and it's time to deload early.
+        {#snippet actions()}
+          <button class="notice-act" onclick={() => (checkInWeek = dueWeek)}>Check in</button>
+          <button class="notice-act plain" onclick={() => saveCheckIn({ jointPain: false, stillSore: false, poorSleepOrMotivation: false, repsDropped: false }, dueWeek)}>Skip</button>
+        {/snippet}
+      </Notice>
+    {/if}
+    {#if active.progress.deloadNext}
+      <Notice icon={BedDouble} tone="warn" title="Deload starts after this week">A lighter week to recover comes next.</Notice>
+    {/if}
+    <BackupNudge />
 
     <WeekStrip />
 
@@ -260,10 +258,10 @@
 {/if}
 
 <style>
-  .notice { border-color: rgba(255, 106, 46, 0.35); }
   .section-row { margin-top: 10px; padding: 0 4px; }
   .program { width: 100%; padding: 12px 14px; border-radius: var(--r-md); background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.1); }
   .program:active { transform: none; }
+  .program-name { line-height: 1.3; }
   .weeks { display: flex; gap: 4px; }
   .weeks i { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); }
   .weeks i.deload { background: rgba(255, 255, 255, 0.06); outline: 1px dashed rgba(255, 255, 255, 0.2); outline-offset: -1px; }

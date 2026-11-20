@@ -39,9 +39,15 @@ export function fmtNum(v: number, decimals = 1): string {
 }
 
 /** A workout's length in whole minutes, or "<1 min" for one under a minute (never "0 min"). */
+/**
+ * Whole minutes, rounded (under a minute is 0): the one rule every duration on screen uses, so a
+ * workout's row, its page and the weekly report agree.
+ */
+export const durationMinutes = (seconds: number) => (seconds < 60 ? 0 : Math.round(seconds / 60));
+
 export function durationText(seconds: number): string {
-  const s = Math.max(0, seconds);
-  return s < 60 ? '<1 min' : `${Math.floor(s / 60)} min`;
+  const m = durationMinutes(seconds);
+  return m < 1 ? '<1 min' : `${m} min`;
 }
 
 /** m:ss, or h:mm:ss from an hour up. */

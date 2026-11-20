@@ -102,7 +102,7 @@
   .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px 2px; text-align: center; align-items: center; }
   .day { width: 38px; height: 38px; border-radius: 12px; margin: 0 auto; font-size: 0.88rem; font-weight: 550; border: 1px solid transparent; color: var(--text-2); }
   .day:disabled { opacity: 0.25; }
-  .day.trained { background: var(--ember-gradient); color: #fff; font-weight: 750; box-shadow: 0 6px 16px -6px var(--ember-glow); }
+  .day.trained { background: var(--ember-gradient); color: var(--on-ember); font-weight: 750; box-shadow: 0 6px 16px -6px var(--ember-glow); }
   .day { position: relative; }
   .day.cardio::after { content: ''; position: absolute; left: 50%; bottom: 4px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
     background: #6fa2ff; box-shadow: 0 0 6px rgba(111, 162, 255, 0.8); }

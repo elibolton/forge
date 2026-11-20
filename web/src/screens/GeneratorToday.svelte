@@ -8,7 +8,7 @@
     blockStatus, estimatedMinutes, isBodyweight, muscleName, plannedWorkingSets,
   } from '../engine';
   import {
-    ArrowLeftRight, BadgeCheck, BatteryCharging, ChevronRight, Clock, Ellipsis, HeartPulse, MapPin, Plus, RefreshCw, SlidersHorizontal,
+    ArrowLeftRight, BadgeCheck, BatteryCharging, Clock, Ellipsis, HeartPulse, MapPin, Plus, RefreshCw, SlidersHorizontal,
     TimerOff, TrendingUp, Wand,
   } from '@lucide/svelte';
   import BlockCheckInSheet from '../components/BlockCheckInSheet.svelte';
@@ -18,18 +18,22 @@
   import HeroCard from '../components/HeroCard.svelte';
   import ScreenHeader from '../components/ScreenHeader.svelte';
   import TargetMuscles from '../components/TargetMuscles.svelte';
-  import TrainedCard from '../components/TrainedCard.svelte';
+  import TrainedLine from '../components/TrainedLine.svelte';
+  import Notice from '../components/Notice.svelte';
+  import SafariBanner from '../components/SafariBanner.svelte';
+  import { type SavedParts, changeText, changedParts, planParts } from '../lib/planChange';
   import BackupNudge from '../components/BackupNudge.svelte';
   import WeekStrip from '../components/WeekStrip.svelte';
   import ActivitySheet from '../components/ActivitySheet.svelte';
   import { clock, currentTime } from '../lib/clock.svelte';
   import { count, dayTitle, focusTitle, goalTitle, swappableFocuses } from '../lib/labels';
   import { nav } from '../lib/nav.svelte';
+  import { trainedDetail } from '../lib/logFormat';
   import { type TodayPlan, buildToday, isTodayPlanCurrent, planBasis, withoutDuplicateExercises } from '../lib/plans';
   import { session } from '../lib/session.svelte';
   import { app } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
-  import { durationText, isSameDay } from '../lib/units';
+  import { isSameDay } from '../lib/units';
 
   /** "A, B and C". */
   const listText = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] ?? '');
@@ -84,9 +88,43 @@
     return () => document.removeEventListener('visibilitychange', onVisible);
   });
 
-  function rebuild(focus: DayFocus | null, minutes: number | null, seed: number | null | undefined) {
-    app.set('todayPlan', buildToday(focus, minutes, seed));
+  function rebuild(focus: DayFocus | null, minutes: number | null, seed: number | null | undefined): TodayPlan {
+    const t = buildToday(focus, minutes, seed);
+    app.set('todayPlan', t);
+    rememberParts(t.generatedAt);
+    return t;
   }
+
+  /** What the plan was built from, in labelled pieces, so a later change can be named. */
+  function rememberParts(generatedAt: number) {
+    app.set('todayPlanParts', { generatedAt, parts: planParts(app.profile!, app.activities) } satisfies SavedParts);
+  }
+
+  /** Settings changed since today's workout was built. */
+  const stale = $derived(!!today && today.basis !== planBasis(profile));
+  const staleText = $derived.by(() => {
+    if (!stale || !today) return '';
+    const saved = app.get<SavedParts>('todayPlanParts');
+    return changeText(changedParts(saved?.generatedAt === today.generatedAt ? saved.parts : undefined, planParts(profile, app.activities)));
+  });
+
+  function keepThisOne() {
+    edit((t) => { t.basis = planBasis(profile); });
+    if (today) rememberParts(today.generatedAt);
+  }
+
+  /** Start never runs a workout built before a change: it builds the updated one first. */
+  function startToday() {
+    if (!today) return;
+    let workout = today.workout;
+    if (stale) {
+      const what = staleText;
+      workout = rebuild(today.focus, today.minutes, today.seed).workout;
+      toasts.show(`${what}: workout updated`);
+    }
+    session.start(workout, (st) => addMobility(st, workout.targetMuscles, profile.mobility));
+  }
+
 
   function edit(change: (t: TodayPlan) => void) {
     const t = app.get<TodayPlan>('todayPlan');
@@ -196,131 +234,105 @@
     {/snippet}
   </ScreenHeader>
 
-  <BackupNudge />
-
-  {#if app.activeGym.reviewEquipment}
-    <button class="card tight row" style="text-align:left" onclick={() => nav.push({ name: 'gym', id: app.activeGym.id })}>
-      <MapPin size={18} color="var(--ember-2)" aria-hidden="true" />
-      <span class="grow"><span class="sub bold">Check your equipment: {app.activeGym.name}</span><br /><span class="caption muted">Forge now asks which bench, cables and attachments you have, so it only suggests what you can do.</span></span>
-      <ChevronRight size={16} color="var(--text-3)" />
-    </button>
-  {/if}
+  <SafariBanner />
 
   {#if today}
     {@const workout = today.workout}
     {@const estimate = estimatedMinutes(workout.exercises)}
     {@const totalSets = workout.exercises.reduce((t, p) => t + plannedWorkingSets(p).length, 0)}
-    {#if trainedToday && !session.isActive}
-      {@const sets = trainedToday.exercises.reduce((t, e) => t + e.sets.filter((s) => !s.isWarmup && s.reps > 0).length, 0)}
-      {@const count = sets > 0 ? sets : trainedToday.exercises.length}
-      <TrainedCard detail="{trainedToday.focus ? `${focusTitle[trainedToday.focus]} · ` : ''}{trainedToday.durationSeconds > 0 ? `${durationText(trainedToday.durationSeconds)} · ` : ''}{count} {sets > 0 ? (count === 1 ? 'set' : 'sets') : count === 1 ? 'exercise' : 'exercises'}. Recover well; here's what's next." />
-    {/if}
 
-    {#if app.activeProgram}
-      <div class="card tight row">
-        <Wand size={18} aria-hidden="true" color="var(--ember-2)" />
-        <span class="grow sub semibold">Using the generator today</span>
-        <button class="link sub" onclick={() => app.set('generatorDay', undefined)}>Back to program</button>
-      </div>
-    {:else if finishedProgram}
-      <button class="card tight row" style="text-align:left" onclick={() => nav.push({ name: 'program', id: finishedProgram.id })}>
-        <BadgeCheck color="var(--fresh)" aria-hidden="true" />
-        <span class="grow"><span class="sub bold">{finishedProgram.name} complete</span><br /><span class="caption muted">Start it again or pick another program.</span></span>
-        <ChevronRight size={16} color="var(--text-3)" />
-      </button>
-    {/if}
-
-    {#if checkInWeek !== undefined}
-      <div class="card stack notice" style="--gap:10px">
-        <div class="row sub bold" style="--gap:8px"><HeartPulse size={18} color="var(--ember-2)" /> Week {checkInWeek} check-in</div>
-        <p class="caption muted">Four quick questions near the end of the block. Recovering well stretches it a week; joint pain or two flags bring the deload forward.</p>
-        <div class="row" style="--gap:8px">
-          <button class="btn primary" onclick={() => (checkingIn = true)}>Check in</button>
-          <button class="btn" onclick={() => saveBlockCheckIn({ jointPain: false, stillSore: false, poorSleepOrMotivation: false, stalled: false, answeredAt: Date.now(), skipped: true })}>Skip</button>
-        </div>
-      </div>
-    {/if}
-
-    {#if workout.block?.checkInNote && !workout.block.isDeload}
-      <div class="card tight row" style="align-items:flex-start">
-        <TrendingUp size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
-        <div class="stack grow" style="--gap:6px">
-          <div class="sub bold">{workout.block.checkInNote}</div>
-          <p class="caption muted">This block now runs {workout.block.weeks - 1} training weeks, then a deload.</p>
-        </div>
-      </div>
+    <!-- Above Start, so nobody starts a workout built before (say) an injury without seeing it. -->
+    {#if stale}
+      <Notice icon={RefreshCw} tone="ember" title={staleText} role="status">
+        Start builds an updated workout. Keep this one to do it as it is, edits and all.
+        {#snippet actions()}
+          <button class="notice-act" onclick={() => rebuild(today.focus, today.minutes, today.seed)}>Update now</button>
+          <button class="notice-act plain" onclick={keepThisOne}>Keep this one</button>
+        {/snippet}
+      </Notice>
     {/if}
 
     <!-- Non-breaking spaces keep "Week 1 of 6" together, so a narrow screen doesn't strand the "6" on its own line. -->
-    {@const blockLabel = workout.block ? (workout.block.isDeload ? ' · Deload week' : ` · Week ${workout.block.week} of ${workout.block.weeks}`) : ''}
+    {@const blockLabel = workout.block ? (workout.block.isDeload ? ' · Deload week' : ` · Week ${workout.block.week} of ${workout.block.weeks}`) : ''}
     <HeroCard eyebrow={trainedToday ? `Next up${blockLabel}` : `Today · ${goalTitle[profile.plan.goal]}${blockLabel}`} title={dayTitle(workout.focus)}
       stats={[{ value: `${estimate}`, label: 'Minutes' }, { value: `${workout.exercises.length}`, label: 'Exercises' }, { value: `${totalSets}`, label: 'Sets' }]}
-      startLabel={trainedToday ? 'Start next workout' : 'Start workout'} showStart={!session.isActive} onstart={() => session.start(workout, (st) => addMobility(st, workout.targetMuscles, profile.mobility))}>
+      startLabel={stale ? 'Start updated workout' : trainedToday ? 'Start next workout' : 'Start workout'} showStart={!session.isActive} onstart={startToday}>
+      {#snippet top()}{#if trainedToday && !session.isActive}<TrainedLine detail={trainedDetail(trainedToday)} />{/if}{/snippet}
       {#snippet controls()}
         <ActionMenu items={switchMenu} label="Switch workout focus" class="chip glass-chip"><ArrowLeftRight size={15} /> Switch</ActionMenu>
         <ActionMenu items={durationMenu} label="Duration, {chosenMinutes} minutes" class="chip glass-chip"><Clock size={15} /> {chosenMinutes} min</ActionMenu>
-        <ActionMenu items={gymMenu} label="Gym, {app.activeGym.name}" class="chip glass-chip"><MapPin size={15} /> <span class="one-line" style="max-width:120px">{app.activeGym.name}</span></ActionMenu>
+        <ActionMenu items={gymMenu} label="Gym, {app.activeGym.name}" class="chip glass-chip gym-chip"><MapPin size={15} style="flex:none" /> <span class="one-line">{app.activeGym.name}</span></ActionMenu>
       {/snippet}
     </HeroCard>
 
-    {#if today.basis !== planBasis(profile)}
-      <div class="card stack notice">
-        <div class="row sub bold" style="--gap:8px"><RefreshCw size={16} color="var(--ember-2)" /> Your plan or recovery changed</div>
-        <p class="caption muted">This workout was built before the change. Update it, or keep it and your edits.</p>
-        <div class="row" style="--gap:8px">
-          <button class="btn primary" onclick={() => rebuild(today.focus, today.minutes, today.seed)}>Update workout</button>
-          <button class="btn" onclick={() => edit((t) => { t.basis = planBasis(profile); })}>Keep this one</button>
-        </div>
-      </div>
+    <!-- Everything else is secondary: one quiet card style, below the workout summary. -->
+    {#if checkInWeek !== undefined}
+      <Notice icon={HeartPulse} title="Week {checkInWeek} check-in">
+        Four quick questions near the end of the block. Recovering well stretches it a week; joint pain or two flags bring the deload forward.
+        {#snippet actions()}
+          <button class="notice-act" onclick={() => (checkingIn = true)}>Check in</button>
+          <button class="notice-act plain" onclick={() => saveBlockCheckIn({ jointPain: false, stillSore: false, poorSleepOrMotivation: false, stalled: false, answeredAt: Date.now(), skipped: true })}>Skip</button>
+        {/snippet}
+      </Notice>
+    {/if}
+
+    {#if workout.block?.checkInNote && !workout.block.isDeload}
+      <Notice icon={TrendingUp} tone="fresh" title={workout.block.checkInNote}>
+        This block now runs {workout.block.weeks - 1} training weeks, then a deload.
+      </Notice>
+    {/if}
+
+    <BackupNudge />
+
+    {#if app.activeGym.reviewEquipment}
+      <Notice icon={MapPin} title="Check your equipment: {app.activeGym.name}">
+        Forge now asks which bench, cables and attachments you have, so it only suggests what you can do.
+        {#snippet actions()}<button class="notice-act" onclick={() => nav.push({ name: 'gym', id: app.activeGym.id })}>Review equipment</button>{/snippet}
+      </Notice>
+    {/if}
+
+    {#if app.activeProgram}
+      <Notice icon={Wand} title="Using a generated workout today">
+        Your program picks up again tomorrow.
+        {#snippet actions()}<button class="notice-act" onclick={() => app.set('generatorDay', undefined)}>Back to program</button>{/snippet}
+      </Notice>
+    {:else if finishedProgram}
+      <Notice icon={BadgeCheck} tone="fresh" title="{finishedProgram.name} complete">
+        Start it again or pick another program.
+        {#snippet actions()}<button class="notice-act" onclick={() => nav.push({ name: 'program', id: finishedProgram.id })}>See program</button>{/snippet}
+      </Notice>
     {/if}
 
     {#if workout.uncovered?.length}
-      <div class="card tight row" style="align-items:flex-start">
-        <TimerOff size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
-        <div class="stack grow" style="--gap:6px">
-          <div class="sub bold">{workout.exercises.length ? 'Some muscles get no work today' : 'Nothing fits today'}</div>
-          <p class="caption muted">{workout.exercises.length ? `Nothing for ${listText(workout.uncovered.map(muscleName))} fits` : `No ${focusTitle[workout.focus].toLowerCase()} exercise fits`} your equipment at {app.activeGym.name}, your injuries and excluded exercises. Add equipment, or switch to another day.</p>
-          <button class="link sub" style="text-align:left;min-height:44px;margin:-10px 0" onclick={() => nav.push({ name: 'gym', id: app.activeGym.id })}>Edit equipment</button>
-        </div>
-      </div>
+      <Notice icon={TimerOff} tone="warn" title={workout.exercises.length ? 'Some muscles get no work today' : 'Nothing fits today'}>
+        {workout.exercises.length ? `Nothing for ${listText(workout.uncovered.map(muscleName))} fits` : `No ${focusTitle[workout.focus].toLowerCase()} exercise fits`} your equipment at {app.activeGym.name}, your injuries and excluded exercises. Add equipment, or switch to another day.
+        {#snippet actions()}
+          <button class="notice-act" onclick={() => nav.push({ name: 'gym', id: app.activeGym.id })}>Edit equipment</button>
+          {#if profile.plan.injuries.length}<button class="notice-act" onclick={() => nav.push({ name: 'injuries' })}>Review injuries</button>{/if}
+        {/snippet}
+      </Notice>
     {/if}
     {#if workout.fatigued}
-      <div class="card tight row" style="align-items:flex-start">
-        <BatteryCharging size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
-        <div class="stack grow" style="--gap:6px">
-          <div class="sub bold">Still recovering</div>
-          <p class="caption muted">Nothing is well recovered yet. A rest day or easy mobility may serve you better; if you train, keep it easy.</p>
-        </div>
-      </div>
+      <Notice icon={BatteryCharging} tone="warn" title="Still recovering">
+        Nothing is well recovered yet. A rest day or easy mobility may serve you better; if you train, keep it easy.
+      </Notice>
     {/if}
 
     {#if workout.block?.isDeload}
-      <div class="card tight row" style="align-items:flex-start">
-        <BatteryCharging size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
-        <div class="stack grow" style="--gap:6px">
-          <!-- A check-in that brought the deload forward says so; an extended block's deload is just the deload. -->
-          <div class="sub bold">{workout.block.earlyReason && workout.block.checkInNote ? workout.block.checkInNote : 'Deload week'}</div>
-          <p class="caption muted">Fewer sets, lighter weights and easy effort, so you recover and come back stronger.{workout.block.earlyReason ? ` ${workout.block.earlyReason}, so it came early.` : ''} Next week starts block {workout.block.number + 1}.</p>
-        </div>
-      </div>
+      <!-- A check-in that brought the deload forward says so; an extended block's deload is just the deload. -->
+      <Notice icon={BatteryCharging} tone="fresh" title={workout.block.earlyReason && workout.block.checkInNote ? workout.block.checkInNote : 'Deload week'}>
+        Fewer sets, lighter weights and easy effort, so you recover and come back stronger.{workout.block.earlyReason ? ` ${workout.block.earlyReason}, so it came early.` : ''} Next week starts block {workout.block.number + 1}.
+      </Notice>
     {:else if chosenMinutes - estimate >= 10 && estimate < chosenMinutes * 0.8 && !workout.uncovered?.length}
       {@const complete = !!workout.note && !workout.fatigued}
-      <div class="card tight row" style="align-items:flex-start">
+      <Notice icon={complete ? BadgeCheck : TimerOff} tone={complete ? 'fresh' : 'warn'} title="About {estimate} of your {chosenMinutes} min">
         {#if complete}
-          <BadgeCheck size={18} color="var(--fresh)" aria-hidden="true" style="flex:none;margin-top:2px" />
+          Every muscle today already gets the sets that help it grow; more would add fatigue, not size. Leftover time went to muscles today doesn't otherwise train.
         {:else}
-          <TimerOff size={18} color="var(--recovering)" aria-hidden="true" style="flex:none;margin-top:2px" />
+          Only a few {focusTitle[workout.focus].toLowerCase()} exercises suit your equipment ({app.activeGym.name}) and today's recovery. Add one to use the time, or shorten today's session.
         {/if}
-        <div class="stack grow" style="--gap:6px">
-          <div class="sub bold">About {estimate} of your {chosenMinutes} min</div>
-          {#if complete}
-            <p class="caption muted">Every muscle today already gets the sets that help it grow; more would add fatigue, not size. Leftover time went to muscles today doesn't otherwise train.</p>
-          {:else}
-          <p class="caption muted">Only a few {focusTitle[workout.focus].toLowerCase()} exercises suit your equipment ({app.activeGym.name}) and today's recovery. Add one to use the time, or shorten today's session.</p>
-          {/if}
-          <button class="link sub" style="text-align:left" onclick={() => (adding = true)}>Add an exercise</button>
-        </div>
-      </div>
+        {#snippet actions()}<button class="notice-act" onclick={() => (adding = true)}>Add an exercise</button>{/snippet}
+      </Notice>
     {/if}
 
     <WeekStrip />
@@ -372,7 +384,6 @@
 {/if}
 
 <style>
-  .notice { border-color: rgba(255, 106, 46, 0.35); }
   .section-row { margin-top: 10px; padding: 0 4px; }
   .pair-label { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 -2px 14px; color: var(--ember-2); }
   /* A rail joins the two cards of a superset. */
@@ -382,6 +393,8 @@
   .paired.second::before { top: -10px; bottom: 22px; }
   .add { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; border-radius: var(--r-lg);
     border: 1px dashed var(--hairline-2); color: var(--text-2); font-weight: 600; }
+  /* The gym's name gets what's left of the row, so a long one ends in "…" rather than a mid-word cut. */
+  :global(.gym-chip) { max-width: 100%; min-width: 0; }
   :global(.glass-chip) { background: rgba(0, 0, 0, 0.28) !important; border-color: rgba(255, 255, 255, 0.12) !important;
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 </style>
