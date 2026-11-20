@@ -112,11 +112,9 @@ class Cloud {
 
   // MARK: Signing in
 
-  /** Step 1: joins with an invite code if one was given, then emails a sign-in code. Returns the code's id. */
-  async sendCode(email: string, invite: string): Promise<string> {
-    const clean = email.trim().toLowerCase();
-    if (invite.trim()) await this.server.join(clean, invite.trim());
-    return this.server.requestCode(clean);
+  /** Step 1: emails a sign-in code. A new email gets an account with it. Returns the code's id. */
+  async sendCode(email: string): Promise<string> {
+    return this.server.requestCode(email.trim().toLowerCase());
   }
 
   /**
@@ -129,7 +127,7 @@ class Cloud {
       session = await this.server.verifyCode(otpId, code.replace(/\D/g, ''));
     } catch (e) {
       if (e instanceof ServerError && e.status === 400) {
-        throw new ServerError("That code didn't work. Check it, or ask for a new one. New to Forge? You need an invite code.", 400);
+        throw new ServerError("That code didn't work. Check it, or ask for a new one.", 400);
       }
       throw e;
     }

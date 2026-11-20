@@ -122,12 +122,21 @@ for (const name of COLLECTIONS) {
   });
 }
 
-test('sign-in codes: same answer for members and strangers', async () => {
-  const member = await api('POST', '/api/collections/users/request-otp', { body: { email: 'b@test.local' } });
-  const stranger = await api('POST', '/api/collections/users/request-otp', { body: { email: 'nobody@test.local' } });
-  assert.equal(member.status, 200, JSON.stringify(member.json));
-  assert.equal(stranger.status, 200, JSON.stringify(stranger.json));
-  assert.ok(member.json.otpId && stranger.json.otpId);
+test('asking for a code with a new email signs you up', async () => {
+  const before = await api('GET', `/api/collections/users/records?filter=${encodeURIComponent("email='new@test.local'")}`, { token: su });
+  assert.equal(before.json.items.length, 0);
+  const r = await api('POST', '/api/collections/users/request-otp', { body: { email: 'New@Test.local' } });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.ok(r.json.otpId);
+  const after = await api('GET', `/api/collections/users/records?filter=${encodeURIComponent("email='new@test.local'")}`, { token: su });
+  assert.equal(after.json.items.length, 1);
+  const again = await api('POST', '/api/collections/users/request-otp', { body: { email: 'new@test.local' } });
+  assert.equal(again.status, 200);
+  const still = await api('GET', `/api/collections/users/records?filter=${encodeURIComponent("email='new@test.local'")}`, { token: su });
+  assert.equal(still.json.items.length, 1, 'no duplicate account');
+  const bad = await api('POST', '/api/collections/users/request-otp', { body: { email: 'not-an-email' } });
+  assert.ok(bad.status >= 400);
+  await api('DELETE', `/api/collections/users/records/${after.json.items[0].id}`, { token: su });
 });
 
 test('rate limits: join and sign-in codes', async () => {

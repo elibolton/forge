@@ -61,9 +61,11 @@ Then browse to http://localhost:8090/_/ and set:
 - **Rate limits:** on. After Funnel is set up, also turn on **IP proxy headers** (`X-Forwarded-For`), or every user counts as the same IP (127.0.0.1) and shares one limit.
 - **IP proxy headers:** `X-Forwarded-For`, rightmost (after Funnel).
 
-The migrations in `pb_migrations/` set up the rest when PocketBase starts: email-code sign-in only (6 digits, 10 minutes, no passwords), no public sign-ups, the data collections with their access rules, the `invites` collection, and rate limits for joining and for sign-in codes.
+The migrations in `pb_migrations/` set up the rest when PocketBase starts: email-code sign-in only (6 digits, 10 minutes, no passwords), the data collections with their access rules, the `invites` collection, and rate limits for joining and for sign-in codes.
 
-## 5. Invite friends
+Sign-up is open: asking for a sign-in code with a new email creates the account (`pb_hooks/signup.pb.js`). Accounts can't be created any other way, and the sign-in code limit (5 per 15 minutes per address) caps abuse. To go back to invite-only, delete `signup.pb.js` and re-run `provision.sh`.
+
+## 5. Invite codes (optional, not needed while sign-up is open)
 
 ```bash
 sudo /opt/pocketbase/invite.sh                     # 1 use, valid 14 days

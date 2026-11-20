@@ -33,7 +33,7 @@ Options:
 - **Use a domain you own elsewhere.** Move its nameservers to Cloudflare (free), or add only a subdomain if your registrar allows it.
 - **No domain at all.** Tailscale Funnel gives the VM a free `*.ts.net` HTTPS address instead of the tunnel. Email then needs Gmail SMTP with an app password, which is less reliable (spam folders), or Resend with a cheap domain anyway.
 
-**Who signs up.** The recommendation is invite-only: you create accounts, or sign-ups need an invite code. It's your server and your disk, and it keeps strangers out.
+**Who signs up.** Decided 2026-11-20: open. Anyone with the app's address can sign up with their email (the first sign-in code creates the account). Invite codes remain available if this needs locking down later.
 
 ## 2. The VM
 
