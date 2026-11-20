@@ -1,7 +1,7 @@
 <script lang="ts">
   import { EQUIPMENT, GOALS, type Gym, Gyms, LEVELS, SPLITS, type Split, defaultPlan, uuid, withGymUnits } from '../engine';
   import { canPull } from '../lib/gymFit';
-  import { Building2, ChevronLeft, Dumbbell, ChevronRight, Circle, CircleCheck, Footprints, House, TriangleAlert, Zap, Download } from '@lucide/svelte';
+  import { Building2, ChevronLeft, Dumbbell, ChevronRight, Circle, CircleCheck, Footprints, House, TriangleAlert, Zap, Download, Cloud, CloudCheck } from '@lucide/svelte';
   import Sheet from '../components/Sheet.svelte';
   import Toggle from '../components/Toggle.svelte';
   import InstallSteps from '../components/InstallSteps.svelte';
@@ -9,6 +9,7 @@
   import { EQUIPMENT_GROUPS, equipmentTitle, goalBlurb, goalTitle, levelBlurb, levelTitle, splitBlurb, splitTitle } from '../lib/labels';
   import { app } from '../lib/store.svelte';
   import Account from './Account.svelte';
+  import { cloud } from '../lib/cloud.svelte';
 
   /** First-run setup: one decision per page, every page pre-filled so Next always works. */
   const PAGES = ['goal', 'schedule', 'experience', 'gym', 'finish'] as const;
@@ -38,6 +39,8 @@
   const browser = browserName[device.browser];
   /** A new phone for someone who already uses Forge: sign in and their data comes down instead. */
   let signingIn = $state(false);
+  /** The optional "back up with your email" step on the last page is open. */
+  let backingUp = $state(false);
   const gymName = $derived(gym.name.trim() || PRESETS[preset].gym().name);
   /** No way to pull: say so up front rather than let pull days quietly come up nearly empty. */
   const cantPull = $derived(!canPull(gym));
@@ -168,6 +171,20 @@
       {@render pageTitle("You're all set", summary)}
       {#if !isStandalone() && separateAppData}
         <p class="caption" style="color:var(--recovering)">You're setting up in {browser}. Your workouts stay in this tab, separate from a Home Screen copy; back up now and then from You → Backup, Import & Export.</p>
+      {/if}
+      {#if cloud.account}
+        <div class="card row backed" style="--gap:10px"><CloudCheck size={20} color="var(--ok, #4ade80)" aria-hidden="true" />
+          <span class="sub">Backing up as <b>{cloud.account.email}</b></span></div>
+      {:else}
+        <div class="card stack" style="--gap:10px">
+          <div class="bold">Back up your workouts <span class="muted" style="font-weight:400">(optional)</span></div>
+          <p class="sub muted">Sign in with your email so a lost or new phone doesn't lose your history. New here? The code creates your account. You can also do this later in You → Account & Sync.</p>
+          {#if backingUp}
+            <Account embedded newAccountMessage="Signed in. Your workouts back up as you train." />
+          {:else}
+            <button class="btn block" onclick={() => (backingUp = true)}><Cloud size={18} /> Back Up with My Email</button>
+          {/if}
+        </div>
       {/if}
       <p class="caption muted">Coming from another app? Import your workout history from You → Data after setup.</p>
     {/if}

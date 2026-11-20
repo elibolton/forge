@@ -6,8 +6,12 @@
   import { toasts } from '../lib/toasts.svelte';
   import { app } from '../lib/store.svelte';
 
-  /** Shown inside onboarding on a new phone: no back bar, and `onDone` once signed in. */
-  let { embedded = false, onDone }: { embedded?: boolean; onDone?: () => void } = $props();
+  /**
+   * Shown inside onboarding: no back bar, and `onDone` once signed in. `newAccountMessage` is the toast
+   * when no profile came down (a new account).
+   */
+  let { embedded = false, onDone, newAccountMessage = 'Signed in. Now set up Forge; it syncs as you go.' }:
+    { embedded?: boolean; onDone?: () => void; newAccountMessage?: string } = $props();
 
   // Signing in: email → a 6-digit code by email → signed in. A new email gets an account with its first code.
   let step = $state<'email' | 'code'>('email');
@@ -53,7 +57,7 @@
     step = 'email';
     if (embedded) {
       // With a profile on the server, the app now leaves onboarding by itself; a new account still needs setting up.
-      toasts.show(app.profile ? 'Welcome back. Your data is on this phone.' : 'Signed in. Now set up Forge; it syncs as you go.');
+      toasts.show(app.profile ? 'Welcome back. Your data is on this phone.' : newAccountMessage);
       onDone?.();
       return;
     }
@@ -110,7 +114,7 @@
       <div class="foot">Signing out or deleting your account keeps everything on this phone. Export a backup any time from Backup, Import & Export.</div>
     </div>
   {:else}
-    <div class="section">
+    <div class:section={!embedded}>
       {#if !embedded}<div class="head">Sign in to sync</div>{/if}
       {#if step === 'email'}
         <form class="stack" style="--gap:10px" onsubmit={sendCode}>
