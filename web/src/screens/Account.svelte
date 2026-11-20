@@ -9,11 +9,9 @@
   /** Shown inside onboarding on a new phone: no back bar, and `onDone` once signed in. */
   let { embedded = false, onDone }: { embedded?: boolean; onDone?: () => void } = $props();
 
-  // Signing in: email (plus an invite code the first time) → a 6-digit code by email → signed in.
+  // Signing in: email → a 6-digit code by email → signed in. A new email gets an account with its first code.
   let step = $state<'email' | 'code'>('email');
   let email = $state(cloud.account?.email ?? '');
-  let invite = $state('');
-  let showInvite = $state(false);
   let code = $state('');
   let otpId = '';
   let busy = $state(false);
@@ -27,7 +25,7 @@
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { error = 'Enter your email address.'; return; }
     busy = true;
     try {
-      otpId = await cloud.sendCode(email, showInvite ? invite : '');
+      otpId = await cloud.sendCode(email);
       step = 'code';
       code = '';
     } catch (err) { error = message(err); }
@@ -117,14 +115,10 @@
       {#if step === 'email'}
         <form class="stack" style="--gap:10px" onsubmit={sendCode}>
           <input type="email" autocomplete="email" autocapitalize="off" spellcheck="false" enterkeyhint="go" placeholder="Email" aria-label="Email" bind:value={email} />
-          {#if showInvite}
-            <input type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="Invite code" aria-label="Invite code" bind:value={invite} />
-          {/if}
           {#if error}<div class="error" role="alert">{error}</div>{/if}
           <button class="btn primary block" type="submit" disabled={busy}>{busy ? 'Sending…' : 'Email Me a Code'}</button>
-          {#if !showInvite}<button class="btn block" type="button" onclick={() => (showInvite = true)}>I'm New and Have an Invite Code</button>{/if}
         </form>
-        {#if !embedded}<div class="foot" style="margin-top:12px">Optional. Forge works fully on this phone without an account. Signed in, your workouts, settings and saved workouts are backed up to the Forge server and stay in sync across your devices. Forge is invite-only: the first time, enter the invite code you were given.</div>{/if}
+        {#if !embedded}<div class="foot" style="margin-top:12px">Optional. Forge works fully on this phone without an account. Signed in, your workouts, settings and saved workouts are backed up to the Forge server and stay in sync across your devices. New here? The same code creates your account.</div>{/if}
       {:else}
         <form class="stack" style="--gap:10px" onsubmit={verify}>
           <div class="sent">We emailed a 6-digit code to <strong>{email.trim().toLowerCase()}</strong>. It expires in 10 minutes. Check spam if it isn't there.</div>
