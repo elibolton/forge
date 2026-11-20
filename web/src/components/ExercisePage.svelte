@@ -170,7 +170,7 @@
       <button class="pair" disabled={!g.next} onclick={() => g.next?.go()}
         aria-label="{g.label}, exercise {g.position} of {g.size}, round {g.round} of {g.rounds}{g.next ? `. Next: ${g.next.name}` : ''}">
         <span class="kicker">{g.label.toUpperCase()}</span>
-        <span class="caption grow one-line" style="text-align:left">
+        <span class="caption grow" style="text-align:left;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
           {g.position} of {g.size} · round {g.round}/{g.rounds}{#if g.next}{` · ${g.next.newRound ? 'then back to' : 'then'} `}<b>{g.next.name}</b>{/if}
         </span>
         {#if g.next}<ArrowRight size={14} />{/if}
@@ -404,7 +404,7 @@
   .set-row.active { background: var(--ember-soft); border-color: rgba(255, 106, 46, 0.4); }
   .set-row.done { opacity: 0.7; }
   .badge { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-size: 0.82rem; background: var(--surface-2); flex: none; }
-  .set-row.active .badge { background: var(--ember-gradient); color: #fff; }
+  .set-row.active .badge { background: var(--ember-gradient); color: var(--on-ember); }
   .set-row.done .badge { background: rgba(60, 239, 176, 0.16); color: var(--fresh); }
   /* Drop sets sit indented under their set; failure sets are marked in red. */
   .drop-row { padding-left: 22px; }

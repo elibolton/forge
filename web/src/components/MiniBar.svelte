@@ -36,6 +36,6 @@
     animation: rise 0.4s var(--ease); }
   .mini:active { transform: translateX(-50%) scale(0.98); }
   .one { display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .open { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--ember-gradient); color: #fff; flex: none; }
+  .open { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--ember-gradient); color: var(--on-ember); flex: none; }
   @keyframes rise { from { transform: translate(-50%, 20px); opacity: 0; } }
 </style>
