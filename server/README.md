@@ -59,9 +59,34 @@ Then browse to http://localhost:8090/_/ and set:
 - **Application:** URL `https://forge.<tailnet>.ts.net`, name "Forge".
 - **Mail (Gmail):** SMTP on, host `smtp.gmail.com`, port 465, TLS encryption **Always**, username and app password of the Forge Gmail account, sender `Forge <that address>`. Send a test email. A 535 "Username and Password not accepted" means the app password belongs to a different Google account (check the account switcher before creating it) or 2-Step Verification isn't on.
 - **Rate limits:** on. After Funnel is set up, also turn on **IP proxy headers** (`X-Forwarded-For`), or every user counts as the same IP (127.0.0.1) and shares one limit.
-- **users collection → Options:** OTP on (6 digits, 10 minutes), password auth off, OAuth off.
+- **IP proxy headers:** `X-Forwarded-For`, rightmost (after Funnel).
 
-Collections, access rules and the invite check arrive as migrations and hooks in the next steps; re-running `provision.sh` installs them.
+The migrations in `pb_migrations/` set up the rest when PocketBase starts: email-code sign-in only (6 digits, 10 minutes, no passwords), no public sign-ups, the data collections with their access rules, the `invites` collection, and rate limits for joining and for sign-in codes.
+
+## 5. Invite friends
+
+```bash
+sudo /opt/pocketbase/invite.sh                     # 1 use, valid 14 days
+sudo /opt/pocketbase/invite.sh 5 30 "gym friends"  # 5 uses, 30 days
+sudo /opt/pocketbase/invite.sh list
+```
+
+A friend enters their email and the code once (`POST /api/forge/join`), which creates their account; after that they sign in with an emailed code. Someone already joined can re-enter a code without using it up.
+
+## Data on the server
+
+| Collection | Holds |
+|---|---|
+| `workouts` | workout logs |
+| `activities` | cardio |
+| `bodyweights` | weigh-ins |
+| `templates` | saved workouts |
+| `state` | single values such as the profile, keyed by name |
+| `invites` | invite codes (admin only) |
+
+Each data record has `owner`, `clientId` (the app's id, unique per owner), `body` (the app's own JSON), `updatedAt` (client ms, last write wins), `deleted` (tombstone) and server `created`/`updated` (`updated` is the sync cursor). Every rule is "owner = the signed-in user"; the owner can't be changed, and deleting a user deletes their data.
+
+Tests: `server/tests/run.sh` starts a throwaway PocketBase in Docker with these migrations and checks the rules and the invite flow (needs Docker and Node).
 
 ## Everyday
 

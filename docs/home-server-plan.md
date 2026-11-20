@@ -124,13 +124,13 @@ These mirror the phone's stores. Every record has:
 
 | Collection | Holds | Notes |
 |---|---|---|
-| `profiles` | settings, gyms, plan, program progress, check-ins | One per user. Stored as a JSON field, so it follows the app's own format and decoders. |
+| `state` | the profile (settings, gyms, plan, program progress, check-ins) and other single values | Keyed by name (`clientId` = `profile`, `kv`). JSON body in the app's own format. |
 | `workouts` | workout logs | One record per workout. The JSON body uses the existing log format. |
 | `activities` | cardio | |
 | `bodyweights` | weigh-ins | |
 | `templates` | saved workouts | |
 | `friendships` | phase 4 | Defined later. |
-| `invites` | invite codes | Admin-only. |
+| `invites` | invite codes | Admin-only. Made with `server/invite.sh`; used by `POST /api/forge/join`. |
 
 **Access rules** for every data collection:
 - list, view, update and delete: `owner = @request.auth.id`;
