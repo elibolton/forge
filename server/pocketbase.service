@@ -1,0 +1,28 @@
+[Unit]
+Description=Forge PocketBase
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pocketbase
+Group=pocketbase
+ExecStart=/opt/pocketbase/pocketbase serve \
+  --http=127.0.0.1:8090 \
+  --dir=/var/lib/pocketbase/pb_data \
+  --hooksDir=/opt/pocketbase/pb_hooks \
+  --migrationsDir=/opt/pocketbase/pb_migrations \
+  --origins=https://elibolton.github.io,http://localhost:5179
+Restart=always
+RestartSec=5
+LimitNOFILE=4096
+
+# Hardening: PocketBase may only write its own data directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pocketbase
+
+[Install]
+WantedBy=multi-user.target

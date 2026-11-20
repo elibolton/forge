@@ -3,7 +3,7 @@
 Phase 2 of [the full build plan](full-build-plan.md). Decided 2026-11-19:
 - **Host:** a VM on your Proxmox server.
 - **Email:** Resend.
-- **Domain:** still open (see step 1).
+- **Domain:** start free on Tailscale Funnel (`forge.<tailnet>.ts.net`) with Gmail for sign-in emails. Move to a bought domain with Cloudflare and Resend later (see "Moving to a real domain").
 
 ## What runs where
 
@@ -26,7 +26,7 @@ The app stays on GitHub Pages. Only data goes to the VM. The phone stays local-f
 
 **Domain.** Both Cloudflare Tunnel and Resend need one. Resend only sends from a domain you've verified; without one it can email only your own address.
 
-**Decision (2026-11-20):** buy a domain on Cloudflare, about $10/year. It's the most reliable choice, and only you can make the purchase. If you'd rather stay free, use Tailscale Funnel with Gmail; only steps 4 and 5 below change. A free eu.org domain is a fallback only, since approval is slow and not guaranteed.
+**Decision (2026-11-20):** start free. Tailscale Funnel gives the VM a public HTTPS address, and Gmail sends the sign-in codes. Steps 4F and 5F below replace steps 4 and 5 for now. Buying a domain later (about $10/year on Cloudflare) changes only the address and the email sender; the server, data and scripts stay the same.
 
 Options:
 - **Buy one on Cloudflare (recommended).** About $10/year. The tunnel, DNS and Resend's DNS records are all in one place.
@@ -55,8 +55,8 @@ Options:
   - Run it as a systemd service, `pocketbase serve --http 127.0.0.1:8090`, with restart=always.
 - **Admin:** create the superuser account from the VM itself. The admin UI (`/_/`) is reached only over SSH port-forwarding or the LAN, never through the tunnel; a Cloudflare rule blocks `/_/` publicly.
 - **Settings:**
-  - App URL: `https://api.<domain>`.
-  - Allowed origins (CORS): `https://elibolton.github.io` and `http://localhost:5179` for development.
+  - App URL: `https://forge.<tailnet>.ts.net` for now, `https://api.<domain>` later.
+  - Allowed origins (CORS): `https://elibolton.github.io` and `http://localhost:5179` for development (the `--origins` flag in the service file).
   - Rate limiting: on. Auth endpoints get a strict limit, for example 5 code requests per email per 15 minutes.
 - **Sign-in:**
   - Users collection: OTP (email code) on, password sign-in off, OAuth off.
@@ -85,6 +85,34 @@ The free tier allows 3,000 emails a month and 100 a day, far more than a few fri
 4. Run `cloudflared service install` to start it at boot.
 5. Set up a Cloudflare WAF custom rule that blocks `/_/*` (the admin UI). Optionally add a rate-limit rule on `/api/collections/users/request-otp`.
 6. SSL mode: Full. Always Use HTTPS: on.
+
+## 4F. Free path: Tailscale Funnel (now)
+
+Replaces step 5 (Cloudflare Tunnel) until a domain is bought.
+
+1. Create a free Tailscale account. On the VM, `server/funnel.sh` installs Tailscale and runs `tailscale up --hostname forge`.
+2. In the Tailscale admin console: DNS → turn on MagicDNS and HTTPS certificates. The first `tailscale funnel` run prints a link to allow Funnel for the VM if your policy doesn't already.
+3. Funnel publishes only `/api` (`tailscale funnel --bg --set-path /api http://127.0.0.1:8090/api`). The admin UI at `/_/` is never published, which replaces the Cloudflare WAF rule. The script checks both from the VM.
+4. The address is `https://forge.<tailnet>.ts.net`. That's the App URL in PocketBase and the server address the app will use.
+
+Limits: no WAF or edge rate limiting (PocketBase's own rate limiter does that job), and the `ts.net` name includes your tailnet name, which is public in certificate logs.
+
+## 5F. Free path: Gmail (now)
+
+Replaces step 4 (Resend) until a domain is bought.
+
+1. Make a dedicated Gmail account for Forge (keeps your own inbox out of it), turn on 2-step verification, then create an app password (Google Account → Security → App passwords).
+2. PocketBase mail settings: SMTP host `smtp.gmail.com`, port 465, TLS on, username the Gmail address, password the app password, sender `Forge <that address>`.
+3. Send a test code to an iCloud and a Gmail address. Gmail-to-Gmail lands fine; others may land in spam the first time, so tell friends to mark it "not spam" once.
+
+Gmail allows about 500 emails a day, far more than needed.
+
+## Moving to a real domain (later)
+
+1. Buy the domain on Cloudflare, then do step 5 (tunnel) and step 4 (Resend).
+2. In PocketBase, change the App URL and the SMTP settings.
+3. Point the app at the new address. Everyone signs in once more; their data is untouched, since it lives on the same server.
+4. Turn Funnel off: `tailscale funnel --set-path /api off`.
 
 ## 6. Data model (collections)
 
@@ -124,14 +152,13 @@ Storing bodies as JSON in the app's own format means the server doesn't need to 
 
 | Step | Who | Done when |
 |---|---|---|
-| 1. Pick or buy the domain, then add it to Cloudflare | You | The domain shows "Active" in Cloudflare |
-| 2. Create the VM in Proxmox | You (I can write the exact settings) | You can SSH in |
-| 3. Provisioning script: users, PocketBase, systemd, firewall, backup timer | Me (a script in `server/`), you run it | `curl 127.0.0.1:8090/api/health` works on the VM |
-| 4. Tunnel and WAF rule | You run the commands I write | `https://api.<domain>/api/health` works from your phone on cellular |
-| 5. Resend: domain, DNS, key, PocketBase SMTP | You (dashboard), me (template) | A test code arrives in the inbox |
-| 6. Collections and rules as a PocketBase migration in `server/pb_migrations/` | Me | Rules tests pass: user A can't read user B's data |
-| 7. Invite hook and invites | Me | Signing in with a valid invite works and a bad one fails |
-| 8. Backups, off-site copy, uptime monitor, restore test | Me (scripts), you (accounts) | A restore into a scratch VM works |
+| 1. Create the VM in Proxmox ([server/README.md](../server/README.md) has the settings) | You | You can SSH in |
+| 2. Provisioning script: users, PocketBase, systemd, firewall, backup timer | Me (`server/provision.sh`), you run it | `curl 127.0.0.1:8090/api/health` works on the VM |
+| 3. Tailscale Funnel (4F) | You run `server/funnel.sh` | `https://forge.<tailnet>.ts.net/api/health` works from your phone on cellular |
+| 4. Gmail SMTP (5F) | You (Google account), me (template) | A test code arrives in the inbox |
+| 5. Collections and rules as a PocketBase migration in `server/pb_migrations/` | Me | Rules tests pass: user A can't read user B's data |
+| 6. Invite hook and invites | Me | Signing in with a valid invite works and a bad one fails |
+| 7. Backups, off-site copy, uptime monitor, restore test | Me (scripts), you (accounts) | A restore into a scratch VM works |
 
 After this, phase 3 adds accounts and sync to the app.
 
@@ -143,7 +170,8 @@ server/
   provision.sh         idempotent VM setup (Debian 12)
   pocketbase.service
   backup.sh, backup.service, backup.timer
-  cloudflared/config.yml.example
+  funnel.sh            Tailscale Funnel (free path)
+  cloudflared/config.yml.example   (later, with a domain)
   pb_migrations/       collections + access rules (versioned)
   pb_hooks/            invite check
   tests/               access-rule tests against a throwaway PocketBase
