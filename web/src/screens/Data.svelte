@@ -10,7 +10,7 @@
   import { type Backup, app, readBackup } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { exportBackup, lastBackupDetail } from '../lib/backup';
-  import { storageGuard } from '../lib/install.svelte';
+  import { browserName, device, separateAppData, storageGuard } from '../lib/install.svelte';
   import InstallSteps from '../components/InstallSteps.svelte';
   import Sheet from '../components/Sheet.svelte';
   import { cloud } from '../lib/cloud.svelte';
@@ -111,7 +111,7 @@
     <div class="head">Storage on this device</div>
     <div class="list">
       <div class="item">Installed
-        <span class="value" class:ok={storageGuard.installed} class:warn={!storageGuard.installed}>{storageGuard.installed ? 'Home Screen app' : 'No, Safari tab'}</span></div>
+        <span class="value" class:ok={storageGuard.installed} class:warn={!storageGuard.installed}>{storageGuard.installed ? 'Home Screen app' : `No, ${browserName[device.browser]} tab`}</span></div>
       <div class="item">Protected from clearing
         <span class="value" class:ok={storageGuard.persisted === true} class:warn={storageGuard.persisted === false}>{storageGuard.persisted === null ? 'Checking…' : storageGuard.persisted ? 'Yes' : 'No'}</span></div>
       <div class="item">Last backup<span class="value" class:warn={lastBackup === 'Never' && app.logs.length > 0}>{lastBackup}</span></div>
@@ -120,9 +120,10 @@
       {/if}
     </div>
     <div class="foot">
-      {#if !storageGuard.installed}In a Safari tab, iOS can clear Forge's data after 7 days without a visit, and the Home Screen app keeps a separate copy. Back up, add Forge to your Home Screen, then restore the backup there.
-      {:else if !storageGuard.persisted}iPhone hasn't promised to keep Forge's data if space runs low. Back up regularly.
-      {:else}iPhone keeps Forge's data unless you delete the app. A backup still protects you if you lose or replace your phone.{/if}
+      {#if !storageGuard.installed && separateAppData}In a {browserName[device.browser]} tab, iOS can clear Forge's data after 7 days without a visit, and the Home Screen app keeps a separate copy. Back up, add Forge to your Home Screen, then restore the backup there.
+      {:else if !storageGuard.installed && device.os === 'android'}Installing Forge keeps this data: the app and {browserName[device.browser]} share it. Back up now and then in case you lose or replace your phone.
+      {:else if !storageGuard.persisted}{device.os === 'android' ? 'Your phone' : device.os === 'ios' ? 'iPhone' : 'This browser'} hasn't promised to keep Forge's data if space runs low. Back up regularly.
+      {:else}{device.os === 'android' ? 'Your phone' : device.os === 'ios' ? 'iPhone' : 'This browser'} keeps Forge's data unless you delete the app. A backup still protects you if you lose or replace your phone.{/if}
     </div>
   </div>
 

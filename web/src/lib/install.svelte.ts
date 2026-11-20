@@ -10,6 +10,65 @@ export function isStandalone(): boolean {
     || (navigator as { standalone?: boolean }).standalone === true;
 }
 
+export type OS = 'ios' | 'android' | 'other';
+export type Browser = 'safari' | 'chrome' | 'firefox' | 'edge' | 'samsung' | 'other';
+export type Device = { os: OS; browser: Browser };
+
+/** The phone's OS and browser, from the user agent. iPads that ask for desktop sites report as Macs with touch. */
+export function detectDevice(ua: string = typeof navigator === 'undefined' ? '' : navigator.userAgent,
+  touchPoints: number = typeof navigator === 'undefined' ? 0 : navigator.maxTouchPoints ?? 0): Device {
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && touchPoints > 1)) {
+    const browser: Browser = /CriOS/.test(ua) ? 'chrome' : /FxiOS/.test(ua) ? 'firefox' : /EdgiOS/.test(ua) ? 'edge' : 'safari';
+    return { os: 'ios', browser };
+  }
+  if (/Android/.test(ua)) {
+    const browser: Browser = /SamsungBrowser/.test(ua) ? 'samsung' : /Firefox/.test(ua) ? 'firefox' : /EdgA/.test(ua) ? 'edge' : /Chrome/.test(ua) ? 'chrome' : 'other';
+    return { os: 'android', browser };
+  }
+  return { os: 'other', browser: 'other' };
+}
+
+export const device = detectDevice();
+
+export const browserName: Record<Browser, string> = {
+  safari: 'Safari', chrome: 'Chrome', firefox: 'Firefox', edge: 'Edge', samsung: 'Samsung Internet', other: 'your browser',
+};
+
+/**
+ * On iPhone the Home Screen app keeps its own, separate copy of the data, and Safari can clear a tab's
+ * data after 7 days without a visit. On Android the installed app shares the browser's data.
+ */
+export const separateAppData = device.os === 'ios';
+
+type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> };
+
+/**
+ * The browser's own install prompt (Chrome, Edge and Samsung Internet on Android, and desktop Chrome).
+ * Caught as soon as the browser offers it, so an Install button can show it later.
+ */
+class InstallPrompt {
+  available = $state(false);
+  private event: InstallEvent | null = null;
+
+  constructor() {
+    if (typeof window === 'undefined') return;
+    addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); this.event = e as InstallEvent; this.available = true; });
+    addEventListener('appinstalled', () => { this.event = null; this.available = false; });
+  }
+
+  /** Shows the install prompt. True if the person installed. */
+  async show(): Promise<boolean> {
+    const e = this.event;
+    if (!e) return false;
+    this.event = null;
+    this.available = false;
+    await e.prompt();
+    return (await e.userChoice).outcome === 'accepted';
+  }
+}
+
+export const installPrompt = new InstallPrompt();
+
 /** Whether the browser agreed not to clear Forge's data under storage pressure. */
 class StorageGuard {
   /** null until asked. */

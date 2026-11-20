@@ -5,7 +5,7 @@
   import Sheet from '../components/Sheet.svelte';
   import Toggle from '../components/Toggle.svelte';
   import InstallSteps from '../components/InstallSteps.svelte';
-  import { isStandalone } from '../lib/install.svelte';
+  import { browserName, device, isStandalone, separateAppData } from '../lib/install.svelte';
   import { EQUIPMENT_GROUPS, equipmentTitle, goalBlurb, goalTitle, levelBlurb, levelTitle, splitBlurb, splitTitle } from '../lib/labels';
   import { app } from '../lib/store.svelte';
   import Account from './Account.svelte';
@@ -29,10 +29,13 @@
   let editingGym = $state(false);
 
   /**
-   * In a Safari tab, setup starts with installing: the Home Screen app keeps its own data, so setting up
-   * here first would mean doing it twice (or training in a tab whose data Safari can clear).
+   * On a phone, in a browser tab, setup starts with installing. On iPhone the Home Screen app keeps its
+   * own data, so setting up here first would mean doing it twice (or training in a tab whose data
+   * Safari can clear). On Android the app shares the browser's data, so it's a suggestion.
+   * Computers go straight to setup.
    */
-  let installFirst = $state(!isStandalone());
+  let installFirst = $state(!isStandalone() && device.os !== 'other');
+  const browser = browserName[device.browser];
   /** A new phone for someone who already uses Forge: sign in and their data comes down instead. */
   let signingIn = $state(false);
   const gymName = $derived(gym.name.trim() || PRESETS[preset].gym().name);
@@ -66,12 +69,20 @@
   <div class="dots"><span class="brand eyebrow" aria-hidden="true">Forge</span></div>
   <div class="body stack" style="--gap:18px">
     <span class="install-ico" aria-hidden="true"><Download size={26} /></span>
-    {@render pageTitle('Add Forge to your Home Screen', 'Do this first, then set up in the app. It opens full screen, works offline at the gym, and keeps your workouts safe.')}
+    {#if separateAppData}
+      {@render pageTitle('Add Forge to your Home Screen', 'Do this first, then set up in the app. It opens full screen, works offline at the gym, and keeps your workouts safe.')}
+    {:else}
+      {@render pageTitle('Install Forge', 'It opens full screen from your home screen and works offline at the gym.')}
+    {/if}
     <div class="card"><InstallSteps /></div>
-    <p class="caption muted">Safari and the Home Screen app keep separate data, and Safari can clear a tab's data after 7 days without a visit. Setting up here means doing it again in the app.</p>
+    {#if separateAppData}
+      <p class="caption muted">{browser} and the Home Screen app keep separate data, and iOS can clear a browser tab's data after 7 days without a visit. Setting up here means doing it again in the app.</p>
+    {:else}
+      <p class="caption muted">Your setup and workouts carry over to the installed app, so you can also set up here and install later.</p>
+    {/if}
   </div>
   <footer class="row" style="justify-content:center">
-    <button class="link continue" onclick={() => (installFirst = false)}>Continue in Safari anyway</button>
+    <button class="link continue" onclick={() => (installFirst = false)}>{separateAppData ? `Continue in ${browser} anyway` : `Continue in ${browser}`}</button>
   </footer>
 </div>
 {:else if signingIn}
@@ -155,8 +166,8 @@
       </div>
     {:else}
       {@render pageTitle("You're all set", summary)}
-      {#if !isStandalone()}
-        <p class="caption" style="color:var(--recovering)">You're setting up in Safari. Your workouts stay in this tab, separate from a Home Screen copy; back up now and then from You → Backup, Import & Export.</p>
+      {#if !isStandalone() && separateAppData}
+        <p class="caption" style="color:var(--recovering)">You're setting up in {browser}. Your workouts stay in this tab, separate from a Home Screen copy; back up now and then from You → Backup, Import & Export.</p>
       {/if}
       <p class="caption muted">Coming from another app? Import your workout history from You → Data after setup.</p>
     {/if}
