@@ -57,8 +57,8 @@ ssh -L 8090:127.0.0.1:8090 you@<vm-ip>
 Then browse to http://localhost:8090/_/ and set:
 
 - **Application:** URL `https://forge.<tailnet>.ts.net`, name "Forge".
-- **Mail (Gmail):** SMTP on, host `smtp.gmail.com`, port 465, TLS, username and app password of the Forge Gmail account, sender `Forge <that address>`. Send a test email.
-- **Rate limits:** on.
+- **Mail (Gmail):** SMTP on, host `smtp.gmail.com`, port 465, TLS encryption **Always**, username and app password of the Forge Gmail account, sender `Forge <that address>`. Send a test email. A 535 "Username and Password not accepted" means the app password belongs to a different Google account (check the account switcher before creating it) or 2-Step Verification isn't on.
+- **Rate limits:** on. After Funnel is set up, also turn on **IP proxy headers** (`X-Forwarded-For`), or every user counts as the same IP (127.0.0.1) and shares one limit.
 - **users collection → Options:** OTP on (6 digits, 10 minutes), password auth off, OAuth off.
 
 Collections, access rules and the invite check arrive as migrations and hooks in the next steps; re-running `provision.sh` installs them.
