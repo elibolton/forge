@@ -40,7 +40,7 @@ export const isTodayPlanCurrent = (t: TodayPlan, logCount: number, now = Date.no
 
 /** Everything a generated workout depends on, as a stable string. Preferences are applied in place. */
 /** Bump when the workout generator changes how it builds sessions. */
-export const GENERATOR_VERSION = 'gen5';
+export const GENERATOR_VERSION = 'gen6';
 
 export function planBasis(p: Profile, activities: { id: string }[] = app.activities): string {
   const plan = p.plan;

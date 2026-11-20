@@ -1,6 +1,6 @@
 <script lang="ts">
   import TemplatePicker from '../components/TemplatePicker.svelte';
-  import { GOALS, type Gym, Gyms, LEVELS, Programs, SPLITS, uuid, withGymUnits } from '../engine';
+  import { GOALS, type Gym, Gyms, LEVELS, Programs, SPLITS, hasCustomPlates, uuid, withGymUnits } from '../engine';
   import { ChevronRight, MapPin, Trash2 } from '@lucide/svelte';
   import ActionMenu from '../components/ActionMenu.svelte';
   import BackBar from '../components/BackBar.svelte';
@@ -45,9 +45,15 @@
   }
 
   function setPounds(pounds: boolean) {
-    // Increment overrides and bar weights were in the old unit; drop them rather than misread them. A preset
-    // plate set carries over as the same preset in the new unit.
-    app.updateProfile((x) => { x.usesPounds = pounds; x.gyms = x.gyms.map((g) => ({ ...withGymUnits(g, pounds), increments: {} })); });
+    // Plates and bars become the nearest standard ones in the new unit (see withGymUnits). Ask first when
+    // that changes ones the user set up, and keep an Undo.
+    if (p.usesPounds === pounds) return;
+    const before = { usesPounds: p.usesPounds, gyms: structuredClone($state.snapshot(p.gyms)) };
+    const custom = p.gyms.filter(hasCustomPlates);
+    const unit = pounds ? 'pound' : 'kilogram';
+    if (custom.length && !confirm(`Convert the plates and bars at ${custom.map((g) => g.name).join(', ')} to the nearest standard ${unit} ones? Check them afterwards.`)) return;
+    app.updateProfile((x) => { x.usesPounds = pounds; x.gyms = x.gyms.map((g) => withGymUnits(g, pounds)); });
+    if (custom.length) toasts.show(`Plates converted to ${pounds ? 'lb' : 'kg'}`, () => app.updateProfile((x) => { x.usesPounds = before.usesPounds; x.gyms = before.gyms; }));
   }
 
   const goalStep = (by: number) => app.updateProfile((x) => { x.weeklyGoal = Math.min(7, Math.max(1, x.weeklyGoal + by)); });

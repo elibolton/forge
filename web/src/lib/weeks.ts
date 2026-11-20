@@ -36,15 +36,20 @@ export function trainedDays(dates: number[], now = Date.now()): boolean[] {
   return out;
 }
 
+/** The weekly goal for the week starting `monday`. */
+export type GoalSchedule = (monday: number) => number;
+
 /**
  * Consecutive weeks that met the goal. This week counts once it's met; until then the streak is
  * still alive from last week, so it doesn't look broken on a Monday morning.
  */
-export function goalStreak(dates: number[], goal: number, now = Date.now()): number {
+export function goalStreak(dates: number[], goal: number | GoalSchedule, now = Date.now()): number {
+  const goalOn = typeof goal === 'number' ? () => goal : goal;
   let week = weekStart(now);
-  if (countInWeek(dates, week) < goal) week = previousWeek(week);
+  if (countInWeek(dates, week) < goalOn(week)) week = previousWeek(week);
   let streak = 0;
-  while (countInWeek(dates, week) >= goal) {
+  // Each week is judged against the goal in force then (a program started since doesn't count against it).
+  for (let guard = 0; guard < 2000 && countInWeek(dates, week) >= goalOn(week); guard++) {
     streak++;
     week = previousWeek(week);
   }
@@ -66,4 +71,16 @@ export function weeklyCounts(dates: number[], n: number, now = Date.now()): numb
 export function weeklyGoalFor(profileGoal: number, program?: WorkoutProgram | null): number {
   const days = program ? dayOrder(program).length : 0;
   return days > 0 ? days : profileGoal;
+}
+
+/**
+ * The goal each week was judged against: a running program's days from the week after it started,
+ * the profile's goal before then (and in the week it started, already part-trained under that goal).
+ * Starting a 5-day program then doesn't break a streak built on 3 a week.
+ */
+export function weeklyGoalSchedule(profileGoal: number, program?: WorkoutProgram | null, startedAt?: number): GoalSchedule {
+  const current = weeklyGoalFor(profileGoal, program);
+  if (!program || startedAt === undefined || current === profileGoal) return () => current;
+  const first = weekStart(startedAt);
+  return (monday) => (monday <= first ? profileGoal : current);
 }

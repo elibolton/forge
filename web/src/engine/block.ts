@@ -120,7 +120,32 @@ export function decideBlock(c: BlockCheckIn | undefined, fallingCount: number, l
 /** The week a check-in is due in, if one is due: the last planned loading week, from week 5 on, until answered or skipped. */
 export function blockCheckInDue(block: BlockStatus, checkIns: BlockCheckIns | undefined): number | undefined {
   if (block.isDeload || block.week < LOADING_WEEKS || block.week > MAX_LOADING_WEEKS || block.week !== block.weeks - 1) return undefined;
-  return checkIns?.[String(block.startedAt)]?.[block.week] ? undefined : block.week;
+  return checkInFor(checkIns, block.startedAt, block.week) ? undefined : block.week;
+}
+
+/**
+ * How far a block's start can move and keep its check-in answers: deleting its first workout, importing
+ * a few older ones, or a time-zone change shifts the start by days, not weeks. Blocks are at least two
+ * weeks apart, so an answer can't be claimed by the wrong one.
+ */
+export const CHECK_IN_DRIFT = 13 * DAY_MS;
+
+/**
+ * The answer for week `week` of the block that started at `startedAt`: saved under that start, else under
+ * the nearest start within `CHECK_IN_DRIFT`, so the answers survive the start moving.
+ */
+export function checkInFor(checkIns: BlockCheckIns | undefined, startedAt: number, week: number): BlockCheckIn | undefined {
+  if (!checkIns) return undefined;
+  const exact = checkIns[String(startedAt)]?.[week];
+  if (exact) return exact;
+  let best: BlockCheckIn | undefined;
+  let gap = Infinity;
+  for (const [key, weeks] of Object.entries(checkIns)) {
+    const d = Math.abs(Number(key) - startedAt);
+    const answer = weeks?.[week];
+    if (answer && d <= CHECK_IN_DRIFT && d < gap) { best = answer; gap = d; }
+  }
+  return best;
 }
 
 // MARK: - Blocks
@@ -172,89 +197,99 @@ export function fallingLifts(records: WorkoutRecord[]): string[] {
   return falling.sort();
 }
 
+/** Everything a block walk keeps between records, copied to resume a walk from a cached point. */
+interface WalkState {
+  start?: number;
+  number: number;
+  /** Planned loading weeks; good check-ins stretch it, up to 7. */
+  loading: number;
+  /** The week an early deload was set for, if one was. */
+  deloadAt?: number;
+  earlyReason?: string;
+  checkInNote?: string;
+  checked: number;
+  prev?: number;
+  fed: number;
+}
+
 /**
  * Walks a history (oldest first) one record at a time, keeping the block it's in. `blockStatus` feeds
  * it the records up to a date; `deloadDates` feeds it the whole history once and notes each record's week.
  */
-function blockWalker(records: WorkoutRecord[], checkIns?: BlockCheckIns) {
-  let start: number | undefined;
-  let number = 0;
-  /** Planned loading weeks; good check-ins stretch it, up to 7. */
-  let loading = LOADING_WEEKS;
-  /** The week an early deload was set for, if one was. */
-  let deloadAt: number | undefined;
-  let earlyReason: string | undefined;
-  let checkInNote: string | undefined;
-  let checked = 1;
-  let prev: number | undefined;
-  let fed = 0;
+function blockWalker(records: WorkoutRecord[], checkIns?: BlockCheckIns, from?: WalkState) {
+  const st: WalkState = from ? { ...from } : { number: 0, loading: LOADING_WEEKS, checked: 1, fed: 0 };
 
-  const weeks = () => deloadAt ?? loading + 1;
-  const reset = () => { loading = LOADING_WEEKS; deloadAt = undefined; earlyReason = undefined; checkInNote = undefined; checked = 1; };
-  const begin = (t: number) => { start = dayStart(t); number++; reset(); };
+  const weeks = () => st.deloadAt ?? st.loading + 1;
+  const reset = () => { st.loading = LOADING_WEEKS; st.deloadAt = undefined; st.earlyReason = undefined; st.checkInNote = undefined; st.checked = 1; };
+  const begin = (t: number) => { st.start = dayStart(t); st.number++; reset(); };
 
   /** At the start of loading week `k`: the e1RM early deload, then that week's check-in. */
   const enterWeek = (k: number) => {
     if (k < 3) return;
-    const boundary = weeksAfter(start!, k - 1);
+    const start = st.start!;
+    const boundary = weeksAfter(start, k - 1);
     // Only records already fed can be before the boundary (boundary <= t), so this is the same
     // set blockStatus would see when cut off at any later date.
-    const falling = fallingLifts(records.slice(0, fed).filter((r) => r.date >= start! && r.date < boundary));
+    const falling = fallingLifts(records.slice(0, st.fed).filter((r) => r.date >= start && r.date < boundary));
     if (falling.length >= 2) {
-      deloadAt = k;
-      earlyReason = `Estimated maxes dropped on ${falling.length} lifts`;
+      st.deloadAt = k;
+      st.earlyReason = `Estimated maxes dropped on ${falling.length} lifts`;
+      // An earlier extension no longer describes this block: it's deloading on the logs.
+      st.checkInNote = undefined;
       return;
     }
-    if (k !== loading) return;
-    const answer = checkIns?.[String(start)]?.[k];
-    const d = decideBlock(answer, falling.length, loading);
+    if (k !== st.loading) return;
+    const answer = checkInFor(checkIns, start, k);
+    const d = decideBlock(answer, falling.length, st.loading);
     if (d.action === 'extend') {
-      loading = k + 1;
-      checkInNote = d.reason;
+      st.loading = k + 1;
+      st.checkInNote = d.reason;
     } else if (d.action === 'deload' && answer) {
       // Like the program check-in: nothing trained yet this week, so the deload starts now. Otherwise
       // it follows this week, which is when it was due anyway.
       const trained = records.some((r) => r.date >= boundary && r.date < answer.answeredAt);
       if (!trained) {
-        deloadAt = k;
-        earlyReason = `Your check-in flagged ${d.flagged}`;
-        checkInNote = d.reason;
+        st.deloadAt = k;
+        st.earlyReason = `Your check-in flagged ${d.flagged}`;
+        st.checkInNote = d.reason;
       }
     }
   };
 
   /** Moves the block forward to cover `t`, checking for early deloads and extensions at each week boundary. */
   const advance = (t: number) => {
-    for (let guard = 0; guard < 1000 && start !== undefined; guard++) {
+    for (let guard = 0; guard < 1000 && st.start !== undefined; guard++) {
       // Week k starts at start + (k-1) weeks.
-      while (deloadAt === undefined && checked < loading && t >= weeksAfter(start, checked)) {
-        checked++;
-        enterWeek(checked);
+      while (st.deloadAt === undefined && st.checked < st.loading && t >= weeksAfter(st.start, st.checked)) {
+        st.checked++;
+        enterWeek(st.checked);
       }
-      const end = weeksAfter(start, weeks());
+      const end = weeksAfter(st.start, weeks());
       if (t < end) return;
-      start = end; number++; reset();
+      st.start = end; st.number++; reset();
     }
   };
 
   return {
     /** Feeds the next record (records must be fed in order). */
     feed(r: WorkoutRecord) {
-      fed++;
-      if (start === undefined || (prev !== undefined && r.date - prev > BREAK)) begin(r.date);
+      st.fed++;
+      if (st.start === undefined || (st.prev !== undefined && r.date - st.prev > BREAK)) begin(r.date);
       else advance(r.date);
-      prev = r.date;
+      st.prev = r.date;
     },
+    /** A copy of where the walk is, to resume from later without feeding the records again. */
+    snapshot(): WalkState { return { ...st }; },
     /** The block at `now`, which must be at or after the last record fed. */
     at(now: number): BlockStatus {
-      if (start === undefined || (prev !== undefined && now - prev > BREAK)) begin(now);
+      if (st.start === undefined || (st.prev !== undefined && now - st.prev > BREAK)) begin(now);
       else advance(now);
       const total = weeks();
-      const week = Math.min(total, weeksSince(start!, now) + 1);
+      const week = Math.min(total, weeksSince(st.start!, now) + 1);
       return {
-        number, week, weeks: total, isDeload: week === total, startedAt: start!,
-        ...(earlyReason ? { earlyReason } : {}),
-        ...(checkInNote ? { checkInNote } : {}),
+        number: st.number, week, weeks: total, isDeload: week === total, startedAt: st.start!,
+        ...(st.earlyReason ? { earlyReason: st.earlyReason } : {}),
+        ...(st.checkInNote ? { checkInNote: st.checkInNote } : {}),
         ...(total - 1 > LOADING_WEEKS ? { extendedBy: total - 1 - LOADING_WEEKS } : {}),
       };
     },
@@ -262,12 +297,24 @@ function blockWalker(records: WorkoutRecord[], checkIns?: BlockCheckIns) {
 }
 
 /** Where `now` sits in its training block. `checkIns` are the end-of-block answers; without them, 5 + 1 weeks. */
-export function blockStatus(history: WorkoutRecord[], now: number, checkIns?: BlockCheckIns): BlockStatus {
-  const records = history.filter((r) => r.date <= now).sort((a, b) => a.date - b.date);
+export function blockStatus(history: readonly WorkoutRecord[], now: number, checkIns?: BlockCheckIns): BlockStatus {
+  // Asked again and again for the same history (once per exercise the planner prescribes), so the walk
+  // through every record is kept and resumed for any `now` at or after the newest one.
+  const cached = walkCache.get(history);
+  if (cached && cached.checkIns === checkIns && now >= cached.last) {
+    return blockWalker(cached.records, checkIns, cached.state).at(now);
+  }
+  const all = [...history].sort((a, b) => a.date - b.date);
+  const last = all.length ? all[all.length - 1].date : -Infinity;
+  const records = now >= last ? all : all.filter((r) => r.date <= now);
   const walker = blockWalker(records, checkIns);
   for (const r of records) walker.feed(r);
+  if (records === all) walkCache.set(history, { checkIns, last, records, state: walker.snapshot() });
   return walker.at(now);
 }
+
+/** The walk through a whole history, per history array and check-ins object (both treated as immutable, as for `deloadDates`). */
+const walkCache = new WeakMap<readonly WorkoutRecord[], { checkIns?: BlockCheckIns; last: number; records: WorkoutRecord[]; state: WalkState }>();
 
 const deloadCache = new WeakMap<readonly WorkoutRecord[], { checkIns?: BlockCheckIns; dates: Set<number> }>();
 

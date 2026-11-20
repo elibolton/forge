@@ -1,6 +1,7 @@
 import {
   type Exercise, type Gym, type LoggedExercise, type RepRange, type UserPlan, type WorkoutRecord,
-  DAY_MS, POUNDS_PER_KG, defaultPlan, gymIncrementKg, gymRound, isBodyweight, loadEquipment, repRange, repRangeText, roundLoad,
+  DAY_MS, POUNDS_PER_KG, defaultPlan, gymIncrementKg, gymRound, gymRoundUp, isBodyweight, loadEquipment, plateSides, repRange,
+  repRangeText, roundLoad,
   straightSets, workingSets,
 } from './models';
 import { Planner } from './planner';
@@ -43,27 +44,36 @@ export function stepKg(step: LoadStep, exercise: Exercise, gym: Gym): number {
 /** The rounding grid `roundFor` uses for this exercise, in kg. */
 export function gridKg(exercise: Exercise, gym: Gym): number {
   const eq = loadEquipment(exercise);
-  if (eq) return gymIncrementKg(gym, eq);
+  if (eq) return gymIncrementKg(gym, eq, plateSides(exercise));
   return gym.usesPounds ? 5 / POUNDS_PER_KG : 2.5;
 }
 
 /**
- * The next load once every set hit the top of the range: at least the slot's step and at least one
- * step of the grid the load is rounded to, so it never rounds back to the same weight ("+0 kg").
+ * The next load once every set hit the top of the range: the lightest loadable weight at least the
+ * slot's step on, and always heavier than the last load, so it never comes out "+0 kg" when the step is
+ * finer than the plates. Undefined when nothing heavier can be loaded at this gym.
  */
-export function nextLoad(lastLoad: number, step: LoadStep, exercise: Exercise, gym: Gym): number {
-  const grid = gridKg(exercise, gym);
-  let next = roundFor(lastLoad + Math.max(stepKg(step, exercise, gym), grid), exercise, gym);
-  for (let k = 2; next <= lastLoad + 1e-6 && k <= 4; k++) next = roundFor(lastLoad + k * grid, exercise, gym);
-  return next;
+export function nextLoad(lastLoad: number, step: LoadStep, exercise: Exercise, gym: Gym): number | undefined {
+  let next = roundUpFor(roundFor(lastLoad, exercise, gym) + stepKg(step, exercise, gym), exercise, gym);
+  // Short of a full step (near the most the plates make), the next weight up is still progress.
+  if (next === undefined || next <= lastLoad + 0.005) next = roundUpFor(lastLoad + 0.01, exercise, gym);
+  return next !== undefined && next > lastLoad + 0.005 ? next : undefined;
 }
 
 /** Rounds to something loadable; exercises with no load equipment (a held plate) use 2.5 kg / 5 lb. */
 export function roundFor(kg: number, exercise: Exercise, gym: Gym): number {
   const eq = loadEquipment(exercise);
-  if (eq) return gymRound(gym, kg, eq);
+  if (eq) return gymRound(gym, kg, eq, plateSides(exercise));
   if (gym.usesPounds) return roundLoad(kg * POUNDS_PER_KG, 5, 0) / POUNDS_PER_KG;
   return roundLoad(kg, 2.5, 0);
+}
+
+/** The lightest loadable weight at or above `kg`, or undefined past the most the gym's plates make. */
+export function roundUpFor(kg: number, exercise: Exercise, gym: Gym): number | undefined {
+  const eq = loadEquipment(exercise);
+  if (eq) return gymRoundUp(gym, kg, eq, plateSides(exercise));
+  const step = gym.usesPounds ? 5 / POUNDS_PER_KG : 2.5;
+  return Math.ceil(kg / step - 1e-6) * step;
 }
 
 export function formatLoad(kg: number, pounds: boolean): string {
@@ -181,8 +191,11 @@ export function suggest(p: ResolvedPrescription, args: {
     }
   } else if (allTop) {
     const next = nextLoad(lastLoad, p.slot.loadStep, e, gym);
-    const step = next - lastLoad;
-    if (ext === 0 && lastLoad > 0 && step > lastLoad * 0.10) {
+    const step = next === undefined ? 0 : next - lastLoad;
+    if (next === undefined) {
+      // Nothing heavier fits on the bar here: more reps is the way on.
+      s = { weight: roundFor(lastLoad, e, gym), reps: range.upper, range, reason: 'Top of your plates: add reps past the range' };
+    } else if (ext === 0 && lastLoad > 0 && step > lastLoad * 0.10) {
       const extended = repRange(p.reps.lower, p.reps.upper + 4);
       s = { weight: lastLoad, reps: Math.min(extended.upper, range.upper + 1), range: extended,
         reason: `Next jump (+${fmt(step)}) is over 10% of the load: extend to ${repRangeText(extended)} reps first`,

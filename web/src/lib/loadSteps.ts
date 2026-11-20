@@ -39,12 +39,12 @@ export function usesPlates(gym: Gym, catalog: Exercise[] = Catalog.all): boolean
 
 /**
  * Reads a typed weight or count: blank means "not set" (null); anything unusable is undefined, so
- * the field can put the old value back.
+ * the field can put the old value back. 0 is unusable unless `allowZero` (a Smith machine's start).
  */
-export function readAmount(text: string, max: number, whole = false): number | null | undefined {
+export function readAmount(text: string, max: number, whole = false, allowZero = false): number | null | undefined {
   const t = text.trim().replace(',', '.');
   if (!t) return null;
   const n = Number(t);
-  if (!Number.isFinite(n) || n <= 0 || n > max) return undefined;
+  if (!Number.isFinite(n) || n < 0 || (n === 0 && !allowZero) || n > max) return undefined;
   return whole && !Number.isInteger(n) ? undefined : n;
 }

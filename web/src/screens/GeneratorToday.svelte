@@ -213,7 +213,7 @@
     {#if trainedToday && !session.isActive}
       {@const sets = trainedToday.exercises.reduce((t, e) => t + e.sets.filter((s) => !s.isWarmup && s.reps > 0).length, 0)}
       {@const count = sets > 0 ? sets : trainedToday.exercises.length}
-      <TrainedCard detail="{trainedToday.focus ? `${focusTitle[trainedToday.focus]} · ` : ''}{durationText(trainedToday.durationSeconds)} · {count} {sets > 0 ? (count === 1 ? 'set' : 'sets') : count === 1 ? 'exercise' : 'exercises'}. Recover well; here's what's next." />
+      <TrainedCard detail="{trainedToday.focus ? `${focusTitle[trainedToday.focus]} · ` : ''}{trainedToday.durationSeconds > 0 ? `${durationText(trainedToday.durationSeconds)} · ` : ''}{count} {sets > 0 ? (count === 1 ? 'set' : 'sets') : count === 1 ? 'exercise' : 'exercises'}. Recover well; here's what's next." />
     {/if}
 
     {#if app.activeProgram}
