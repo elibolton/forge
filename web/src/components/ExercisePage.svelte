@@ -15,16 +15,35 @@
   import { checkSet } from '../lib/setCheck';
   import { exerciseRecords, liveRecords } from '../lib/records';
   import { toasts } from '../lib/toasts.svelte';
+  import { announce, repsLeftText } from '../lib/announce';
+  import { restLabel, restSpoken } from '../lib/restPrefs';
+  import { type Snippet, tick } from 'svelte';
 
   /** This exercise's superset, tri-set or circuit: where it sits, the round, and who's up next. */
   interface GroupInfo {
     label: string; position: number; size: number; round: number; rounds: number;
     next?: { name: string; newRound: boolean; go: () => void };
   }
-  let { exercise: ex, nextName, onNext, onFinish, onswap, group }: {
+  let { exercise: ex, nextName, onNext, onFinish, onswap, oninfo, onrest, setFooter, group }: {
     exercise: SessionExercise; nextName?: string; onNext: () => void; onFinish: () => void;
     onswap?: () => void; group?: GroupInfo;
+    /** Opens the exercise's how-to, records and history. */
+    oninfo?: () => void;
+    /** Opens the rest length picker for this exercise. */
+    onrest?: () => void;
+    /**
+     * Where the Log button goes: the logger pins it below the rest timer and rating prompt, so neither
+     * covers the steppers. Without it, the button sits after the set list.
+     */
+    setFooter?: (s: Snippet) => () => void;
   } = $props();
+
+  let steppers = $state<HTMLDivElement>();
+  $effect(() => {
+    if (setFooter) return setFooter(dock);
+  });
+  /** Your own rest for this exercise, when you've set one; it replaces the program's rest text. */
+  const ownRest = $derived(app.profile?.exerciseRest?.[ex.exerciseID] !== undefined);
 
   /** A set the user tapped to edit; otherwise the first unlogged working set is active. */
   let editingID = $state<string | null>(null);
@@ -106,8 +125,14 @@
       if (problem?.kind === 'heavy') { checking = { id, weight: s.weight ?? 0, heaviest: problem.heaviest }; return; }
       if (problem?.kind === 'manyReps') { checkingReps = { id, reps: s.reps, usual: problem.usual }; return; }
     }
+    const n = number(id), wasDone = s.done, drop = s.type === 'drop';
     session.logSet(id, ex.id);
     editingID = null;
+    // Focus stays on the Log button, so say what happened.
+    const rest = session.restEndsAt !== null && !wasDone ? session.restTotal : 0;
+    announce(`${drop ? 'Drop set' : `Set ${n}`} ${wasDone ? 'updated' : 'logged'}.${rest > 0 ? ` Rest ${restSpoken(rest)}.` : ''}`);
+    // The next set's steppers come into view above the pinned Log button.
+    tick().then(() => steppers?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   }
 
   const toggle = (s: SessionSet) => session.setDone(ex.id, s.id, !s.done);
@@ -129,7 +154,13 @@
     <div class="row" style="--gap:14px">
       <ExerciseThumb exercise={e} size={50} />
       <div class="stack grow" style="--gap:5px">
-        <h2 class="display ex-name">{e.name}</h2>
+        {#if oninfo}
+          <button class="name-btn" onclick={oninfo} aria-label="{e.name}, how-to, records and history">
+            <h2 class="display ex-name">{e.name}<Info size={16} class="info-ic" aria-hidden="true" /></h2>
+          </button>
+        {:else}
+          <h2 class="display ex-name">{e.name}</h2>
+        {/if}
         <span class="caption muted">{e.primary.map(muscleName).join(' · ')}</span>
       </div>
       {#if onswap}<button class="icon-btn swap" aria-label="Swap {e.name} for another exercise" onclick={onswap}><ArrowLeftRight size={17} /></button>{/if}
@@ -151,9 +182,17 @@
         {#if info.label}<span class="chip on small-chip">{info.label}</span>{/if}
         <span class="chip small-chip">{info.setsText}</span>
         <span class="chip small-chip">{info.effortText}</span>
-        <span class="chip small-chip">Rest {info.restText}{info.isOptional ? ' · optional' : ''}</span>
+        {#if onrest}
+          <button class="chip small-chip" onclick={onrest} aria-label="Rest {ownRest ? restSpoken(ex.restSeconds) : info.restText}. Change">Rest {ownRest ? restLabel(ex.restSeconds) : info.restText}{info.isOptional ? ' · optional' : ''}</button>
+        {:else}
+          <span class="chip small-chip">Rest {info.restText}{info.isOptional ? ' · optional' : ''}</span>
+        {/if}
       </div>
       {#if info.notes.length}<span class="caption muted row" style="--gap:8px;align-items:flex-start"><Info size={13} style="flex:none;margin-top:2px" color="var(--ember-2)" /> {info.notes.join(' · ')}</span>{/if}
+    {:else if onrest && ex.restSeconds > 0}
+      <div class="row wrap" style="--gap:6px">
+        <button class="chip small-chip" onclick={onrest} aria-label="Rest {restSpoken(ex.restSeconds)}. Change">Rest {restLabel(ex.restSeconds)}</button>
+      </div>
     {/if}
     {#if ex.reasons[1] ?? ex.reasons[0]}<span class="caption faint">{ex.reasons[1] ?? ex.reasons[0]}</span>{/if}
     <ExerciseNote exerciseID={e.id} />
@@ -205,7 +244,7 @@
         <div class="row sub semibold note"><Flame size={16} /> {ex.program.lastSetNote}</div>
       {/if}
       {#if s.isAMRAP}<span class="caption muted">As many good reps as you can on this set.</span>{/if}
-      <div class="row steppers" style="--gap:10px">
+      <div class="row steppers" style="--gap:10px" bind:this={steppers}>
         {#if !isBodyweight(e)}
           <ValueStepper title="Weight" value={units.display(s.weight ?? 0)} step={weightStep} unit={units.symbol} decimals
             max={maxWeight(units.pounds)} onchange={(v) => session.editSet(ex.id, s.id, { weight: units.kg(v) })} />
@@ -259,7 +298,7 @@
       {@const last = lastFor(s.id)}
       <div class="row" class:drop-row={s.type === 'drop'} style="--gap:4px">
         <button class="set-row grow" class:active={isActive} class:done={s.done && !isActive}
-          aria-label="{s.type === 'drop' ? `Drop set after set ${number(s.id)}` : `Set ${s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}${number(s.id)}`}{s.type === 'failure' ? ', to failure' : ''}, {setText(s)}{s.done ? ', done' : ''}{s.done && rated && rirOf(s) != null ? `, ${rirText(rirOf(s))} reps left` : ''}{prs.has(s.id) ? ', personal record' : ''}"
+          aria-label="{s.type === 'drop' ? `Drop set after set ${number(s.id)}` : `Set ${s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}${number(s.id)}`}{s.type === 'failure' ? ', to failure' : ''}, {setText(s)}{s.done ? ', done' : ''}{s.done && rated && rirOf(s) != null ? `, ${repsLeftText(rirOf(s)!)}` : ''}{prs.has(s.id) ? ', personal record' : ''}"
           aria-pressed={isActive} onclick={() => (editingID = isActive ? null : s.id)}>
           <span class="badge num" class:drop={s.type === 'drop'} class:failure={s.type === 'failure'}>{#if s.type === 'drop'}<ArrowDownRight size={15} strokeWidth={2.6} />{:else}{s.side === 'left' ? 'L' : s.side === 'right' ? 'R' : ''}{number(s.id)}{/if}</span>
           <span class="semibold mono">{setText(s)}</span>
@@ -276,9 +315,13 @@
     <button class="add-set" onclick={() => session.addSet(ex.id)}><Plus size={16} /> Add set</button>
   </div>
 
-  <!-- The one action that matters between sets, pinned where the thumb rests. -->
+  {#if !setFooter}{@render dock()}{/if}
+</div>
+
+<!-- The one action that matters between sets, pinned where the thumb rests. -->
+{#snippet dock()}
   {#if active || working.length}
-    <div class="dock">
+    <div class="dock" class:inline={!setFooter}>
       {#if active}
         {@const s = active}
         <button class="btn primary block big log" onclick={() => log(s.id)}>
@@ -291,7 +334,7 @@
       {/if}
     </div>
   {/if}
-</div>
+{/snippet}
 
 {#if checking}
   {@const c = checking}
@@ -343,9 +386,12 @@
   .last { text-align: right; align-items: flex-end; }
   .target { color: var(--ember-2); }
   .note { color: var(--recovering); background: rgba(255, 187, 69, 0.1); border: 1px solid rgba(255, 187, 69, 0.2); padding: 10px 12px; border-radius: 14px; --gap: 8px; }
-  /* Sticks to the bottom of the logger's scroll area; its natural place is after the set list. */
-  .dock { position: sticky; bottom: 0; z-index: 2; margin: 0 -18px; padding: 10px 18px 12px;
+  /* In the logger's footer, below the rest timer; inline (no footer given) it sticks to the bottom. */
+  .dock.inline { position: sticky; bottom: 0; z-index: 2; margin: 0 -18px; padding: 10px 18px 12px;
     background: linear-gradient(to top, var(--bg) 70%, rgba(7, 7, 8, 0)); }
+  .name-btn { display: block; text-align: left; padding: 0; margin: 0; }
+  .name-btn :global(.info-ic) { display: inline-block; vertical-align: 0.12em; margin-left: 7px; color: var(--text-3); }
+  button.small-chip { min-height: 32px; }
   .log { min-height: 62px; font-size: 1.08rem; }
   .check { width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); display: grid; place-items: center; }
   .pr { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%;

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Minus, Plus } from '@lucide/svelte';
+  import { announceSoon, stepperLabel } from '../lib/announce';
+  import { StepperPress } from '../lib/stepperPress';
 
   /**
    * A big numeral with − and + on either side; tap the number to type it. Typed numbers count as soon
@@ -40,34 +42,32 @@
     }
   }
 
-  // MARK: Hold to repeat
+  // MARK: Tap, and hold to repeat
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const bump = (dir: 1 | -1) => onchange(clamp(value + dir * step));
+  // Spoken after a step (once a hold settles): focus stays on the button, so the new value isn't read.
+  const say = (v: number) => announceSoon(`stepper-${title}`, `${title} ${fmt(v)} ${unit}`);
+  const fmt = (v: number) => String(round(v));
+  function bump(dir: 1 | -1) {
+    const v = clamp(value + dir * step);
+    onchange(v);
+    say(v);
+  }
+  const minus = new StepperPress(() => bump(-1));
+  const plus = new StepperPress(() => bump(1));
 
-  function hold(e: PointerEvent, dir: 1 | -1) {
+  function down(e: PointerEvent, press: StepperPress) {
     if (e.button !== 0) return;
     // Keeps the hold going if the finger drifts off the button.
     try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* not capturable */ }
-    bump(dir);
-    let n = 0;
-    const repeat = () => {
-      bump(dir);
-      n++;
-      timer = setTimeout(repeat, n < 6 ? 140 : n < 16 ? 80 : 45);
-    };
-    timer = setTimeout(repeat, 420);
+    press.down();
   }
-  function release() { clearTimeout(timer); timer = undefined; }
-  // Keyboard and assistive tech send a click with no pointer press before it.
-  function click(e: MouseEvent, dir: 1 | -1) { if (e.detail === 0) bump(dir); }
 
-  $effect(() => release);
+  $effect(() => () => { minus.cancel(); plus.cancel(); });
 </script>
 
 <div class="dial">
   <span class="eyebrow" aria-hidden="true">{title}</span>
-  <input class="num value" type="text" inputmode={decimals ? 'decimal' : 'numeric'} enterkeyhint="done" value={text} aria-label="{title} in {unit}"
+  <input class="num value" type="text" inputmode={decimals ? 'decimal' : 'numeric'} enterkeyhint="done" value={text} aria-label={stepperLabel(title, unit)}
     style="font-size:{text.length > 4 ? 2.1 : text.length > 3 ? 2.5 : 3.1}rem"
     class:invalid aria-invalid={invalid}
     oninput={input} onblur={() => { draft = null; invalid = false; }}
@@ -75,10 +75,10 @@
     onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
   <span class="caption muted" aria-hidden="true">{unit}</span>
   <div class="steps">
-    <button aria-label="Decrease {title}" onpointerdown={(e) => hold(e, -1)} onpointerup={release} onpointercancel={release}
-      onlostpointercapture={release} onclick={(e) => click(e, -1)}><Minus size={20} strokeWidth={2.6} /></button>
-    <button aria-label="Increase {title}" onpointerdown={(e) => hold(e, 1)} onpointerup={release} onpointercancel={release}
-      onlostpointercapture={release} onclick={(e) => click(e, 1)}><Plus size={20} strokeWidth={2.6} /></button>
+    <button aria-label="Decrease {title}" onpointerdown={(e) => down(e, minus)} onpointerup={() => minus.up()} onpointercancel={() => minus.cancel()}
+      onlostpointercapture={() => minus.up()} onclick={() => minus.click()}><Minus size={20} strokeWidth={2.6} /></button>
+    <button aria-label="Increase {title}" onpointerdown={(e) => down(e, plus)} onpointerup={() => plus.up()} onpointercancel={() => plus.cancel()}
+      onlostpointercapture={() => plus.up()} onclick={() => plus.click()}><Plus size={20} strokeWidth={2.6} /></button>
   </div>
 </div>
 
