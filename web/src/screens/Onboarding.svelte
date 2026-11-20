@@ -8,6 +8,7 @@
   import { browserName, device, isStandalone, separateAppData } from '../lib/install.svelte';
   import { EQUIPMENT_GROUPS, equipmentTitle, goalBlurb, goalTitle, levelBlurb, levelTitle, splitBlurb, splitTitle } from '../lib/labels';
   import { app } from '../lib/store.svelte';
+  import Account from './Account.svelte';
 
   /** First-run setup: one decision per page, every page pre-filled so Next always works. */
   const PAGES = ['goal', 'schedule', 'experience', 'gym', 'finish'] as const;
@@ -35,6 +36,8 @@
    */
   let installFirst = $state(!isStandalone() && device.os !== 'other');
   const browser = browserName[device.browser];
+  /** A new phone for someone who already uses Forge: sign in and their data comes down instead. */
+  let signingIn = $state(false);
   const gymName = $derived(gym.name.trim() || PRESETS[preset].gym().name);
   /** No way to pull: say so up front rather than let pull days quietly come up nearly empty. */
   const cantPull = $derived(!canPull(gym));
@@ -82,6 +85,17 @@
     <button class="link continue" onclick={() => (installFirst = false)}>{separateAppData ? `Continue in ${browser} anyway` : `Continue in ${browser}`}</button>
   </footer>
 </div>
+{:else if signingIn}
+<div class="onboarding">
+  <div class="dots"><span class="brand eyebrow" aria-hidden="true">Forge</span></div>
+  <div class="body stack" style="--gap:18px">
+    {@render pageTitle('Welcome back', 'Sign in and your workouts, settings and saved workouts come back to this phone.')}
+    <Account embedded onDone={() => (signingIn = false)} />
+  </div>
+  <footer class="row" style="justify-content:center">
+    <button class="link continue" onclick={() => (signingIn = false)}>Set up as new instead</button>
+  </footer>
+</div>
 {:else}
 <div class="onboarding">
   <div class="dots">
@@ -94,6 +108,7 @@
   <div class="body stack">
     {#if PAGES[page] === 'goal'}
       {@render pageTitle("What's your goal?", 'Forge builds every workout around it. You can change this anytime in You.')}
+      <button class="link signin" onclick={() => (signingIn = true)}>Already use Forge on another device? Sign in</button>
       <div class="stack" role="radiogroup" aria-label="Goal">
         {#each GOALS as g (g)}{@render option(goalTitle[g], goalBlurb[g], plan.goal === g, () => (plan.goal = g))}{/each}
       </div>
@@ -208,6 +223,7 @@
   .day.on { background: var(--ember-gradient); border-color: transparent; color: var(--on-ember); box-shadow: 0 10px 22px -8px var(--ember-glow); }
   .install-ico { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; background: var(--ember-gradient); color: var(--on-ember); }
   .continue { min-height: 48px; padding: 0 16px; }
+  .signin { align-self: flex-start; min-height: 44px; margin-top: -8px; text-align: left; }
   footer { position: sticky; bottom: 0; padding: 12px 0 calc(var(--safe-bottom) + 12px); margin-bottom: calc(-1 * (var(--safe-bottom) + 12px));
     background: linear-gradient(to bottom, transparent, var(--bg) 35%); }
   .back { width: 56px; height: 56px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--hairline); display: grid; place-items: center; }

@@ -28,6 +28,7 @@ Goal: Forge that you and a group of friends can rely on, with accounts, sync to 
    - Existing data uploads on first sign-in, then changes sync both ways.
    - A sync status indicator.
    - Export, sign-out and account deletion.
+   - Built: an outbox in IndexedDB (version 4) queues each change in the same transaction as the change; a sync pass pulls then pushes; newest change wins per record, and the server refuses older overwrites. The profile and the four collections sync; kv (per-device UI state) and the running workout don't. Account & Sync under You, and "Sign in" on onboarding for a new phone.
 4. **Friends.**
    - Usernames, invite links and friend requests.
    - A feed of workouts and PRs, with reactions.

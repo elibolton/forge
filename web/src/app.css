@@ -167,7 +167,7 @@ button.chip::after { content: ''; position: absolute; inset: -4px 0; }
 .item .value { color: var(--text-2); margin-left: auto; text-align: right; }
 button.item:active, .pressable:active { background: var(--surface-2); transform: none; }
 
-input[type='text'], input[type='number'], input[type='search'], input[type='datetime-local'], select, textarea {
+input[type='text'], input[type='email'], input[type='number'], input[type='search'], input[type='datetime-local'], select, textarea {
   background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 14px; padding: 11px 14px; min-height: 46px; width: 100%;
   font-size: 1rem; outline: none; transition: border-color 0.2s; }
 input:focus, select:focus, textarea:focus { border-color: rgba(255, 106, 46, 0.55); }
