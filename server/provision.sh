@@ -60,6 +60,7 @@ for d in pb_hooks pb_migrations; do
   fi
 done
 install -m 755 "$HERE/backup.sh" /opt/pocketbase/backup.sh
+install -m 755 "$HERE/invite.sh" /opt/pocketbase/invite.sh
 
 echo "== Services"
 install -m 644 "$HERE/pocketbase.service" /etc/systemd/system/pocketbase.service
