@@ -17,6 +17,7 @@ export type Route =
   | { name: 'preferences' }
   | { name: 'customExercises' }
   | { name: 'data' }
+  | { name: 'account' }
   | { name: 'recovery' };
 
 class Nav {

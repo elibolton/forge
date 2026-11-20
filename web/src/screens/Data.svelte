@@ -13,6 +13,7 @@
   import { storageGuard } from '../lib/install.svelte';
   import InstallSteps from '../components/InstallSteps.svelte';
   import Sheet from '../components/Sheet.svelte';
+  import { cloud } from '../lib/cloud.svelte';
 
   // CSV import from Fitbod, Strong or Hevy, so recommendations start from real numbers.
   const lastBackup = $derived.by(() => { void app.kv; return lastBackupDetail(); });
@@ -96,7 +97,9 @@
   }
 
   function erase() {
-    if (!confirm('Erase all Forge data on this device? This removes every workout and setting and cannot be undone.')) return;
+    const synced = cloud.account ? `\n\nYou'll be signed out. Your data on the Forge server stays, and comes back when you sign in again.` : '';
+    if (!confirm(`Erase all Forge data on this device? This removes every workout and setting and cannot be undone.${synced}`)) return;
+    cloud.signOut();
     app.eraseAll();
   }
 </script>
@@ -129,7 +132,7 @@
       <button class="item link" onclick={exportBackup}><Download size={18} /> Export Backup</button>
       <button class="item link" onclick={() => backupInput?.click()}><Upload size={18} /> Restore from Backup</button>
     </div>
-    <div class="foot">Forge keeps your data only in this browser on this device. Export a backup now and then (to Files or iCloud Drive) so a cleared browser or a new phone doesn't lose your history.</div>
+    <div class="foot">{cloud.account ? 'Your data is also synced to the Forge server. A backup file is still a good extra copy.' : "Forge keeps your data only in this browser on this device. Export a backup now and then (to Files or iCloud Drive), or sign in under Account & Sync, so a cleared browser or a new phone doesn't lose your history."}</div>
     <input type="file" accept="application/json,.json" hidden bind:this={backupInput} onchange={pickBackup} />
   </div>
 

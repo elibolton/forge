@@ -8,6 +8,7 @@
   import { type Route, nav } from '../lib/nav.svelte';
   import { app, restoreGym } from '../lib/store.svelte';
   import { toasts } from '../lib/toasts.svelte';
+  import { cloud, syncLabel } from '../lib/cloud.svelte';
 
   /** Pushed from Today rather than shown as its own tab. */
   let { embedded = false }: { embedded?: boolean } = $props();
@@ -182,8 +183,11 @@
 
   <div class="section">
     <div class="head">Data</div>
-    <div class="list">{@render link('Backup, Import & Export', '', { name: 'data' })}</div>
-    <div class="foot">Your workouts are stored only on this device, in this browser.</div>
+    <div class="list">
+      {@render link('Account & Sync', syncLabel(), { name: 'account' })}
+      {@render link('Backup, Import & Export', '', { name: 'data' })}
+    </div>
+    <div class="foot">{cloud.account ? `Synced to the Forge server as ${cloud.account.email}.` : 'Your workouts are stored only on this device. Sign in to back them up and sync them.'}</div>
   </div>
 </div>
 
